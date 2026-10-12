@@ -20,7 +20,9 @@
 <a class="back" href="../">← Back</a>
 <script type="module">
   import init from './game.js';
-  document.getElementById('game').focus();
+  const canvas = document.getElementById('game');
+  canvas.focus();
+  canvas.addEventListener('contextmenu', e => e.preventDefault());   // right-click is kick
   // winit drives Bevy's loop by throwing out of the first call on the web; that throw is expected.
   init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) throw e; });
 </script>

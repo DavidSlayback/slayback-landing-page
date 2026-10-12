@@ -1,6 +1,49 @@
 # Portfolio plan
 
-Status: 2026-10-12. Phase 0 (production foundation) is in PR #2, with CI green. Phase 1, slice 1 (the game's tracer bullet) is in PR #3, stacked on #2. Next: slice 2, combat. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
+```text
+As of: Mon Oct 12 13:40 CDT 2026
+In flight: nothing running. Slice 2 (combat) is parked as a draft PR on branch game-combat; main has Phase 0 + slice 1 (PRs #2, #3 merged).
+Next: David plans the game with his own workflows (design + tech plan) BEFORE any more game code; see "Handoff: game planning" below.
+Waiting on: David: game design decisions; Cloudflare Pages login/token; real projects/contact content (default: placeholders stay, nothing deployed).
+Re-arm: nothing. No monitors, servers, or scheduled checks were left running.
+Verified: main at 4086b8a, CI green; game-combat: cargo test (28) + clippy clean; dist build checked in headless Chrome (fight script, 0 console errors).
+```
+
+Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. Slice 2 (combat) is a draft PR, parked so the game can be planned properly. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
+
+## Handoff: game planning
+
+- **Why paused:** the game has been specified by one line ("Rumble Box, escape the box, 2D"), so design choices were being made ad hoc during slices. Each game change also costs a ~10-minute full-LTO build. David asked to plan with his own workflows before slice 3.
+- **The plan needs to settle:**
+  - The core loop: box size, how the pile and exit work, win/lose, progression across boxes.
+  - The feel spec: move list, timings, hit-stop and knockback targets.
+  - The enemy roster and difficulty ramp.
+  - Debris and pile rules, including the physics budget for Avian bodies in single-threaded WASM.
+  - Grab and throw (deferred from slice 2).
+  - Art and audio direction: how the hero's spark look carries into the game.
+  - The tech iteration loop: a fast dev wasm profile without LTO, possibly native runs, headless Bevy system tests, and a scripted playtest harness.
+  - Re-cut slices with acceptance criteria.
+- **Built so far:**
+  - `crates/game-core` holds the engine-free rules: movement, combat (`Move`, `Swing`, hitboxes, knockback, `Health`, `HitStop`) and `FodderBrain`, with 13 tests.
+  - `crates/game` is the Bevy 0.19.1 + avian2d 0.7 shell: arena, player (J/Z or left-click punch, K/X or right-click kick), fodder spawner and AI, health bars, white hit-flash, strike boxes, and hit-stop that pauses `Time<Virtual>`.
+  - Collision layers: fighters pass through each other and stand on the world.
+- **Known issues:**
+  - Fodder bunch up on top of each other; they need a separation behavior.
+  - There is no HUD text, because Bevy's `ui`/`text` features aren't enabled.
+  - A defeated player just respawns; there's no game over.
+  - Defeated enemies despawn instead of becoming debris.
+- **Build facts:**
+  - The web build is 16 MB raw, 5 MB gzipped. Cold `--profile game` builds take ~10 min; `cargo clippy -p game --target wasm32-unknown-unknown --profile game` takes about 1 s incremental.
+  - `wasm-bindgen` 0.2.129 is the prebuilt binary in `~/.cargo/bin`, because `cargo install` needs `dlltool` on the GNU host. Binaryen `wasm-opt` v133 is installed too.
+- **Verification scripts:** Playwright scripts live in the session scratchpad, not the repo. They should be recreated as a repo playtest harness during planning.
+- **Shareable pages** (private Claude artifacts; share from each page's Share menu):
+  - Homepage: https://claude.ai/artifact/V5hEXRMs7BKttghCKz4Fym. Production hero, no placeholders.
+  - Hero Lab (prototype): https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh.
+- **Boundaries:** don't merge PRs or deploy without David's go-ahead. Don't commit `spikes/` to `main`.
+- **Refresh:**
+  - `git -C C:/Users/david/repos/portfolio fetch && git log --oneline -5 origin/main`
+  - `gh pr list -R DavidSlayback/slayback-landing-page`
+  - `gh run list -R DavidSlayback/slayback-landing-page --limit 3`
 
 ## Settled
 

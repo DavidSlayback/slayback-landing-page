@@ -3,6 +3,9 @@
 //! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game`
 //! wires it into ECS systems.
 
+pub mod combat;
+pub mod enemy;
+
 /// Player movement tuning, in world units (the arena is 1280×720) and seconds.
 pub mod movement {
     pub const RUN_SPEED: f32 = 420.0;
