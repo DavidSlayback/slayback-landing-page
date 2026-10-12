@@ -1,12 +1,12 @@
 <!doctype html>
 <!--
   PROTOTYPE — throwaway visual spike, round 4. Not production code. Built by build.sh (inlines the WASM).
-  Question: welding-spark currents around always-readable text, with a click-and-hold forcefield.
+  Status: chosen hero. Welding-spark currents around always-readable text, with a hold-to-raise forcefield.
   Physics: sim/ (Rust → WASM): sparks from wandering torches ride a curl-noise current field, ricochet off every
   [data-collide] element (name, nav, editable tagline) and the cursor forcefield, and cool over their lifetime.
   Rendering: thin cooling streaks + torch glow → light map + bloom; text is drawn last as an opaque, dark-haloed
   surface with capped lighting so no amount of sparks can wash it out.
-  Presets (?variant=, bottom bar, ←/→): currents, forge. Schemes: the swatches in the nav (also ?palette=, P).
+  Chosen preset: Currents. Schemes: the swatches in the nav (also ?palette=, P). ?hud=1 shows the debug readout.
   ?capture=1 frame-exact recording · ?warm=<frames> · ?n=<sparks> · ?tune=1 sliders.
 -->
 <html lang="en">
@@ -69,8 +69,7 @@
     <nav class="topnav" data-collide aria-label="Site"><a href="#projects">Projects</a><a href="#">GitHub</a><a href="#">Contact</a></nav>
   </div>
   <h1 class="name" data-collide>David<br>Slayback</h1>
-  <p class="tagline" id="tagline" data-collide contenteditable="true" spellcheck="false" aria-label="Editable tagline">Systems, data, and things that move</p>
-  <p class="hint">Press and hold for a forcefield · click the line above to type</p>
+  <p class="tagline" id="tagline" data-collide>RL/ML enthusiast and recent LLM convert</p>
   <p class="err" id="err" hidden></p>
 </section>
 <section class="projects" id="projects">
@@ -83,11 +82,6 @@
 </section>
 <div class="hud" id="hud"></div>
 <div class="tune" id="tune" hidden></div>
-<nav class="switcher" aria-label="Prototype preset">
-  <button id="prev" type="button" aria-label="Previous preset">‹</button>
-  <span id="vlabel"></span>
-  <button id="next" type="button" aria-label="Next preset">›</button>
-</nav>
 <script>
 'use strict';
 const WASM_B64 = '%%WASM_BASE64%%';
@@ -101,9 +95,6 @@ const VARIANTS = [
   { key: 'currents', label: 'A · Spark currents', p: { ...SPARK_BASE, gravity: 0, turb: 170, drag: 1.4, wander: 220, flowScale: 240, inward: 160,
       restitution: 0.5, lifeMin: 2.5, lifeMax: 6.0, emitters: 4, launchMin: 120, launchMax: 360, openFloor: 1 },
     hint: 'sparks drift in from off-screen and meander through currents that bend around the text' },
-  { key: 'forge', label: 'B · Forge', p: { ...SPARK_BASE, gravity: 380, turb: 70, drag: 0.6, wander: 120, flowScale: 300, inward: 120,
-      restitution: 0.55, lifeMin: 1.5, lifeMax: 3.5, emitters: 3, launchMin: 250, launchMax: 650, openFloor: 0 },
-    hint: 'heavier sparks drift in, arc under gravity, and skitter across every ledge' },
 ];
 const PALETTES = [
   { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00', font: '"Chakra Petch"', weight: 700, track: '.04em',
@@ -127,7 +118,7 @@ let pi = PALETTES.findIndex(p => p.key === (qs.get('palette') || storedScheme));
 if (pi < 0) pi = Math.floor(Math.random() * PALETTES.length);
 const compact = Math.min(innerWidth, innerHeight) < 600;
 const CAP = parseInt(qs.get('n'), 10) || (compact ? 7000 : 14000);
-const SHIELD_R = 72, SHIELD_LINGER = 0.6;
+const SHIELD_R = 40;   // forcefield radius, px; it exists only while the pointer is held
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const capture = qs.has('capture');
 const FONT = '"Segoe UI",system-ui,-apple-system,Arial,sans-serif';
@@ -345,8 +336,6 @@ function updateObstacles() {
 }
 const scheduleObstacles = () => { clearTimeout(obstacleTimer); obstacleTimer = setTimeout(updateObstacles, 40); };
 new MutationObserver(scheduleObstacles).observe(hero, { subtree: true, childList: true, characterData: true });
-tagline.addEventListener('input', scheduleObstacles);
-tagline.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tagline.blur(); } });
 
 // ---------- Colour schemes (site feature: swatches in the nav) ----------
 const swatches = document.querySelector('.schemes');
@@ -368,7 +357,7 @@ async function setScheme(i, remember) {
 
 // ---------- Input: small deflector on hover, forcefield while pressed ----------
 const mouse = { x: 0, y: 0, active: false };
-const shield = { r: 0, target: 0, releasedAt: -1, flash: 0 };
+const shield = { r: 0, target: 0, flash: 0 };
 addEventListener('pointermove', e => {
   const r = hero.getBoundingClientRect();
   mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
@@ -379,20 +368,19 @@ addEventListener('pointerdown', e => {
   if (e.target.closest('.switcher, .tune, .schemes, a, button, [contenteditable]')) return;
   const r = hero.getBoundingClientRect(); if (e.clientY - r.top > r.height) return;
   mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.active = true;
-  shield.target = SHIELD_R; shield.releasedAt = -1;
+  shield.target = SHIELD_R;
 });
-addEventListener('pointerup', () => { if (shield.target > 0) shield.releasedAt = simT; });
+const dropShield = () => { shield.target = 0; };
+addEventListener('pointerup', dropShield);
+addEventListener('pointercancel', dropShield);
 function updateShield(dt) {
-  if (shield.releasedAt >= 0 && simT - shield.releasedAt > SHIELD_LINGER) { shield.target = 0; shield.releasedAt = -1; }
-  shield.r += (shield.target - shield.r) * Math.min(1, dt * (shield.target > shield.r ? 18 : 12));
+  shield.r += (shield.target - shield.r) * Math.min(1, dt * (shield.target > shield.r ? 18 : 30));
   if (shield.r < 0.5 && shield.target === 0) shield.r = 0;
   X.world_shield(world, mouse.x, mouse.y, shield.r > 4 ? shield.r : 0);
 }
 addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, [contenteditable]')) return;
-  if (e.key === 'ArrowLeft') go(-1);
-  else if (e.key === 'ArrowRight') go(1);
-  else if (e.key === 'p') setScheme((pi + 1) % PALETTES.length, true);
+  if (e.key === 'p') setScheme((pi + 1) % PALETTES.length, true);
 });
 
 // ---------- Tuning (?tune=1) ----------
@@ -413,7 +401,6 @@ if (qs.has('tune')) {
 let W = 0, H = 0, scene, light, lightTmp, bloom, vbo, sparkVao, building = Promise.resolve();
 const build = () => (building = building.then(buildNow));
 async function buildNow() {
-  document.getElementById('vlabel').textContent = VARIANTS[vi].label;
   await setScheme(pi, false);
   await document.fonts.ready;
   if (!X) await loadPhysics();
@@ -436,9 +423,6 @@ async function buildNow() {
   applyPreset();
 }
 function setParam(k, v) { try { const u = new URL(location.href); u.searchParams.set(k, v); history.replaceState(null, '', u); } catch {} }
-function go(d) { vi = (vi + d + VARIANTS.length) % VARIANTS.length; setParam('variant', VARIANTS[vi].key); document.getElementById('vlabel').textContent = VARIANTS[vi].label; if (world) applyPreset(); }
-document.getElementById('prev').onclick = () => go(-1);
-document.getElementById('next').onclick = () => go(1);
 let resizeTimer = 0;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 150); });
 
@@ -500,11 +484,11 @@ function frame(now) {
   requestAnimationFrame(frame);
   const t = now / 1000, dt = last ? Math.min(t - last, 1 / 30) : 1 / 60; last = t;
   frames++; if (t - fpsT > 0.5) { fps = frames / (t - fpsT); frames = 0; fpsT = t;
-    hud.textContent = `${VARIANTS[vi].label} / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps\n${VARIANTS[vi].hint}\n←/→ preset · p: scheme`; }
+    hud.textContent = `${VARIANTS[vi].label} / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps\np: scheme`; }
   if (scrollY > H) return;
   present(dt);
 }
-if (capture) document.querySelectorAll('.hud, .switcher, .hint').forEach(e => e.hidden = true);
+if (capture || !qs.has('hud')) hud.hidden = true;   // debug readout: ?hud=1
 build().then(() => {
   for (let i = 0, n = parseInt(qs.get('warm'), 10) || 0; i < n; i++) { X.world_step(world, 1 / 60); simT += 1 / 60; }  // physics only
   if (capture) window.__capture = { frame: present };
