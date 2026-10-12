@@ -1,2 +1,6 @@
+/target
+/dist
 # Regenerable spike media (capture/record.mjs + capture/encode.sh); keep out of git.
 spikes/hero/motion/
+# Design spikes live on the spike/hero branch; never commit them to main.
+/spikes/
