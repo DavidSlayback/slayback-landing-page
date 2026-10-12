@@ -273,7 +273,9 @@ const tri = () => gl.drawArrays(gl.TRIANGLES, 0, 3);
 let X = null, world = 0;
 async function loadPhysics() {
   const bytes = Uint8Array.from(atob(WASM_B64), c => c.charCodeAt(0));
-  X = (await WebAssembly.instantiate(bytes, {})).instance.exports;
+  try { X = (await WebAssembly.instantiate(bytes, {})).instance.exports; }
+  catch (e) { fail(`The physics engine (WebAssembly) could not start here: ${e.message}
+Open hero3-prototype.html locally instead.`); }
 }
 function applyPreset() {
   const p = VARIANTS[vi].p, t = tuned;
