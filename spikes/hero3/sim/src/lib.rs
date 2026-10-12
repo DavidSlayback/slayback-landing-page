@@ -556,13 +556,15 @@ impl World {
             self.spawn_acc = 0.0;
         }
         self.update_flow();
-        const SUB: usize = 3;
-        let h = dt / SUB as f32;
+        // Fixed-size substeps (~1/180 s) whatever the frame rate: a longer step lets fast grains travel a full
+        // diameter per substep, land deep inside their neighbours, and get flung out by the overlap correction.
+        let sub = ((dt * 180.0).ceil() as usize).clamp(1, 8);
+        let h = dt / sub as f32;
         let p = self.params;
         let t = self.time;
         let gust = 0.6 + 0.4 * (t * 0.37).sin() + 0.25 * (t * 1.31 + 1.0).sin();
-        for s in 0..SUB {
-            let a = (s + 1) as f32 / SUB as f32;
+        for s in 0..sub {
+            let a = (s + 1) as f32 / sub as f32;
             let cursor = self.cursor_on.then(|| {
                 (self.cursor[2] + (self.cursor[0] - self.cursor[2]) * a, self.cursor[3] + (self.cursor[1] - self.cursor[3]) * a)
             });
@@ -847,6 +849,24 @@ mod tests {
             }
         }
         assert!(worst < 0.5 * r, "deepest overlap {worst} px");
+    }
+
+    #[test]
+    fn heavy_pile_comes_to_rest_at_30_fps() {
+        // Low frame rates must not inject energy: a pile under strong gravity settles at dt = 1/30 as well as 1/60.
+        let mut world = quiet(600, 300.0, 200.0);
+        world.params.gravity = 900.0;
+        for k in 0..600 {
+            world.put(20.0 + (k % 40) as f32 * 6.5, 10.0 + (k / 40) as f32 * 6.0, 0.0, 0.0);
+        }
+        for _ in 0..240 {
+            world.step(1.0 / 30.0);
+        }
+        let n = world.active as f32;
+        let mean_speed = (0..world.active).map(|i| world.vx[i].hypot(world.vy[i])).sum::<f32>() / n;
+        let hot = (0..world.active).filter(|&i| world.energy[i] > 0.2).count();
+        assert!(mean_speed < 15.0, "pile still moving: mean speed {mean_speed} px/s");
+        assert!(hot == 0, "{hot} resting grains still glowing from contact jitter");
     }
 
     #[test]
