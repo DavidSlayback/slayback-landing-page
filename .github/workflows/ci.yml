@@ -14,12 +14,33 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --release
-      - run: cargo clippy --workspace --all-targets --release -- -D warnings
-      - run: bash scripts/build.sh
+      # Default members only: sim, hero-wasm, game-core (the Bevy shell is checked in the game job).
+      - run: cargo test --release
+      - run: cargo clippy --all-targets --release -- -D warnings
+      - run: SKIP_GAME=1 bash scripts/build.sh
       - name: hero.wasm size budget (80 KB)
         run: test "$(wc -c < dist/hero.wasm)" -le 81920
       - uses: actions/upload-artifact@v4
         with:
           name: dist
+          path: dist
+
+  game:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - run: cargo clippy -p game --target wasm32-unknown-unknown --profile game -- -D warnings
+      - run: bash scripts/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-with-game
           path: dist
