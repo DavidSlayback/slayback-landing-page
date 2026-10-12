@@ -35,6 +35,10 @@ pub struct Params {
     pub emitters: u32,    // wandering spark sources; 0 = use `source`
     pub launch_min: f32,  // emitter launch speed range, px/s
     pub launch_max: f32,
+    pub open_floor: bool, // the floor is an exit (and an emitter edge) too
+    pub wander: f32,      // px/s² per-particle random steering (each particle's heading drifts on its own)
+    pub flow_scale: f32,  // wavelength of the current field, px (smaller = tighter, more circuitous swirls)
+    pub inward: f32,      // px/s² pull toward the screen centre, fading over a particle's first ~2 s
 }
 
 impl Default for Params {
@@ -60,6 +64,10 @@ impl Default for Params {
             emitters: 0,
             launch_min: 400.0,
             launch_max: 1000.0,
+            open_floor: false,
+            wander: 0.0,
+            flow_scale: 360.0,
+            inward: 0.0,
         }
     }
 }
@@ -108,6 +116,7 @@ pub struct World {
     pub hue: Vec<f32>,
     pub age: Vec<f32>,
     pub life: Vec<f32>,
+    heading: Vec<f32>, // wander steering angle, drifts as a random walk
     pub emitters: Vec<Emitter>,
     emitter_out: Vec<f32>,
     shield: [f32; 3], // x, y, radius (0 = off)
@@ -150,6 +159,9 @@ pub struct World {
 }
 
 pub const OUT_STRIDE: usize = 8;
+/// Emitters sit this far outside the screen; particles are only recycled once they are further out than this.
+pub const EMITTER_OFFSET: f32 = 50.0;
+const EXIT_MARGIN: f32 = 90.0;
 
 impl World {
     pub fn new(cap: usize, w: f32, h: f32, seed: u32) -> World {
@@ -171,6 +183,7 @@ impl World {
             hue: vec![0.0; cap],
             age: vec![0.0; cap],
             life: vec![0.0; cap],
+            heading: vec![0.0; cap],
             emitters: Vec::new(),
             emitter_out: Vec::new(),
             shield: [0.0; 3],
@@ -250,40 +263,47 @@ impl World {
             16 => p.emitters = v as u32,
             17 => p.launch_min = v,
             18 => p.launch_max = v,
+            19 => p.open_floor = v != 0.0,
+            20 => p.wander = v,
+            21 => p.flow_scale = v.max(40.0),
+            22 => p.inward = v,
             _ => return,
         }
         self.set_params(p);
     }
 
-    /// Moves an emitter to a random edge or open interior point, aimed into the arena.
+    /// Edges sparks may enter through: top, left and right when open, the floor only when it is open too.
+    fn open_sides(&self) -> Vec<u32> {
+        let mut sides = Vec::new();
+        if self.params.open_edges {
+            sides.extend([0, 2, 3]);
+        }
+        if self.params.open_floor {
+            sides.push(1);
+        }
+        if sides.is_empty() {
+            sides.push(0);
+        }
+        sides
+    }
+
+    /// Moves an emitter just outside a random open edge of the screen, aimed inward within a random cone.
     fn relocate(&mut self, e: &mut Emitter) {
         let (w, h) = (self.w, self.h);
-        let mut best = (f32::MIN, 0.0, 0.0, 0.0); // fallback when no candidate clears the margin: the most open one
-        for _ in 0..24 {
-            let (a, b, c) = (self.rand(), self.rand(), self.rand());
-            let (x, y, aim) = if a < 0.6 {
-                match (b * 4.0) as u32 {
-                    0 => (w * (0.1 + 0.8 * c), 4.0, TAU * 0.25),      // top, aiming down
-                    1 => (w * (0.1 + 0.8 * c), h - 4.0, -TAU * 0.25), // floor, aiming up
-                    2 => (4.0, h * (0.1 + 0.8 * c), 0.0),             // left, aiming right
-                    _ => (w - 4.0, h * (0.1 + 0.8 * c), TAU * 0.5),   // right, aiming left
-                }
-            } else {
-                (w * (0.08 + 0.84 * b), h * (0.08 + 0.84 * c), self.rand() * TAU)
-            };
-            let clear = self.sdf_at(x, y);
-            if clear > best.0 {
-                best = (clear, x, y, aim);
-            }
-            if clear > 60.0 {
-                break;
-            }
-        }
-        (e.x, e.y) = (best.1, best.2);
-        e.angle = best.3 + (self.rand() - 0.5) * 1.3;
-        e.spread = 0.2 + 0.55 * self.rand();
+        let sides = self.open_sides();
+        let side = sides[(self.rand() * sides.len() as f32) as usize % sides.len()];
+        let t = self.rand();
+        let (x, y, inward) = match side {
+            0 => (w * t, -EMITTER_OFFSET, TAU * 0.25),        // above the top edge, aiming down
+            1 => (w * t, h + EMITTER_OFFSET, -TAU * 0.25),    // below the floor, aiming up
+            2 => (-EMITTER_OFFSET, h * t, 0.0),               // left of the screen, aiming right
+            _ => (w + EMITTER_OFFSET, h * t, TAU * 0.5),      // right of the screen, aiming left
+        };
+        (e.x, e.y) = (x, y);
+        e.angle = inward + (self.rand() - 0.5) * 2.2; // up to ~63 degrees off the inward normal
+        e.spread = 0.3 + 0.7 * self.rand();
         e.age = 0.0;
-        e.ttl = 2.0 + 3.5 * self.rand();
+        e.ttl = 2.5 + 4.0 * self.rand();
         e.phase = self.rand() * TAU;
     }
 
@@ -354,6 +374,7 @@ impl World {
             self.vx[i] = ang.cos() * sp;
             self.vy[i] = ang.sin() * sp;
             self.energy[i] = 0.0; // heat (age) carries the white-hot start; energy is reserved for impacts
+            self.heading[i] = self.rand() * TAU;
             self.hue[i] = (e.hue + d * 0.08).fract();
             return;
         }
@@ -394,15 +415,6 @@ impl World {
             .zip(&d_in)
             .map(|(o, i)| ((o - i) / self.mscale).min(60000.0))
             .collect();
-        let mut list = std::mem::take(&mut self.emitters);
-        for e in list.iter_mut() {
-            if self.sdf_at(e.x, e.y) < 60.0 {
-                let (age, ttl) = (e.age, e.ttl);
-                self.relocate(e);
-                (e.age, e.ttl) = (age, ttl);
-            }
-        }
-        self.emitters = list;
     }
 
     pub fn sdf_at(&self, x: f32, y: f32) -> f32 {
@@ -458,13 +470,15 @@ impl World {
     fn update_flow(&mut self) {
         // Stream function = ramp(sdf) × sum of travelling sine waves; its curl is divergence-free and,
         // because the ramp is zero at glyph edges, tangent to the text (Bridson's curl-noise boundary trick).
-        const TERMS: [[f32; 5]; 4] = [
+        const TERMS: [[f32; 5]; 6] = [
             [0.80, 0.60, 1.00, 0.35, 0.0],
             [-0.50, 0.87, 1.37, -0.27, 1.7],
             [0.17, -0.98, 0.71, 0.21, 4.1],
             [-0.92, -0.40, 1.90, 0.45, 2.6],
+            [0.34, 0.94, 2.60, -0.52, 5.3],
+            [-0.71, 0.71, 3.30, 0.61, 0.9],
         ];
-        let k = TAU / 360.0;
+        let k = TAU / self.params.flow_scale;
         let amp = self.params.turb / k * 0.5;
         let infl = 36.0;
         let t = self.time;
@@ -534,7 +548,7 @@ impl World {
         }
         // Reorder grains so each cell's members are contiguous: contact loops then stream through memory.
         let n = self.active;
-        for arr in [&mut self.x, &mut self.y, &mut self.vx, &mut self.vy, &mut self.px, &mut self.py, &mut self.energy, &mut self.hue, &mut self.age, &mut self.life] {
+        for arr in [&mut self.x, &mut self.y, &mut self.vx, &mut self.vy, &mut self.px, &mut self.py, &mut self.energy, &mut self.hue, &mut self.age, &mut self.life, &mut self.heading] {
             for k in 0..n {
                 self.scratch[k] = arr[self.sorted[k] as usize];
             }
@@ -608,7 +622,7 @@ impl World {
                 (self.cnx[i], self.cny[i], self.contact[i]) = (nx, ny, Contact::Solid);
             }
             // arena: floor, ceiling, left wall (right edge is the exit)
-            if self.py[i] > self.h - r {
+            if self.py[i] > self.h - r && !self.params.open_floor {
                 self.py[i] = self.h - r;
                 (self.cnx[i], self.cny[i], self.contact[i]) = (0.0, -1.0, Contact::Floor);
             } else if self.py[i] < r && !self.params.open_edges {
@@ -709,9 +723,11 @@ impl World {
             self.contact[i] = Contact::None;
             self.age[i] += h;
             let expired = self.life[i] > 0.0 && self.age[i] > self.life[i];
-            let out = self.x[i] > self.w + 12.0
-                || self.y[i] > self.h + 40.0
-                || (p.open_edges && (self.x[i] < -20.0 || self.y[i] < -20.0));
+            let out = if p.open_edges {
+                self.x[i] < -EXIT_MARGIN || self.x[i] > self.w + EXIT_MARGIN || self.y[i] < -EXIT_MARGIN || self.y[i] > self.h + EXIT_MARGIN
+            } else {
+                self.x[i] > self.w + 12.0 || self.y[i] > self.h + 40.0
+            };
             if expired || out {
                 self.spawn(i); // burned out or left the arena: relaunch from a source
             }
@@ -774,10 +790,25 @@ impl World {
             let cursor = self.cursor_on.then(|| {
                 (self.cursor[2] + (self.cursor[0] - self.cursor[2]) * a, self.cursor[3] + (self.cursor[1] - self.cursor[3]) * a)
             });
+            let steer = 9.0 * h.sqrt(); // heading random walk: uniform steps, ~2.6 rad standard deviation per sqrt(second)
             for i in 0..self.active {
                 let (u, v) = self.flow_at(self.x[i], self.y[i]);
-                self.vx[i] += (p.wind * gust + p.drag * (u - self.vx[i])) * h;
-                self.vy[i] += (p.gravity + p.drag * (v - self.vy[i])) * h;
+                let (wx, wy) = if p.wander > 0.0 {
+                    self.heading[i] += (self.rand() - 0.5) * steer;
+                    (self.heading[i].cos() * p.wander, self.heading[i].sin() * p.wander)
+                } else {
+                    (0.0, 0.0)
+                };
+                let (ix, iy) = if p.inward > 0.0 {
+                    // carries newcomers from the off-screen torches into the arena before the currents take over
+                    let (dx, dy) = (self.w * 0.5 - self.x[i], self.h * 0.5 - self.y[i]);
+                    let k = p.inward * (1.0 - self.age[i] / 2.0).max(0.0) / (dx * dx + dy * dy).sqrt().max(1.0);
+                    (dx * k, dy * k)
+                } else {
+                    (0.0, 0.0)
+                };
+                self.vx[i] += (p.wind * gust + wx + ix + p.drag * (u - self.vx[i])) * h;
+                self.vy[i] += (p.gravity + wy + iy + p.drag * (v - self.vy[i])) * h;
                 self.px[i] = self.x[i] + self.vx[i] * h;
                 self.py[i] = self.y[i] + self.vy[i] * h;
             }
@@ -1143,6 +1174,43 @@ mod tests {
         }
         assert!(hits > 0, "the forcefield never registered a hit");
         assert!(rebound < -400.0, "spark should rebound with most of its 600 px/s, got {rebound}");
+    }
+
+    #[test]
+    fn sparks_only_originate_outside_the_screen() {
+        let mut world = sparks(400);
+        world.params.open_floor = true;
+        for _ in 0..240 {
+            world.step(1.0 / 60.0);
+            for e in &world.emitters {
+                let outside = e.x < 0.0 || e.x > world.w || e.y < 0.0 || e.y > world.h;
+                assert!(outside, "emitter on screen at ({}, {})", e.x, e.y);
+            }
+        }
+        // Fresh sparks (younger than one frame) are all still off screen.
+        let fresh: Vec<usize> = (0..world.active).filter(|&i| world.age[i] < 1.0 / 60.0).collect();
+        assert!(!fresh.is_empty());
+        for i in fresh {
+            let outside = world.x[i] < 0.0 || world.x[i] > world.w || world.y[i] < 0.0 || world.y[i] > world.h;
+            assert!(outside, "spark born on screen at ({}, {})", world.x[i], world.y[i]);
+        }
+    }
+
+    #[test]
+    fn wander_makes_identical_launches_diverge() {
+        let separation = |wander: f32| {
+            let mut world = quiet(2, 800.0, 800.0);
+            world.params.collide = false;
+            world.params.wander = wander;
+            world.put(400.0, 400.0, 0.0, 0.0);
+            world.put(400.0, 400.0, 0.0, 0.0);
+            for _ in 0..120 {
+                world.step(1.0 / 60.0);
+            }
+            dist(&world, 0, 1)
+        };
+        assert!(separation(0.0) < 1e-3, "without wander, identical launches must stay together");
+        assert!(separation(300.0) > 40.0, "with wander, identical launches should take different paths");
     }
 
     #[test]
