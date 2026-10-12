@@ -1,0 +1,476 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway visual spike, round 3. Not production code. Built by build.sh (inlines the WASM).
+  Question: does a real granular physics hero (Rust → WASM) with particle-lit text wow?
+  Physics: sim/ (Rust, PBD grains + uniform grid + text SDF). Rendering: WebGL2 streak sprites, a particle light
+  buffer that lights the text, multi-level bloom. Every [data-collide] element in the hero is a live obstacle,
+  including the editable tagline.
+  Presets (?variant=, bottom bar, or ←/→): dunes, currents, downpour. Schemes (?palette=, or P): netrunner, synthwave, gold.
+  ?capture=1 frame-exact recording · ?warm=<frames> · ?n=<grains> · ?tune=1 sliders.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hero Spike 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Orbitron:wght@600;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --bg: #000; --fg: #eafffb; --muted: #6f8f8a; --accent: #a6ff00; --font: system-ui; --weight: 700; --track: .04em; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); }
+  .hero { position: relative; height: 100vh; height: 100svh; overflow: hidden; background: #000; }
+  #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+  /* Hero text is real, selectable DOM; WebGL draws it (lit by the grains), so the DOM copy is transparent. */
+  .hero [data-collide], .hero [data-collide] * { color: transparent; }
+  .hero ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+  .topnav { position: absolute; top: 22px; right: 28px; display: flex; gap: 28px; margin: 0;
+    font: 600 15px/1 var(--font); letter-spacing: .14em; text-transform: uppercase; }
+  .topnav a { text-decoration: none; }
+  .topnav a:focus-visible { outline: 1px solid var(--accent); outline-offset: 6px; }
+  .name { position: absolute; left: 0; right: 0; top: 24%; margin: 0; text-align: center; pointer-events: none;
+    font: var(--weight) clamp(48px, 10.5vw, 160px)/0.98 var(--font); letter-spacing: var(--track); text-transform: uppercase; }
+  .tagline { position: absolute; left: 50%; transform: translateX(-50%); top: 66%; width: min(760px, 90vw); margin: 0;
+    text-align: center; font: 600 clamp(16px, 2.1vw, 26px)/1.3 var(--font); letter-spacing: .03em;
+    caret-color: var(--accent); outline: none; }
+  .tagline:focus-visible { box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  .edit-hint { position: absolute; left: 50%; transform: translateX(-50%); top: calc(66% - 26px); margin: 0; pointer-events: none;
+    font: 500 11px/1 ui-monospace, Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .projects { max-width: 760px; margin: 0 auto; padding: 96px 16px 160px; }
+  .projects h2 { font-size: 13px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  .projects ul { list-style: none; padding: 0; margin: 0; }
+  .projects li { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+  .projects a { color: var(--fg); text-decoration: none; font-size: 22px; font-weight: 600; }
+  .projects span { color: var(--muted); font-size: 14px; align-self: center; }
+  .hud { position: fixed; top: 12px; left: 12px; z-index: 10; pointer-events: none; white-space: pre-wrap; max-width: calc(100vw - 24px);
+    font: 12px/1.5 ui-monospace, Consolas, monospace; color: #cfd3e0; background: rgba(0,0,0,.6); padding: 8px 10px; border-radius: 8px; }
+  .tune { position: fixed; top: 70px; left: 12px; z-index: 10; display: grid; gap: 6px; padding: 10px; border-radius: 8px;
+    background: rgba(0,0,0,.75); font: 12px ui-monospace, Consolas, monospace; color: #cfd3e0; }
+  .tune label { display: grid; grid-template-columns: 90px 140px 48px; align-items: center; gap: 8px; }
+  .switcher { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 10;
+    display: flex; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px); align-items: center; gap: 10px;
+    background: #fff; color: #111; border-radius: 999px; padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; }
+  .switcher button { border: 0; background: #111; color: #fff; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px; }
+  .switcher .sep { width: 1px; height: 20px; background: #ccc; margin: 0 4px; }
+  @media (max-width: 480px) { .switcher { font-size: 12px; border-radius: 20px; } .switcher .sep { display: none; } .topnav { gap: 16px; right: 16px; font-size: 12px; } }
+  .err { position: absolute; inset: auto 16px 40% 16px; text-align: center; color: #ff8a80; font: 14px ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<section class="hero" id="hero">
+  <canvas id="c" aria-hidden="true"></canvas>
+  <nav class="topnav" data-collide aria-label="Site"><a href="#projects">Projects</a><a href="#">GitHub</a><a href="#">Contact</a></nav>
+  <h1 class="name" data-collide>David<br>Slayback</h1>
+  <p class="edit-hint">Click and type</p>
+  <p class="tagline" id="tagline" data-collide contenteditable="true" spellcheck="false" aria-label="Editable tagline">Systems, data, and things that move</p>
+  <p class="err" id="err" hidden></p>
+</section>
+<section class="projects" id="projects">
+  <h2>Projects</h2>
+  <ul>
+    <li><a href="#">Project one ↗</a><span>Placeholder description</span></li>
+    <li><a href="#">Project two ↗</a><span>Placeholder description</span></li>
+    <li><a href="#">Project three ↗</a><span>Placeholder description</span></li>
+  </ul>
+</section>
+<div class="hud" id="hud"></div>
+<div class="tune" id="tune" hidden></div>
+<nav class="switcher" aria-label="Prototype variant">
+  <button id="prev" type="button" aria-label="Previous preset">‹</button>
+  <span id="vlabel"></span>
+  <button id="next" type="button" aria-label="Next preset">›</button>
+  <span class="sep"></span>
+  <button id="pprev" type="button" aria-label="Previous scheme">‹</button>
+  <span id="plabel"></span>
+  <button id="pnext" type="button" aria-label="Next scheme">›</button>
+</nav>
+<script>
+'use strict';
+const WASM_B64 = '%%WASM_BASE64%%';
+// Physics presets: same engine, different forces. Source 0 = left edge, 1 = top edge.
+const VARIANTS = [
+  { key: 'dunes', label: 'A · Dunes', p: { gravity: 320, wind: 240, turb: 130, drag: 1.6, friction: 0.3, floorFriction: 0.04, restitution: 0.15, source: 0 },
+    hint: 'wind-blown grains drift onto the text, pile, and avalanche' },
+  { key: 'currents', label: 'B · Currents', p: { gravity: 0, wind: 90, turb: 230, drag: 1.2, friction: 0.15, floorFriction: 0.04, restitution: 0.3, source: 0 },
+    hint: 'zero-g: grains swirl in currents that bend around the text' },
+  { key: 'downpour', label: 'C · Downpour', p: { gravity: 900, wind: 50, turb: 70, drag: 0.9, friction: 0.35, floorFriction: 0.08, restitution: 0.1, source: 1 },
+    hint: 'grains rain from the top and pool on every ledge of the text' },
+];
+const PALETTES = [
+  { key: 'netrunner', label: 'Netrunner', font: '"Chakra Petch"', weight: 700, track: '.04em',
+    css: { fg: '#efffd6', muted: '#7d9a52', accent: '#a6ff00' },
+    gl: { uP0: [0.62, 1.0, 0.0], uP1: [0.15, 1.0, 0.2], uP2: [0.0, 1.0, 0.72], uP3: [0.88, 1.0, 0.12],
+      uFillCol: [0.85, 1.0, 0.7], uStrokeCol: [0.6, 1.0, 0.0] } },
+  { key: 'synthwave', label: 'Synthwave', font: '"Orbitron"', weight: 900, track: '.06em',
+    css: { fg: '#ffe9fb', muted: '#a0609a', accent: '#ff2bd6' },
+    gl: { uP0: [1.0, 0.08, 0.72], uP1: [0.0, 0.9, 1.0], uP2: [1.0, 0.92, 0.05], uP3: [0.5, 0.15, 1.0],
+      uFillCol: [1.0, 0.85, 0.98], uStrokeCol: [1.0, 0.15, 0.8] } },
+  { key: 'gold', label: 'Human Revolution', font: '"Rajdhani"', weight: 700, track: '.16em',
+    css: { fg: '#fff1d0', muted: '#a07a35', accent: '#ffae2b' },
+    gl: { uP0: [1.0, 0.55, 0.04], uP1: [1.0, 0.82, 0.2], uP2: [1.0, 0.3, 0.0], uP3: [1.0, 0.95, 0.65],
+      uFillCol: [1.0, 0.9, 0.65], uStrokeCol: [1.0, 0.62, 0.1] } },
+];
+const qs = new URLSearchParams(location.search);
+let vi = Math.max(0, VARIANTS.findIndex(v => v.key === qs.get('variant')));
+let pi = Math.max(0, PALETTES.findIndex(p => p.key === qs.get('palette')));
+const compact = Math.min(innerWidth, innerHeight) < 600;
+const CAP = parseInt(qs.get('n'), 10) || (compact ? 5000 : 10000);
+const RADIUS = 2.6, CURSOR_R = 22, BURST_R = 70, BURST_V = 900;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const capture = qs.has('capture');
+const diag = qs.get('diag') || '';   // 'nolight' | 'nobloom' (debugging)
+const FONT = '"Segoe UI",system-ui,-apple-system,Arial,sans-serif';
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const hero = document.getElementById('hero'), canvas = document.getElementById('c'), hud = document.getElementById('hud');
+const tagline = document.getElementById('tagline');
+
+function fail(msg) { const e = document.getElementById('err'); e.textContent = msg; e.hidden = false; throw new Error(msg); }
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+if (!gl) fail('WebGL2 unavailable');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('EXT_color_buffer_float unavailable');
+const emptyVao = gl.createVertexArray();
+gl.bindVertexArray(emptyVao);
+
+// ---------- GLSL ----------
+const HEAD = '#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n';
+const PAL = `uniform vec3 uP0, uP1, uP2, uP3;
+vec3 pal(float t){ t=fract(t)*4.0;
+  if(t<1.0) return mix(uP0,uP1,t); if(t<2.0) return mix(uP1,uP2,t-1.0); if(t<3.0) return mix(uP2,uP3,t-2.0); return mix(uP3,uP0,t-3.0); }
+float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}`;
+const VS_TRI = HEAD + `void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
+const INSTANCE = `layout(location=0) in vec4 aPV; layout(location=1) in vec2 aEH;   // x, y, vx, vy · energy, hue
+uniform vec2 uRes;
+vec4 clip(vec2 p){ return vec4(p.x/uRes.x*2.0-1.0, 1.0-p.y/uRes.y*2.0, 0.0, 1.0); }
+vec2 corner(){ return vec2(float(gl_VertexID&1), float(gl_VertexID>>1))*2.0-1.0; }`;
+
+// Grains as velocity-aligned capsules: head at the grain, a fading tail behind it, white-hot on impact.
+const VS_GRAIN = HEAD + PAL + INSTANCE + `
+uniform float uR, uStreak, uEmit; out vec2 vL; out float vHalf, vRad; out vec3 vCol;
+void main(){ vec2 c=corner(); float sp=length(aPV.zw);
+  vec2 dir=sp>1.0?aPV.zw/sp:vec2(1.0,0.0), nrm=vec2(-dir.y,dir.x);
+  float hl=min(sp*uStreak,30.0)*0.5, r=uR*(1.0+aEH.x*0.7);
+  vec2 local=vec2(c.x*(hl+r), c.y*r);
+  vL=local; vHalf=hl; vRad=r;
+  float heat=smoothstep(60.0,900.0,sp);
+  vec3 col=pal(aEH.y)*(0.28+2.0*heat+2.6*aEH.x);   // resting grains stay dim; moving ones run hot
+  vCol=mix(col, vec3(length(col))*0.7, aEH.x*0.55);
+  if(uEmit>0.0) vCol=pal(aEH.y)*(smoothstep(20.0,350.0,sp)+aEH.x*1.8)*uEmit;   // light map: only motion and impacts emit
+  gl_Position=clip(aPV.xy-dir*hl+dir*local.x+nrm*local.y); }`;
+const FS_GRAIN = HEAD + `in vec2 vL; in float vHalf, vRad; in vec3 vCol; out vec4 o;
+void main(){ vec2 q=vec2(max(abs(vL.x)-vHalf,0.0), vL.y); float d2=dot(q,q)/(vRad*vRad); if(d2>1.0) discard;
+  float along=vHalf>0.01?clamp((vL.x+vHalf)/(2.0*vHalf),0.0,1.0):1.0;
+  o=vec4(vCol*exp(-d2*3.0)*mix(0.3,1.0,along) + vec3(exp(-d2*10.0))*0.28*mix(0.15,1.0,along), 1.0); }`;
+
+// Base layer: the void picks up bounce light; text is a bevelled surface lit from the direction the light comes from.
+const FS_BASE = HEAD + `
+uniform sampler2D uText, uLight, uSdf; uniform vec2 uCanvas, uSdfTexel, uRes;
+uniform vec3 uFillCol, uStrokeCol, uAccent; uniform vec4 uCursor, uBurst;   // cursor x,y,r,on · burst x,y,age,radius
+out vec4 o;
+float lum(vec3 c){ return dot(c,vec3(0.3,0.5,0.2)); }
+void main(){
+  vec2 uv=gl_FragCoord.xy/uCanvas, tuv=vec2(uv.x,1.0-uv.y), e=6.0/uCanvas;
+  vec3 L=texture(uLight,uv).rgb; float l=lum(L);
+  vec2 lg=vec2(lum(texture(uLight,uv+vec2(e.x,0.0)).rgb)-lum(texture(uLight,uv-vec2(e.x,0.0)).rgb),
+               lum(texture(uLight,uv-vec2(0.0,e.y)).rgb)-lum(texture(uLight,uv+vec2(0.0,e.y)).rgb));  // screen y-down
+  vec4 t=texture(uText,tuv);
+  float s=texture(uSdf,tuv).r;
+  vec2 g=vec2(texture(uSdf,tuv+vec2(uSdfTexel.x,0.0)).r-texture(uSdf,tuv-vec2(uSdfTexel.x,0.0)).r,
+              texture(uSdf,tuv+vec2(0.0,uSdfTexel.y)).r-texture(uSdf,tuv-vec2(0.0,uSdfTexel.y)).r);
+  vec2 n2=dot(g,g)>1e-8?normalize(g):vec2(0.0);
+  vec3 N=normalize(vec3(n2*(1.0-smoothstep(0.0,5.0,-s))*1.6,1.0));
+  vec3 Ld=normalize(vec3(lg*60.0,0.55));
+  float diff=max(dot(N,Ld),0.0), spec=pow(max(reflect(-Ld,N).z,0.0),14.0);
+  vec3 text=uFillCol*(0.16+2.4*l*diff)+vec3(1.0)*spec*l*1.6;
+  vec3 col=mix(L*0.22, text, t.r) + uStrokeCol*t.g*(0.45+2.6*l);
+  vec2 px=vec2(uv.x,1.0-uv.y)*uRes;   // CSS px, y-down
+  if(uCursor.w>0.5){ float d=length(px-uCursor.xy); col+=uAccent*exp(-pow((d-uCursor.z)/1.2,2.0))*0.5; }
+  if(uBurst.z<0.35){ float d=length(px-uBurst.xy), rr=uBurst.w*smoothstep(0.0,0.25,uBurst.z);
+    col+=uAccent*exp(-pow((d-rr)/2.0,2.0))*(1.0-uBurst.z/0.35)*1.8; }
+  o=vec4(col,1.0);
+}`;
+const FS_DOWN = HEAD + `uniform sampler2D uSrc; uniform vec2 uDst, uTexel; out vec4 o;
+void main(){ vec2 uv=gl_FragCoord.xy/uDst;
+  o=vec4((texture(uSrc,uv+uTexel*vec2(-1,-1)).rgb+texture(uSrc,uv+uTexel*vec2(1,-1)).rgb
+        +texture(uSrc,uv+uTexel*vec2(-1,1)).rgb+texture(uSrc,uv+uTexel*vec2(1,1)).rgb)*0.25,1.0); }`;
+const FS_BLUR = HEAD + `uniform sampler2D uSrc; uniform vec2 uDst, uDir; out vec4 o;
+void main(){ vec2 uv=gl_FragCoord.xy/uDst;
+  vec3 c=texture(uSrc,uv).rgb*0.2270270;
+  c+=(texture(uSrc,uv+uDir*1.3846154).rgb+texture(uSrc,uv-uDir*1.3846154).rgb)*0.3162162;
+  c+=(texture(uSrc,uv+uDir*3.2307692).rgb+texture(uSrc,uv-uDir*3.2307692).rgb)*0.0702703;
+  o=vec4(c,1.0); }`;
+const FS_FINAL = HEAD + `
+uniform sampler2D uScene, uB1, uB2, uB3; uniform vec2 uCanvas; uniform float uBloom, uTime;
+out vec4 o;
+float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+void main(){ vec2 uv=gl_FragCoord.xy/uCanvas;
+  vec3 b=texture(uB1,uv).rgb*0.6+texture(uB2,uv).rgb*0.7+texture(uB3,uv).rgb*0.55;
+  vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom));
+  vec2 q=uv-0.5; col*=1.0-0.4*dot(q,q);
+  col+=(hash12(gl_FragCoord.xy+fract(uTime)*311.0)-0.5)*0.008;
+  o=vec4(max(col,0.0),1.0); }`;
+
+function shader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(gl.getProgramInfoLog(p));
+  const u = {};
+  for (let i = 0, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i < n; i++) {
+    const { name, type } = gl.getActiveUniform(p, i);
+    u[name.replace(/\[0\]$/, '')] = { loc: gl.getUniformLocation(p, name), type };
+  }
+  return { p, u };
+}
+const PROG = {
+  grain: program(VS_GRAIN, FS_GRAIN), base: program(VS_TRI, FS_BASE),
+  down: program(VS_TRI, FS_DOWN), blur: program(VS_TRI, FS_BLUR), final: program(VS_TRI, FS_FINAL),
+};
+const SETTER = { [gl.FLOAT]: 'uniform1fv', [gl.FLOAT_VEC2]: 'uniform2fv', [gl.FLOAT_VEC3]: 'uniform3fv', [gl.FLOAT_VEC4]: 'uniform4fv', [gl.INT]: 'uniform1iv' };
+function use(P, textures, uniforms) {
+  gl.useProgram(P.p);
+  let unit = 0;
+  for (const [name, t] of Object.entries(textures)) {
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+    if (P.u[name]) gl.uniform1i(P.u[name].loc, unit);
+    unit++;
+  }
+  for (const [name, v] of Object.entries(uniforms)) {
+    const u = P.u[name]; if (!u || u.type === gl.SAMPLER_2D) continue;
+    gl[SETTER[u.type]](u.loc, typeof v === 'number' ? [v] : v);
+  }
+}
+
+// ---------- GL resources ----------
+const owned = [];
+function mkTex(w, h, ifmt, fmt, type, data, filter = gl.NEAREST, keep = false) {
+  const t = gl.createTexture(); if (!keep) owned.push(['Texture', t]);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (data instanceof HTMLCanvasElement) gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, fmt, type, data);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, fmt, type, data);
+  return t;
+}
+function mkFbo(t) {
+  const f = gl.createFramebuffer(); owned.push(['Framebuffer', f]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return f;
+}
+const hdr = (w, h) => { const t = mkTex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null, gl.LINEAR); return { t, f: mkFbo(t), w, h }; };
+function freeAll() { for (const [kind, o] of owned) gl['delete' + kind](o); owned.length = 0; }
+function pass(fbo, w, h) { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, w, h); }
+const tri = () => gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+// ---------- Physics (Rust → WASM) ----------
+let X = null, world = 0;
+async function loadPhysics() {
+  const bytes = Uint8Array.from(atob(WASM_B64), c => c.charCodeAt(0));
+  X = (await WebAssembly.instantiate(bytes, {})).instance.exports;
+}
+function applyPreset() {
+  const p = VARIANTS[vi].p, t = tuned;
+  X.world_set_params(world, t.gravity ?? p.gravity, t.wind ?? p.wind, t.turb ?? p.turb, p.drag, RADIUS, p.friction, p.floorFriction,
+    p.restitution, t.cursor ?? CURSOR_R, CAP / 3.5, p.source);
+}
+
+// ---------- Text → obstacles ----------
+// Every word of every [data-collide] element is drawn where the DOM laid it out: red = fill, green = outline.
+function rasterizeText(scale, w, h, outline) {
+  const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h);
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height); x.setTransform(scale, 0, 0, scale, 0, 0);
+  const hr = hero.getBoundingClientRect();
+  for (const el of hero.querySelectorAll('[data-collide]')) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node; (node = walker.nextNode());) {
+      const cs = getComputedStyle(node.parentElement), fs = parseFloat(cs.fontSize);
+      x.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      if ('letterSpacing' in x) x.letterSpacing = `${parseFloat(cs.letterSpacing) || 0}px`;
+      const upper = cs.textTransform === 'uppercase';
+      for (const m of node.data.matchAll(/\S+/g)) {
+        const range = document.createRange(); range.setStart(node, m.index); range.setEnd(node, m.index + m[0].length);
+        const r = range.getClientRects()[0]; if (!r) continue;
+        const word = upper ? m[0].toUpperCase() : m[0], met = x.measureText(word);
+        const asc = met.fontBoundingBoxAscent, desc = met.fontBoundingBoxDescent;
+        const bx = r.left - hr.left, by = r.top - hr.top + (r.height - (asc + desc)) / 2 + asc;
+        x.globalCompositeOperation = 'source-over'; x.fillStyle = 'rgb(255,0,0)'; x.fillText(word, bx, by);
+        if (outline) { x.globalCompositeOperation = 'lighter'; x.strokeStyle = 'rgb(0,255,0)'; x.lineWidth = Math.max(1, fs * 0.035); x.strokeText(word, bx, by); }
+      }
+    }
+  }
+  return c;
+}
+let textTex = null, sdfTex = null, sdfSize = [1, 1], obstacleTimer = 0;
+function updateObstacles() {
+  if (!world) return;
+  if (textTex) gl.deleteTexture(textTex);
+  textTex = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterizeText(DPR, canvas.width, canvas.height, true), gl.LINEAR, true);
+  const mw = Math.ceil(W * 0.5), mh = Math.ceil(H * 0.5), px = rasterizeText(0.5, mw, mh, false).getContext('2d').getImageData(0, 0, mw, mh).data;
+  const maskPtr = X.world_mask_alloc(world, mw, mh, 0.5);   // may grow WASM memory: take the buffer view after
+  const mask = new Uint8Array(X.memory.buffer, maskPtr, mw * mh);
+  for (let i = 0; i < mw * mh; i++) mask[i] = px[i * 4];
+  X.world_mask_commit(world);
+  if (sdfTex) gl.deleteTexture(sdfTex);
+  sdfTex = mkTex(mw, mh, gl.R16F, gl.RED, gl.FLOAT, new Float32Array(X.memory.buffer, X.world_sdf_ptr(world), mw * mh), gl.LINEAR, true);
+  sdfSize = [mw, mh];
+}
+const scheduleObstacles = () => { clearTimeout(obstacleTimer); obstacleTimer = setTimeout(updateObstacles, 40); };
+new MutationObserver(scheduleObstacles).observe(hero, { subtree: true, childList: true, characterData: true });
+tagline.addEventListener('input', scheduleObstacles);
+tagline.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tagline.blur(); } });
+
+// ---------- Input ----------
+const mouse = { x: 0, y: 0, active: false };
+const burstFx = { x: 0, y: 0, t0: -1e9 };
+addEventListener('pointermove', e => {
+  const r = hero.getBoundingClientRect();
+  mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
+  mouse.active = mouse.y >= 0 && mouse.y <= r.height && mouse.x >= 0 && mouse.x <= r.width;
+}, { passive: true });
+document.documentElement.addEventListener('pointerleave', () => { mouse.active = false; });
+let down = null;
+addEventListener('pointerdown', e => { down = e.target.closest('.switcher, .tune, a, button, [contenteditable]') ? null : [e.clientX, e.clientY]; });
+addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) { down = null; return; }
+  down = null; const r = hero.getBoundingClientRect();
+  if (e.clientY - r.top > r.height) return;
+  fireBurst(e.clientX - r.left, e.clientY - r.top);
+});
+function fireBurst(x, y) { if (world) X.world_burst(world, x, y, BURST_R, BURST_V); burstFx.x = x; burstFx.y = y; burstFx.t0 = simT; }
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') go(-1);
+  else if (e.key === 'ArrowRight') go(1);
+  else if (e.key === 'p') goPal(1);
+});
+
+// ---------- Tuning (?tune=1) ----------
+const tuned = {};
+if (qs.has('tune')) {
+  const panel = document.getElementById('tune'); panel.hidden = false;
+  for (const [key, min, max] of [['gravity', 0, 1500], ['wind', 0, 800], ['turb', 0, 500], ['cursor', 8, 60]]) {
+    const label = document.createElement('label'), input = document.createElement('input'), out = document.createElement('span');
+    input.type = 'range'; input.min = min; input.max = max; input.id = 'tune-' + key;
+    input.value = key === 'cursor' ? CURSOR_R : VARIANTS[vi].p[key]; out.textContent = input.value;
+    input.oninput = () => { tuned[key] = +input.value; out.textContent = input.value; if (world) applyPreset(); };
+    label.append(key, input, out); panel.append(label);
+  }
+}
+
+// ---------- Build / loop ----------
+let W = 0, H = 0, scene, light, lightTmp, bloom, vbo, grainVao, building = Promise.resolve();
+const pal = () => PALETTES[pi];
+const build = () => (building = building.then(buildNow));
+async function buildNow() {
+  const P = pal(), root = document.documentElement.style;
+  for (const [k, v] of Object.entries(P.css)) root.setProperty('--' + k, v);
+  root.setProperty('--font', `${P.font}, ${FONT}`); root.setProperty('--weight', P.weight); root.setProperty('--track', P.track);
+  document.getElementById('plabel').textContent = P.label;
+  document.getElementById('vlabel').textContent = VARIANTS[vi].label;
+  await Promise.race([document.fonts.load(`${P.weight} 100px ${P.font}`).catch(() => {}), new Promise(r => setTimeout(r, 2500))]);
+  await document.fonts.ready;
+  if (!X) await loadPhysics();
+  freeAll();
+  W = hero.clientWidth; H = hero.clientHeight;
+  const cw = canvas.width = Math.round(W * DPR), ch = canvas.height = Math.round(H * DPR);
+  scene = hdr(cw, ch); light = hdr(Math.ceil(cw / 4), Math.ceil(ch / 4)); lightTmp = hdr(light.w, light.h);
+  bloom = [2, 4, 8].map(d => [hdr(Math.ceil(cw / d), Math.ceil(ch / d)), hdr(Math.ceil(cw / d), Math.ceil(ch / d))]);
+  if (world) X.world_free(world);
+  world = X.world_new(CAP, W, H, 1 + ((Math.random() * 1e9) | 0));
+  applyPreset();
+  if (!vbo) {
+    vbo = gl.createBuffer(); grainVao = gl.createVertexArray();
+    gl.bindVertexArray(grainVao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
+    gl.bindVertexArray(emptyVao);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, CAP * 24, gl.DYNAMIC_DRAW);
+  updateObstacles();
+}
+function setParam(k, v) { try { const u = new URL(location.href); u.searchParams.set(k, v); history.replaceState(null, '', u); } catch {} }
+function go(d) { vi = (vi + d + VARIANTS.length) % VARIANTS.length; setParam('variant', VARIANTS[vi].key); build(); }
+function goPal(d) { pi = (pi + d + PALETTES.length) % PALETTES.length; setParam('palette', pal().key); build(); }
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.getElementById('pprev').onclick = () => goPal(-1);
+document.getElementById('pnext').onclick = () => goPal(1);
+let resizeTimer = 0;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 150); });
+
+function runBloom() {
+  let src = scene;
+  for (const [a, b] of bloom) {
+    use(PROG.down, { uSrc: src.t }, { uDst: [a.w, a.h], uTexel: [1 / src.w, 1 / src.h] }); pass(a.f, a.w, a.h); tri();
+    use(PROG.blur, { uSrc: a.t }, { uDst: [b.w, b.h], uDir: [1.4 / a.w, 0] }); pass(b.f, b.w, b.h); tri();
+    use(PROG.blur, { uSrc: b.t }, { uDst: [a.w, a.h], uDir: [0, 1.4 / a.h] }); pass(a.f, a.w, a.h); tri();
+    src = a;
+  }
+}
+let simT = 0, simMs = 0, active = 0;
+function present(dt) {
+  if (!world || !textTex) return;
+  simT += dt;
+  X.world_cursor(world, mouse.x, mouse.y, mouse.active ? 1 : 0);
+  const t0 = performance.now(); X.world_step(world, dt); simMs = simMs * 0.9 + (performance.now() - t0) * 0.1;
+  active = X.world_active(world);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(X.memory.buffer, X.world_out_ptr(world), active * 6));
+  const P = pal().gl;
+  // 1. light map: moving grains drawn at quarter resolution, then blurred wide
+  pass(light.f, light.w, light.h); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  if (diag !== 'nolight') {
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.bindVertexArray(grainVao);
+    use(PROG.grain, {}, { uRes: [W, H], uR: 6, uStreak: 0.03, uEmit: 5.0, ...P }); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, active);
+    gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
+    for (const spread of [3.0, 6.0]) {
+      use(PROG.blur, { uSrc: light.t }, { uDst: [lightTmp.w, lightTmp.h], uDir: [spread / light.w, 0] }); pass(lightTmp.f, lightTmp.w, lightTmp.h); tri();
+      use(PROG.blur, { uSrc: lightTmp.t }, { uDst: [light.w, light.h], uDir: [0, spread / light.h] }); pass(light.f, light.w, light.h); tri();
+    }
+  }
+  // 2. base: lit text and bounce light
+  gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao); pass(scene.f, scene.w, scene.h);
+  use(PROG.base, { uText: textTex, uLight: light.t, uSdf: sdfTex }, {
+    uCanvas: [scene.w, scene.h], uSdfTexel: [1 / sdfSize[0], 1 / sdfSize[1]], uRes: [W, H], uAccent: P.uStrokeCol,
+    uCursor: [mouse.x, mouse.y, tuned.cursor ?? CURSOR_R, mouse.active ? 1 : 0], uBurst: [burstFx.x, burstFx.y, simT - burstFx.t0, BURST_R], ...P });
+  tri();
+  // 3. grains
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.bindVertexArray(grainVao);
+  use(PROG.grain, {}, { uRes: [W, H], uR: RADIUS * 1.15, uStreak: 0.024, uEmit: 0, ...P }); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, active);
+  gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
+  runBloom();
+  pass(null, canvas.width, canvas.height);
+  use(PROG.final, { uScene: diag === 'showlight' ? light.t : scene.t, uB1: bloom[0][0].t, uB2: bloom[1][0].t, uB3: bloom[2][0].t },
+    { uCanvas: [canvas.width, canvas.height], uBloom: diag === 'nobloom' ? 0 : 0.8, uTime: simT });
+  tri();
+}
+let last = 0, frames = 0, fpsT = 0, fps = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const t = now / 1000, dt = last ? Math.min(t - last, 1 / 30) : 1 / 60; last = t;
+  frames++; if (t - fpsT > 0.5) { fps = frames / (t - fpsT); frames = 0; fpsT = t;
+    hud.textContent = `${VARIANTS[vi].label} / ${pal().label} — ${active.toLocaleString()} grains · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps\n${VARIANTS[vi].hint}\nmove: shove grains · click: burst · type in the tagline · ←/→ preset · p: scheme`; }
+  if (scrollY > H) return;
+  present(dt);
+}
+if (capture) document.querySelectorAll('.hud, .switcher, .edit-hint').forEach(e => e.hidden = true);
+build().then(() => {
+  for (let i = 0, n = parseInt(qs.get('warm'), 10) || 0; i < n; i++) { X.world_step(world, 1 / 60); simT += 1 / 60; }  // physics only
+  if (capture) window.__capture = { frame: present, burst: fireBurst };
+  else if (reduceMotion) {
+    for (let i = 0; i < 300; i++) X.world_step(world, 1 / 60);
+    present(1 / 60);
+    hud.textContent = 'Reduced motion is on: showing a still frame. Click the hero to animate.';
+    canvas.addEventListener('pointerdown', () => requestAnimationFrame(frame), { once: true });
+  } else requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>
