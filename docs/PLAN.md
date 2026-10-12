@@ -1,6 +1,6 @@
 # Portfolio plan
 
-Status: 2026-10-12. The hero is decided (spike round 4, *Currents*). Next is **Phase 0, the production foundation**, then **Phase 1, the game**. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
+Status: 2026-10-12. Phase 0 (production foundation) is in PR #2, with CI green. Phase 1, slice 1 (the game's tracer bullet) is in PR #3, stacked on #2. Next: slice 2, combat. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
 
 ## Settled
 
@@ -43,7 +43,7 @@ Acceptance:
 Rumble Box's loop: defeated enemies stay in the arena as physical debris, and you pile them up to climb out ([MobyGames](https://www.mobygames.com/game/32162/rumble-box/), [bit-tech](https://bit-tech.net/blogs/free-games-i-like-rumble-box/1/)).
 
 Each slice below is playable on its own, in order:
-1. **Tracer bullet.** A Bevy app in `crates/game` builds to WASM and loads at `site/play/`. It shows a box arena where a player body runs and jumps (avian2d dynamic body with ground detection).
+1. **Tracer bullet. Done (PR #3).** A Bevy app in `crates/game` builds to WASM and loads at `site/play/`. It shows a box arena where a player body runs and jumps (avian2d dynamic body with ground detection).
 2. **Combat.** Punch, kick and grab hitboxes with knockback and hit-stop. One enemy type ("fodder") walks over and attacks. Health and defeat.
 3. **Debris.** A defeated enemy breaks into its block parts as avian rigid bodies that persist. The pile is solid and climbable.
 4. **Escape.** Wave spawner; an exit hatch at the top of the box; reaching it loads the next, harder box. Score and run timer.
@@ -53,7 +53,7 @@ Each slice below is playable on its own, in order:
 Later, not v1: more enemy types (thugs, ninjas, bomb-heads), bonus stages, gamepad and touch, the 3D port.
 
 Risks:
-- **Bevy WASM size** (several MB). It's acceptable behind a click. Measure after slice 1; apply `wasm-opt -Oz`, trimmed Bevy features and LTO.
+- **Bevy WASM size.** Measured after slice 1. With thin LTO, no stripping: 87 MB. With symbols stripped: 39 MB. With fat LTO and `opt-level = "z"`: 23 MB. With `wasm-opt -Oz`: 17.6 MB. With trimmed Bevy features: **16.1 MB raw, 4.98 MB gzipped**. Almost all of what's left is Bevy's renderer. Acceptable behind the Play click, with a loading note.
 - **The GNU host toolchain** may hit issues with native Bevy builds on Windows. Fallback: `rustup toolchain install stable-msvc` (needs VS Build Tools), or iterate in WASM only.
 - **Avian performance** with hundreds of debris bodies in single-threaded WASM. Measure in slice 3. If needed, fewer and larger chunks, or sleeping bodies.
 

@@ -1,0 +1,18 @@
+[package]
+name = "game"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Rumble Box-style escape-the-box brawler (Bevy + Avian), served lazily at /play."
+
+[dependencies]
+game-core = { path = "../game-core" }
+# Pinned pair: avian2d 0.7 targets Bevy 0.19 (Bevy 0.20 is not yet supported by Avian). Upgrade together.
+# Explicit features instead of the "2d" bundle: no scenes, reflection auto-registration, picking, gamepads,
+# clipboard or sysinfo. Each of those adds megabytes to the wasm and the game uses none of them.
+bevy = { version = "=0.19.1", default-features = false, features = [
+    "std", "async_executor", "bevy_asset", "bevy_log", "bevy_state",
+    "bevy_winit", "web", "webgl2",
+    "2d_api", "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_sprite_render", "default_font",
+] }
+avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
