@@ -16,6 +16,15 @@ Reference studied: canwetakethis.online ("letterfall"): ~46 KB vanilla JS, a cus
 
 ## In progress: hero spike
 
+**Round 2 (current), in `spikes/hero2/`.** Round 1 was too tasteful. Your feedback: not enough motion, particles not distinct, too little contrast. You asked for more neon, swirl without the cursor, particles pooling from a source, and a "granular tesseract Rumble Box". Round 2 answers that:
+- **A · Hypercube**: a 4D tesseract rotating on its own, built from about 40k grains. Grains burst from the core, swirl, settle onto the edges and flow along them, then fall back into the core. Drag rotates it in 4D.
+- **B · Sandfall**: a Rumble Box arena. A Margolus falling-sand automaton on an RGBA8UI grid; two roaming spouts, floor vents that open and close, and grains that slowly decay so the piles stay at a steady height. Self-triggered blasts.
+- **C · Vortex pool**: a fountain feeds a whirlpool that pools into the name. The particle count scales with glyph area, so the grains stay distinct.
+- Shared across all three: a pure black background, three neon schemes (`netrunner`, `synthwave`, `gold`), round sprites with white-hot centers, a 3-level bloom, and self-triggered shockwaves.
+- Clips: `spikes/hero2/motion/*.mp4`, recorded with `spikes/hero2/capture/record2.mjs`.
+
+**Round 1 (superseded), in `spikes/hero/`.** Details below are kept for reference.
+
 The spike lives on branch `spike/hero` (draft PR #1, do not merge). `spikes/hero/hero-prototype.html` is a throwaway WebGL2 page. It answers only "which look?"; the shader math is what carries over to WGSL.
 
 - `?variant=particles` (A): about 147k particles spring-bound to pixels of the name. The cursor repels them, a click sends a shockwave, Space scatters them.
@@ -34,8 +43,8 @@ Verified: both variants render with no console errors in headless Chrome using S
 Known spike issues: in B, text placed over the flow (the tagline) is hard to read. Under reduced motion, the page shows a settled still and animates only after a click.
 
 Published previews (private Claude artifacts; share them from each page's Share menu):
-- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. This is the spike with its document wrapper stripped; republish it after spike changes.
-- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. The four MP4s, with timelines of the scripted events.
+- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. Now runs round 2: the `hero2` spike with its document wrapper stripped. Republish it after spike changes.
+- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. Now shows the round-2 clips, one per variant, each in a different scheme.
 
 ## Environment
 
