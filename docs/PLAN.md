@@ -4,6 +4,8 @@ Status: 2026-10-12. Hero look is being chosen; nothing production-grade exists y
 
 ## Settled
 
+**Hero (decided 2026-10-12):** round 4 *Currents* (`spikes/hero4`, the spike/hero branch). Welding sparks drift in from off-screen torches and meander around always-readable text. Holding the pointer raises a 40 px forcefield that disappears on release. All three colour schemes ship (random per visit, switchable in the nav). Tagline: "RL/ML enthusiast and recent LLM convert". Next: port it to `main` as production code (crates/sim + site), then the game.
+
 | Decision | Choice | Why |
 |---|---|---|
 | Engine | Rust → WASM, `wgpu` (WebGPU, WebGL2 fallback), hand-rolled loop | Small bundle for a landing page; Bevy-sized WASM would delay first paint. |
