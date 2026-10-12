@@ -1,6 +1,6 @@
 # Portfolio plan
 
-Status: 2026-10-12. Hero look is being chosen; nothing production-grade exists yet.
+Status: 2026-10-12. Hero look is being chosen; nothing production-grade exists yet. Repo, Rust toolchain and preview pages are set up.
 
 ## Settled
 
@@ -16,7 +16,7 @@ Reference studied: canwetakethis.online ("letterfall"): ~46 KB vanilla JS, a cus
 
 ## In progress: hero spike
 
-`spikes/hero/hero-prototype.html` is a throwaway WebGL2 page. It answers only "which look?"; the shader math is what carries over to WGSL.
+The spike lives on branch `spike/hero` (draft PR #1, do not merge). `spikes/hero/hero-prototype.html` is a throwaway WebGL2 page. It answers only "which look?"; the shader math is what carries over to WGSL.
 
 - `?variant=particles` (A): about 147k particles spring-bound to pixels of the name. The cursor repels them, a click sends a shockwave, Space scatters them.
 - `?variant=flow` (B): about 262k particles following curl noise that flows around the name's SDF (Bridson's ramp). The cursor makes a vortex; `t` cycles the text style.
@@ -31,18 +31,26 @@ Reference studied: canwetakethis.online ("letterfall"): ~46 KB vanilla JS, a cus
 
 Verified: both variants render with no console errors in headless Chrome using SwiftShader (software renderer, so fps is meaningless there). Not yet measured on a real GPU.
 
-Known spike issues: in B, text placed over the flow (the tagline) is hard to read. Neither variant has a reduced-motion path yet.
+Known spike issues: in B, text placed over the flow (the tagline) is hard to read. Under reduced motion, the page shows a settled still and animates only after a click.
+
+Published previews (private Claude artifacts; share them from each page's Share menu):
+- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. This is the spike with its document wrapper stripped; republish it after spike changes.
+- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. The four MP4s, with timelines of the scripted events.
+
+## Environment
+
+- Rust 1.99 stable, installed via rustup with the **GNU host** (`x86_64-pc-windows-gnu`, using the bundled linker, so no Visual Studio Build Tools), plus the `wasm32-unknown-unknown` target, clippy and rustfmt. Verified that a Rust 2024 cdylib builds to wasm32 and runs under Node. If a crate with C dependencies ever needs MSVC, run `rustup toolchain install stable-msvc`.
+- Pushes go over HTTPS with `gh` as the credential helper; there is no GitHub SSH key on this machine.
 
 ## Open (needs David)
 
 1. Pick A, B, or a mix (e.g. B's flow with A's particles forming the name on load), and pick a colour scheme. The schemes could also be a user-facing theme toggle.
-2. Install Rust: `rustup` plus a host linker (MSVC Build Tools, or the `x86_64-pc-windows-gnu` toolchain), and add the `wasm32-unknown-unknown` target. Nothing is installed today.
-3. GitHub repo name and visibility; connect Cloudflare Pages to it.
-4. Game shape. Recommendation: low-poly 3D with a fixed isometric camera, `rapier3d` for physics, and enemies built from primitives drawn with instancing. The pile-of-bodies mechanic doubles as the performance showcase (thousands of live rigid bodies).
+2. Connect Cloudflare Pages to the repo (needs your Cloudflare login).
+3. Game shape. Recommendation: low-poly 3D with a fixed isometric camera, `rapier3d` for physics, and enemies built from primitives drawn with instancing. The pile-of-bodies mechanic doubles as the performance showcase (thousands of live rigid bodies).
 
 ## Next
 
-1. Hero choice → capture the verdict here, then move the spike to a `spike/hero` branch (out of `main`).
-2. Scaffold a Cargo workspace: `crates/sim` (pure and native-testable), `crates/web` (wasm-bindgen + wgpu), `site/` (static HTML/CSS).
+1. Hero choice → capture the verdict here and on PR #1, then close the PR.
+2. Install `wasm-bindgen-cli`, pinned to the `wasm-bindgen` crate version, and scaffold a Cargo workspace: `crates/sim` (pure and native-testable), `crates/web` (wasm-bindgen + wgpu), `site/` (static HTML/CSS).
 3. Port the chosen hero to wgpu: compute-shader update on WebGPU, CPU/WASM update on the WebGL2 fallback.
 4. Deploy the hero-only page to Cloudflare Pages, then start the game.
