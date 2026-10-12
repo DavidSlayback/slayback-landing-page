@@ -1,0 +1,542 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway visual spike. Not production code.
+  Question: which hero look should the portfolio use?
+  Two variants on one page, switchable via ?variant=particles|flow, the bottom bar, or ←/→.
+  Colour schemes: ?palette=netrunner|renaissance, the second bar control, or P.
+  ?capture=1 disables the loop for frame-exact recording (an external Playwright recorder).
+  ?n=<side> overrides the particle grid (side² particles), e.g. ?n=1024 ≈ 1M. ?warm=<frames> pre-runs the sim.
+  The real build is Rust + wgpu; only the shader math here is meant to carry over.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hero Spike</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --bg: #05060b; --fg: #e9ecf5; --muted: #8a90a6; --accent: #8a90a6; --font: system-ui; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); }
+  .hero { position: relative; height: 100vh; height: 100svh; overflow: hidden; }
+  #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tag { position: absolute; left: 0; right: 0; bottom: 13vh; text-align: center; color: var(--muted);
+    letter-spacing: .3em; text-transform: uppercase; font-size: 14px; font-weight: 500; pointer-events: none; }
+  .projects { max-width: 760px; margin: 0 auto; padding: 96px 16px 160px; }
+  .projects h2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .projects ul { list-style: none; padding: 0; margin: 0; }
+  .projects li { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0; border-bottom: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
+  .projects h2 { color: var(--accent); }
+  .projects a:hover { color: var(--accent); }
+  .projects a { color: var(--fg); text-decoration: none; font-size: 22px; font-weight: 600; }
+  .projects span { color: var(--muted); font-size: 14px; align-self: center; }
+  .hud { position: fixed; top: 12px; left: 12px; z-index: 10; pointer-events: none; white-space: pre;
+    font: 12px/1.5 ui-monospace, Consolas, monospace; color: #cfd3e0; background: rgba(0,0,0,.55);
+    padding: 8px 10px; border-radius: 8px; }
+  .switcher { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10;
+    display: flex; align-items: center; gap: 10px; background: #fff; color: #111; border-radius: 999px;
+    padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; }
+  .switcher button { border: 0; background: #111; color: #fff; width: 28px; height: 28px; border-radius: 50%;
+    cursor: pointer; font-size: 14px; }
+  .switcher .sep { width: 1px; height: 20px; background: #ccc; margin: 0 4px; }
+  .err { position: absolute; inset: auto 16px 40% 16px; text-align: center; color: #ff8a80; font: 14px ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<section class="hero">
+  <canvas id="c" aria-hidden="true"></canvas>
+  <h1 class="sr-only">David Slayback</h1>
+  <p class="tag">Tagline placeholder</p>
+  <p class="err" id="err" hidden></p>
+</section>
+<section class="projects">
+  <h2>Projects</h2>
+  <ul>
+    <li><a href="#">Project one ↗</a><span>Placeholder description</span></li>
+    <li><a href="#">Project two ↗</a><span>Placeholder description</span></li>
+    <li><a href="#">Project three ↗</a><span>Placeholder description</span></li>
+  </ul>
+</section>
+<div class="hud" id="hud"></div>
+<nav class="switcher" aria-label="Prototype variant">
+  <button id="prev" type="button" aria-label="Previous variant">‹</button>
+  <span id="vlabel"></span>
+  <button id="next" type="button" aria-label="Next variant">›</button>
+  <span class="sep"></span>
+  <button id="pprev" type="button" aria-label="Previous palette">‹</button>
+  <span id="plabel"></span>
+  <button id="pnext" type="button" aria-label="Next palette">›</button>
+</nav>
+<script>
+'use strict';
+const VARIANTS = [
+  { key: 'particles', label: 'A · Particle name' },
+  { key: 'flow', label: 'B · Flow field' },
+];
+// Colour schemes. css → page chrome; gl → particle colours, background, grade, and post FX.
+const PALETTES = [
+  { key: 'netrunner', label: 'Netrunner', font: '"Chakra Petch"', weight: 700, upper: true, track: 0.04, glitch: true,
+    css: { bg: '#020a0c', fg: '#c8fff0', muted: '#3fa892', accent: '#00ffa3' },
+    gl: { uBg0: [0.004, 0.025, 0.03], uBg1: [0.008, 0.055, 0.075], uTextCol: [0.78, 1.0, 0.92], uAccent: [0.0, 1.0, 0.64],
+      uC0: [0.0, 0.62, 1.0], uC1: [0.0, 1.0, 0.82], uC2: [0.5, 1.0, 0.18], uHot: [0.88, 1.0, 0.96],
+      uSlow: [0.0, 0.14, 0.32], uFast: [0.0, 0.85, 1.0], uNear: [0.3, 1.0, 0.45],
+      uGrade: 0, uLo: [0, 0, 0], uMid: [0, 0, 0], uHi: [0, 0, 0],
+      uScan: 0.16, uAberr: 1.6, uOverlay: 1, uGlow: 0.9, uGrain: 0.025 } },
+  { key: 'renaissance', label: 'Human Revolution', font: '"Rajdhani"', weight: 700, upper: true, track: 0.16, glitch: false,
+    css: { bg: '#0b0703', fg: '#ffe6b0', muted: '#a8792c', accent: '#f0a535' },
+    gl: { uBg0: [0.02, 0.012, 0.004], uBg1: [0.075, 0.042, 0.012], uTextCol: [1.0, 0.86, 0.55], uAccent: [1.0, 0.66, 0.2],
+      uC0: [1.0, 0.58, 0.1], uC1: [1.0, 0.8, 0.38], uC2: [0.85, 0.42, 0.06], uHot: [1.0, 0.97, 0.86],
+      uSlow: [0.38, 0.18, 0.03], uFast: [1.0, 0.72, 0.26], uNear: [1.0, 0.93, 0.68],
+      uGrade: 0.85, uLo: [0.02, 0.012, 0.0], uMid: [0.58, 0.32, 0.06], uHi: [1.0, 0.92, 0.66],   // the "piss filter"
+      uScan: 0.0, uAberr: 0.5, uOverlay: 2, uGlow: 1.3, uGrain: 0.04 } },
+];
+const qs = new URLSearchParams(location.search);
+let pi = Math.max(0, PALETTES.findIndex(p => p.key === qs.get('palette')));
+let vi = Math.max(0, VARIANTS.findIndex(v => v.key === qs.get('variant')));
+const sideOverride = parseInt(qs.get('n'), 10) || 0;
+const FONT = '"Segoe UI Variable Display","Segoe UI","SF Pro Display",system-ui,-apple-system,Arial,sans-serif';
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const canvas = document.getElementById('c'), hud = document.getElementById('hud');
+
+function fail(msg) { const e = document.getElementById('err'); e.textContent = msg; e.hidden = false; throw new Error(msg); }
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+if (!gl) fail('WebGL2 unavailable');
+if (!gl.getExtension('EXT_color_buffer_float')) fail('EXT_color_buffer_float unavailable');
+gl.bindVertexArray(gl.createVertexArray());
+
+// ---------- GLSL ----------
+// Classic 3D simplex noise, Ashima Arts / Stefan Gustavson (MIT).
+const NOISE = `
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+`;
+const HEAD = '#version 300 es\nprecision highp float;\nprecision highp sampler2D;\n';
+
+const VS_TRI = HEAD + `void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position=vec4(p*2.0-1.0,0.0,1.0); }`;
+
+// Variant A sim: each particle is spring-bound to a home pixel inside the name.
+const FS_SIM_P = HEAD + `
+uniform sampler2D uState, uHome;
+uniform float uTime, uDt, uScatter;
+uniform vec4 uMouse;  // x, y, active, radius
+uniform vec4 uPulse;  // x, y, age, strength
+out vec4 o;
+${NOISE}
+void main(){
+  ivec2 c=ivec2(gl_FragCoord.xy);
+  vec4 s=texelFetch(uState,c,0), h=texelFetch(uHome,c,0);
+  vec2 p=s.xy, v=s.zw;
+  float w=6.2831853*mix(0.7,1.5,h.z);                 // per-particle spring frequency → staggered reassembly
+  vec2 a=(h.xy-p)*w*w - v*(2.0*0.45*w);
+  a+=70.0*vec2(snoise(vec3(h.xy*0.011,uTime*0.35)), snoise(vec3(h.xy*0.011+41.0,uTime*0.35)));  // idle shimmer
+  if(uMouse.z>0.5){ vec2 d=p-uMouse.xy; float r=length(d);
+    if(r<uMouse.w){ float q=1.0-r/uMouse.w; a+=d/max(r,1.0)*q*q*14000.0; } }
+  if(uPulse.z<1.6){ vec2 d=p-uPulse.xy; float r=length(d);
+    float k=exp(-pow((r-uPulse.z*1100.0)/70.0,2.0))*(1.0-uPulse.z/1.6); a+=d/max(r,1.0)*k*uPulse.w; }
+  if(uScatter>0.0){ float an=hash12(vec2(c)+0.5)*6.2831853;
+    v+=vec2(cos(an),sin(an))*uScatter*(0.25+hash12(vec2(c)+17.3)); }
+  v+=a*uDt; p+=v*uDt;
+  o=vec4(p,v);
+}`;
+
+// Variant B sim: particles advect through divergence-free curl noise that wraps around the name's SDF.
+const FS_SIM_F = HEAD + `
+uniform sampler2D uState, uSdf;
+uniform vec2 uRes;
+uniform float uTime, uDt, uWind, uScale, uAmp, uInfl, uInflWind, uYc, uSeed;
+uniform vec4 uMouse;  // x, y, -, vortex strength
+out vec4 o;
+${NOISE}
+float ramp(float r){ r=clamp(r,-1.0,1.0); float r3=r*r*r; return 1.875*r-1.25*r3+0.375*r3*r*r; }
+float sdfAt(vec2 p){ return texture(uSdf,p/uRes).r; }
+float psi(vec2 p){
+  float n=uAmp*(snoise(vec3(p*uScale,uTime*0.07))+0.5*snoise(vec3(p*uScale*2.3,uTime*0.11+17.0)));
+  vec2 dm=p-uMouse.xy; float vort=uMouse.w*exp(-dot(dm,dm)*(1.0/12100.0));
+  float d=sdfAt(p);
+  // Both ramps →0 at glyph edges, so no flow enters a letter. The wind is measured from the text's centre line
+  // with a wide ramp; ψ=U·y with a hard zero on the boundary would make jets proportional to absolute y.
+  return ramp(d/uInflWind)*uWind*(p.y-uYc) + ramp(d/uInfl)*(n+vort);
+}
+void main(){
+  ivec2 c=ivec2(gl_FragCoord.xy);
+  vec4 s=texelFetch(uState,c,0);
+  vec2 p=s.xy; float life=s.z-uDt;
+  const float e=1.5; float c0=psi(p);
+  vec2 v=vec2(psi(p+vec2(0.0,e))-c0, c0-psi(p+vec2(e,0.0)))/e;   // v = curl(psi)
+  p+=v*uDt;
+  bool dead=life<=0.0||p.x<-30.0||p.x>uRes.x+30.0||p.y<-30.0||p.y>uRes.y+30.0||sdfAt(p)<-0.5;
+  if(dead){
+    vec2 q=vec2(c)+uSeed*vec2(1013.0,727.0);
+    float r1=hash12(q), r2=hash12(q+19.19), r3=hash12(q+47.7), r4=hash12(q+83.1);
+    p = r1<0.35 ? vec2(-r2*20.0, r3*uRes.y) : vec2(r2*uRes.x, r3*uRes.y);
+    if(sdfAt(p)<uInfl*0.2) p=vec2(-r2*20.0, r3*uRes.y);
+    life=2.0+r4*7.0;
+  }
+  o=vec4(p,life,length(v));
+}`;
+
+const VS_DRAW_P = HEAD + `
+uniform sampler2D uState, uHome; uniform int uSide; uniform vec2 uRes; uniform float uSize, uGain;
+uniform vec3 uC0, uC1, uC2, uHot;
+out vec3 vCol;
+vec3 pal(float t){ return t<0.5?mix(uC0,uC1,t*2.0):mix(uC1,uC2,t*2.0-1.0); }
+void main(){
+  ivec2 c=ivec2(gl_VertexID%uSide, gl_VertexID/uSide);
+  vec4 s=texelFetch(uState,c,0), h=texelFetch(uHome,c,0);
+  float sp=length(s.zw);
+  vec3 col=pal(clamp((h.x/uRes.x-0.2)/0.6,0.0,1.0));
+  col=mix(col,uHot,smoothstep(150.0,1400.0,sp));
+  vCol=col*uGain*(0.55+0.45*h.w)*(1.0+smoothstep(100.0,1200.0,sp));
+  gl_Position=vec4(s.x/uRes.x*2.0-1.0, 1.0-s.y/uRes.y*2.0, 0.0, 1.0);
+  gl_PointSize=uSize;
+}`;
+
+const VS_DRAW_F = HEAD + `
+uniform sampler2D uState, uSdf; uniform int uSide; uniform vec2 uRes; uniform float uSize, uGain, uInfl;
+uniform vec3 uSlow, uFast, uNear;
+out vec3 vCol;
+void main(){
+  ivec2 c=ivec2(gl_VertexID%uSide, gl_VertexID/uSide);
+  vec4 s=texelFetch(uState,c,0);
+  float near=exp(-max(texture(uSdf,s.xy/uRes).r,0.0)/(uInfl*0.6));
+  vec3 col=mix(uSlow,uFast,smoothstep(30.0,200.0,s.w));
+  col=mix(col,uNear,near*0.75);
+  vCol=col*uGain*smoothstep(0.0,0.8,s.z);
+  gl_Position=vec4(s.x/uRes.x*2.0-1.0, 1.0-s.y/uRes.y*2.0, 0.0, 1.0);
+  gl_PointSize=uSize;
+}`;
+
+const FS_POINT = HEAD + `in vec3 vCol; out vec4 o; void main(){ o=vec4(vCol,1.0); }`;
+const FS_FADE = HEAD + `uniform float uKeep; out vec4 o; void main(){ o=vec4(0.0,0.0,0.0,1.0-uKeep); }`;
+const FS_COMP = HEAD + `
+uniform sampler2D uTrail, uText;
+uniform vec2 uCanvas; uniform float uTextMode, uExposure, uTime, uDpr, uGlitch;
+uniform vec3 uBg0, uBg1, uTextCol, uAccent, uLo, uMid, uHi;
+uniform float uGrade, uScan, uAberr, uOverlay, uGlow, uGrain;
+out vec4 o;
+float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
+float hexDist(vec2 p){ p=abs(p); return max(dot(p,vec2(0.5,0.8660254)),p.x); }
+float hexEdge(vec2 p){ const vec2 r=vec2(1.0,1.7320508); vec2 h=r*0.5;
+  vec2 a=mod(p,r)-h, b=mod(p-h,r)-h; return smoothstep(0.44,0.5,hexDist(dot(a,a)<dot(b,b)?a:b)); }
+float gridLine(vec2 fc,float g){ vec2 f=(0.5-abs(fract(fc/g)-0.5))*g; return 1.0-smoothstep(0.5,1.5,min(f.x,f.y)); }
+float textA(vec2 uv){ return texture(uText,vec2(uv.x,1.0-uv.y)).a; }
+void main(){
+  vec2 fc=gl_FragCoord.xy, uv=fc/uCanvas, px=1.0/uCanvas;
+  if(uGlitch>0.0){ float band=floor(uv.y*28.0), f=floor(uTime*30.0);   // horizontal slice tearing
+    if(hash12(vec2(band,f))<0.3) uv.x+=(hash12(vec2(band,f+7.0))-0.5)*0.06*uGlitch; }
+  vec2 off=(uv-0.5)*px*uAberr*6.0;                                     // chromatic aberration grows toward edges
+  vec3 tr=vec3(texture(uTrail,uv+off).r, texture(uTrail,uv).g, texture(uTrail,uv-off).b);
+  vec3 glow=vec3(0.0); float tglow=0.0;
+  for(int i=0;i<8;i++){ float a=float(i)*0.7853982+0.39; vec2 d=vec2(cos(a),sin(a))*px*uDpr;
+    glow+=texture(uTrail,uv+d*5.0).rgb+texture(uTrail,uv+d*14.0).rgb;
+    tglow+=textA(uv+d*6.0)+textA(uv+d*16.0); }
+  glow/=16.0; tglow/=16.0;
+  vec3 bg=mix(uBg0,uBg1,uv.y);
+  float lit=min(dot(glow,vec3(0.3,0.5,0.2)),0.6);
+  float ov=uOverlay<0.5?0.0:uOverlay<1.5?gridLine(fc,40.0*uDpr):hexEdge(fc/(46.0*uDpr));
+  bg+=uAccent*ov*(0.02+0.5*lit);                                      // overlay lit by nearby particles
+  vec3 col=bg+(1.0-exp(-(tr+glow*uGlow)*uExposure));
+  if(uTextMode>0.5){ float a=textA(uv);
+    col=mix(col,bg*0.3,min(tglow*1.4,0.85)*(1.0-a));                  // dark backing keeps the name legible
+    if(uTextMode<1.5) col+=uAccent*tglow*0.35*(1.0-a);                 // neon halo
+    col=mix(col,uTextMode<1.5?uTextCol:bg*0.5,a); }
+  if(uGrade>0.0){ float l=clamp(dot(col,vec3(0.2126,0.7152,0.0722)),0.0,1.0);   // luminance -> gradient map
+    col=mix(col,l<0.5?mix(uLo,uMid,l*2.0):mix(uMid,uHi,l*2.0-1.0),uGrade); }
+  vec2 q=uv-0.5; col*=1.0-0.9*dot(q,q);
+  col*=1.0-uScan*(0.5+0.5*cos(fc.y*2.0943951));                        // 3-device-px scanlines
+  col+=(hash12(fc+fract(uTime*7.13)*517.0)-0.5)*uGrain;
+  o=vec4(max(col,0.0),1.0);
+}`;
+
+function shader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fail(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fail(gl.getProgramInfoLog(p));
+  const u = {};
+  for (let i = 0, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i < n; i++) {
+    const { name, type } = gl.getActiveUniform(p, i); u[name] = { loc: gl.getUniformLocation(p, name), type };
+  }
+  return { p, u };
+}
+const PROG = {
+  simP: program(VS_TRI, FS_SIM_P), simF: program(VS_TRI, FS_SIM_F),
+  drawP: program(VS_DRAW_P, FS_POINT), drawF: program(VS_DRAW_F, FS_POINT),
+  fade: program(VS_TRI, FS_FADE), comp: program(VS_TRI, FS_COMP),
+};
+// Bind textures to units and set uniforms by name; names the compiler stripped are skipped.
+function use(P, textures, uniforms) {
+  gl.useProgram(P.p);
+  let unit = 0;
+  for (const [name, t] of Object.entries(textures)) {
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+    if (P.u[name]) gl.uniform1i(P.u[name].loc, unit);
+    unit++;
+  }
+  for (const [name, v] of Object.entries(uniforms)) {
+    const u = P.u[name]; if (!u) continue;
+    if (u.type === gl.INT) gl.uniform1i(u.loc, v);
+    else if (typeof v === 'number') gl.uniform1f(u.loc, v);
+    else gl['uniform' + v.length + 'fv'](u.loc, v);
+  }
+}
+
+// ---------- GL resources (freed on every rebuild) ----------
+const owned = [];
+function mkTex(w, h, ifmt, fmt, type, data, filter = gl.NEAREST) {
+  const t = gl.createTexture(); owned.push(['Texture', t]);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (data instanceof HTMLCanvasElement) gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, fmt, type, data);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, fmt, type, data);
+  return t;
+}
+function mkFbo(t) {
+  const f = gl.createFramebuffer(); owned.push(['Framebuffer', f]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  return f;
+}
+const stateTex = (side, data) => mkTex(side, side, gl.RGBA32F, gl.RGBA, gl.FLOAT, data);
+function pingPong(side, data) {
+  const t = [stateTex(side, data), stateTex(side, data)];
+  return { t, f: [mkFbo(t[0]), mkFbo(t[1])], cur: 0 };
+}
+function freeAll() { for (const [kind, o] of owned) gl['delete' + kind](o); owned.length = 0; }
+
+// ---------- Name layout / masks (CSS px space) ----------
+let W = 0, H = 0;
+let L = null;
+const pal = () => PALETTES[pi];
+const nameFont = fs => `${pal().weight} ${fs}px ${pal().font}, ${FONT}`;
+const nameLines = () => pal().upper ? ['DAVID', 'SLAYBACK'] : ['David', 'Slayback'];
+function setType(x, fs) { x.font = nameFont(fs); if ('letterSpacing' in x) x.letterSpacing = `${pal().track * fs}px`; }
+function computeLayout() {
+  const x = document.createElement('canvas').getContext('2d'); setType(x, 100);
+  const widest = Math.max(...nameLines().map(t => x.measureText(t).width));
+  const fs = Math.min(H * 0.28, 100 * W * 0.84 / widest);
+  // letterSpacing adds trailing space after the last glyph; nudge right by half of it to stay centred.
+  L = { fs, cx: W / 2 + pal().track * fs / 2, y1: H * 0.42 - fs * 0.5, y2: H * 0.42 + fs * 0.5 };
+}
+const layout = () => L;
+function maskCanvas(scale) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(W * scale)); c.height = Math.max(1, Math.round(H * scale));
+  const x = c.getContext('2d', { willReadFrequently: true }), L = layout();
+  x.setTransform(scale, 0, 0, scale, 0, 0);
+  setType(x, L.fs); x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff';
+  const [a, b] = nameLines(); x.fillText(a, L.cx, L.y1); x.fillText(b, L.cx, L.y2);
+  return c;
+}
+const alphaOf = c => c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+// Two-pass 8-neighbour chamfer distance to the nearest pixel whose mask equals `target`.
+function chamfer(mask, w, h, target) {
+  const d = new Float32Array(w * h), R = Math.SQRT2;
+  for (let i = 0; i < w * h; i++) d[i] = mask[i] === target ? 0 : 1e6;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; let v = d[i]; if (v === 0) continue;
+    if (x > 0) v = Math.min(v, d[i - 1] + 1);
+    if (y > 0) { v = Math.min(v, d[i - w] + 1); if (x > 0) v = Math.min(v, d[i - w - 1] + R); if (x < w - 1) v = Math.min(v, d[i - w + 1] + R); }
+    d[i] = v;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x; let v = d[i]; if (v === 0) continue;
+    if (x < w - 1) v = Math.min(v, d[i + 1] + 1);
+    if (y < h - 1) { v = Math.min(v, d[i + w] + 1); if (x < w - 1) v = Math.min(v, d[i + w + 1] + R); if (x > 0) v = Math.min(v, d[i + w - 1] + R); }
+    d[i] = v;
+  }
+  return d;
+}
+
+// ---------- Input ----------
+const mouse = { x: -1e4, y: -1e4, active: false };
+const pulse = { x: 0, y: 0, t0: -1e9, sign: 1 };
+let scatter = false, textMode = 1;
+addEventListener('pointermove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.active = mouse.y >= 0 && mouse.y <= r.height;
+}, { passive: true });
+document.documentElement.addEventListener('pointerleave', () => { mouse.active = false; });
+addEventListener('pointerdown', e => {
+  if (e.target.closest('.switcher, a, button')) return;
+  const r = canvas.getBoundingClientRect();
+  pulse.x = e.clientX - r.left; pulse.y = e.clientY - r.top; pulse.t0 = simT; pulse.sign *= -1;
+});
+canvas.addEventListener('dblclick', () => { scatter = true; });
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') go(-1);
+  else if (e.key === 'ArrowRight') go(1);
+  else if (e.code === 'Space' && scrollY < H) { e.preventDefault(); scatter = true; }
+  else if (e.key === 't') textMode = (textMode + 1) % 3;
+  else if (e.key === 'p') goPal(1);
+});
+
+// ---------- Variants ----------
+function variantParticles() {
+  const side = sideOverride || 384, N = side * side;
+  const m = maskCanvas(1), a = alphaOf(m), mw = m.width;
+  const inside = []; for (let j = 0; j < mw * m.height; j++) if (a[j * 4 + 3] > 127) inside.push(j);
+  const home = new Float32Array(N * 4), st = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    const j = inside.length ? inside[(Math.random() * inside.length) | 0] : 0;
+    home[i * 4] = inside.length ? (j % mw) + Math.random() : Math.random() * W;
+    home[i * 4 + 1] = inside.length ? ((j / mw) | 0) + Math.random() : Math.random() * H;
+    home[i * 4 + 2] = Math.random(); home[i * 4 + 3] = Math.random();
+    const an = Math.random() * 6.2832, r = Math.max(W, H) * (0.6 + Math.random() * 0.5);  // fly in from off-screen
+    st[i * 4] = W / 2 + Math.cos(an) * r; st[i * 4 + 1] = H / 2 + Math.sin(an) * r;
+  }
+  const homeT = stateTex(side, home), pp = pingPong(side, st), keep = 0.8, size = 1.6;
+  const density = N / Math.max(inside.length, 1);           // particles per CSS px² of glyph
+  const gain = 1.0 * (1 - keep) / (density * size * size);  // keeps steady-state brightness count-independent
+  return {
+    N, keep, exposure: 1.4, textTex: null, textMode: () => 0,
+    hint: 'move: repel · click: shockwave · space / double-click: scatter',
+    step(dt, t) {
+      use(PROG.simP, { uState: pp.t[pp.cur], uHome: homeT }, {
+        uTime: t, uDt: dt, uScatter: scatter ? 1400 : 0,
+        uMouse: [mouse.x, mouse.y, mouse.active ? 1 : 0, 110], uPulse: [pulse.x, pulse.y, t - pulse.t0, 60000] });
+      scatter = false;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pp.f[1 - pp.cur]); gl.viewport(0, 0, side, side);
+      gl.drawArrays(gl.TRIANGLES, 0, 3); pp.cur = 1 - pp.cur;
+    },
+    draw() {
+      use(PROG.drawP, { uState: pp.t[pp.cur], uHome: homeT }, { uSide: side, uRes: [W, H], uSize: size * DPR, uGain: gain, ...pal().gl });
+      gl.drawArrays(gl.POINTS, 0, N);
+    },
+  };
+}
+
+function variantFlow() {
+  const side = sideOverride || 512, N = side * side, infl = layout().fs * 0.22;
+  const s = 0.5, m = maskCanvas(s), w = m.width, h = m.height, a = alphaOf(m);
+  const mask = new Uint8Array(w * h); for (let j = 0; j < w * h; j++) mask[j] = a[j * 4 + 3] > 127 ? 1 : 0;
+  const dOut = chamfer(mask, w, h, 1), dIn = chamfer(mask, w, h, 0), sdf = new Float32Array(w * h);
+  for (let j = 0; j < w * h; j++) sdf[j] = Math.min((dOut[j] - dIn[j]) / s, 60000);  // + outside, − inside, CSS px
+  const sdfT = mkTex(w, h, gl.R16F, gl.RED, gl.FLOAT, sdf, gl.LINEAR);
+  const textT = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas(DPR), gl.LINEAR);
+  const st = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) { st[i * 4] = Math.random() * W; st[i * 4 + 1] = Math.random() * H; st[i * 4 + 2] = Math.random() * 9; }
+  const pp = pingPong(side, st), keep = 0.965, size = 1.2;
+  const gain = 0.5 * (1 - keep) / ((N / (W * H)) * size * size);
+  return {
+    N, keep, exposure: 0.85, textTex: textT, textMode: () => textMode,
+    hint: 'move: vortex · click: vortex burst · t: text solid / hollow / none',
+    step(dt, t) {
+      const vort = (mouse.active ? 45000 : 0) + pulse.sign * 180000 * Math.exp(-(t - pulse.t0) * 2.5);
+      use(PROG.simF, { uState: pp.t[pp.cur], uSdf: sdfT }, {
+        uRes: [W, H], uTime: t, uDt: dt, uWind: 70, uScale: 1 / 380, uAmp: 16000, uInfl: infl, uInflWind: layout().fs, uYc: H * 0.42,
+        uSeed: Math.random(), uMouse: [mouse.x, mouse.y, 0, vort] });
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pp.f[1 - pp.cur]); gl.viewport(0, 0, side, side);
+      gl.drawArrays(gl.TRIANGLES, 0, 3); pp.cur = 1 - pp.cur;
+    },
+    draw() {
+      use(PROG.drawF, { uState: pp.t[pp.cur], uSdf: sdfT }, { uSide: side, uRes: [W, H], uSize: size * DPR, uGain: gain, uInfl: infl, ...pal().gl });
+      gl.drawArrays(gl.POINTS, 0, N);
+    },
+  };
+}
+
+// ---------- Build / loop ----------
+let cur, trail, dummy, building = Promise.resolve();
+const build = () => (building = building.then(buildNow));
+async function buildNow() {
+  const P = pal(), root = document.documentElement.style;
+  for (const [k, v] of Object.entries(P.css)) root.setProperty('--' + k, v);
+  root.setProperty('--font', `${P.font}, ${FONT}`);
+  document.getElementById('plabel').textContent = P.label;
+  await Promise.race([document.fonts.load(nameFont(100)).catch(() => {}), new Promise(r => setTimeout(r, 2500))]);
+  freeAll();
+  W = canvas.clientWidth; H = canvas.clientHeight; computeLayout();
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  dummy = mkTex(1, 1, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const tt = mkTex(canvas.width, canvas.height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, null, gl.LINEAR);
+  trail = { t: tt, f: mkFbo(tt) };
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  cur = (VARIANTS[vi].key === 'flow' ? variantFlow : variantParticles)();
+  document.getElementById('vlabel').textContent = VARIANTS[vi].label;
+}
+function setParam(k, v) { try { const u = new URL(location.href); u.searchParams.set(k, v); history.replaceState(null, '', u); } catch {} }
+function go(d) { vi = (vi + d + VARIANTS.length) % VARIANTS.length; setParam('variant', VARIANTS[vi].key); build(); }
+function goPal(d) { pi = (pi + d + PALETTES.length) % PALETTES.length; setParam('palette', pal().key); build(); }
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.getElementById('pprev').onclick = () => goPal(-1);
+document.getElementById('pnext').onclick = () => goPal(1);
+let resizeTimer = 0;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 150); });
+
+function tick(dt, t) {
+  cur.step(dt, t);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trail.f); gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);  // dst *= keep  (frame-rate independent trail decay)
+  use(PROG.fade, {}, { uKeep: Math.pow(cur.keep, dt * 60) }); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.blendFunc(gl.ONE, gl.ONE);                    // additive particles
+  cur.draw();
+  gl.disable(gl.BLEND);
+}
+let last = 0, frames = 0, fpsT = 0, fps = 0, simT = 0, glitchUntil = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!cur) return;
+  const t = now / 1000, dt = last ? Math.min(t - last, 1 / 30) : 1 / 60; last = t;
+  frames++; if (t - fpsT > 0.5) { fps = frames / (t - fpsT); frames = 0; fpsT = t;
+    hud.textContent = `${VARIANTS[vi].label} / ${pal().label} — ${cur.N.toLocaleString()} particles · ${fps.toFixed(0)} fps · ${canvas.width}×${canvas.height} @${DPR}x
+${cur.hint} · ←/→ variant · p: palette`; }
+  if (scrollY > H) return;  // hero off-screen: skip all GPU work
+  present(dt);
+}
+function present(dt) {
+  simT += dt; tick(dt, simT);
+  if (pal().glitch && Math.random() < dt / 3) glitchUntil = simT + 0.08 + Math.random() * 0.12;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+  use(PROG.comp, { uTrail: trail.t, uText: cur.textTex || dummy },
+    { uCanvas: [canvas.width, canvas.height], uTextMode: cur.textMode(), uExposure: cur.exposure,
+      uTime: simT, uDpr: DPR, uGlitch: simT < glitchUntil ? 1 : 0, ...pal().gl });
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// ?capture=1: no rAF loop and no chrome; a recorder calls __capture.frame(dt) once per output frame.
+const capture = qs.has('capture');
+if (capture) document.querySelectorAll('.hud, .switcher').forEach(e => e.hidden = true);
+build().then(() => {
+  for (let i = 0, n = parseInt(qs.get('warm'), 10) || 0; i < n; i++) { simT += 1 / 60; tick(1 / 60, simT); }  // screenshot aid
+  if (capture) window.__capture = { frame: present, scatter: () => { scatter = true; } };
+  else requestAnimationFrame(frame);
+});
+</script>
+</body>
+</html>
