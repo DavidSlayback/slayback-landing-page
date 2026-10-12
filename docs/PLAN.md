@@ -1,79 +1,78 @@
 # Portfolio plan
 
-Status: 2026-10-12. Hero look is being chosen; nothing production-grade exists yet. Repo, Rust toolchain and preview pages are set up.
+Status: 2026-10-12. The hero is decided (spike round 4, *Currents*). Next is **Phase 0, the production foundation**, then **Phase 1, the game**. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
 
 ## Settled
 
-**Hero (decided 2026-10-12):** round 4 *Currents* (`spikes/hero4`, the spike/hero branch). Welding sparks drift in from off-screen torches and meander around always-readable text. Holding the pointer raises a 40 px forcefield that disappears on release. All three colour schemes ship (random per visit, switchable in the nav). Tagline: "RL/ML enthusiast and recent LLM convert". Next: port it to `main` as production code (crates/sim + site), then the game.
-
 | Decision | Choice | Why |
 |---|---|---|
-| Engine | Rust → WASM, `wgpu` (WebGPU, WebGL2 fallback), hand-rolled loop | Small bundle for a landing page; Bevy-sized WASM would delay first paint. |
-| Page content | Static semantic HTML; canvas behind it, `aria-hidden` | Links, SEO, screen readers, and a no-WebGL fallback stay intact. |
-| Hosting | Private GitHub repo `DavidSlayback/slayback-landing-page` (local checkout: `repos/portfolio`) → Cloudflare Pages | Serves `application/wasm`; `_headers` can add COOP/COEP if WASM threads are ever needed. |
-| Game (v1) | Rumble Box–style physics brawler on a lazy-loaded route | Shares the sim core with the hero; loads only when someone clicks Play. |
-| Motion hygiene | `prefers-reduced-motion`, a persisted motion toggle, a static fallback on WebGL context loss | Matches the reference's polish; keeps it from reading as a gimmick. |
+| Hero | Spike round 4 *Currents* (`spikes/hero4` on `spike/hero`) | Chosen by David after four rounds (details below). |
+| Hero stack | `crates/sim` (Rust → WASM, ~60 KB, plain C ABI) + a small WebGL2 renderer in JS | Fast first paint on the landing page. The renderer works and is verified; porting it to Rust/wgpu would add MBs of WASM for no visible gain. Revisit if David wants all-Rust. |
+| Game stack | Bevy **0.19.1** + **avian2d 0.7** (2D now; avian3d and Bevy 3D later) | David wants 3D eventually. Bevy + Avian makes 2D → 3D a swap of physics crate and renderables, not a rewrite. Avian 0.7 targets Bevy 0.19 ([crates.io](https://crates.io/crates/avian2d)); Bevy 0.20 shipped 2026-10-08 and isn't supported by Avian yet, so pin 0.19 and upgrade both together. |
+| Shared core | `crates/sim` serves both: the hero via its C ABI, and the game as a Rust dependency for spark and debris effects | One physics core with small variants; tested once. |
+| Game design (v1) | 2D side view; *escape the box* loop; keyboard + mouse | Chosen by David. |
+| Page content | Static semantic HTML; canvas behind it; hero text is real, transparent DOM drawn by WebGL | Links, SEO, selection and screen readers stay intact. |
+| Schemes | Netrunner (lime), Synthwave, Human Revolution (gold): random per visit, switchable in the nav, saved | David likes all three. |
+| Hosting | Private GitHub repo `DavidSlayback/slayback-landing-page` (local checkout `repos/portfolio`) → Cloudflare Pages | Serves `application/wasm`; `_headers` can add COOP/COEP later if threads are needed. |
+| Motion hygiene | `prefers-reduced-motion` still frame; static fallback if WebGL or WASM is unavailable | Polish; never a blank page. |
 
-Reference studied: canwetakethis.online ("letterfall"): ~46 KB vanilla JS, a custom SI-unit rigid-body solver, glyph-SDF collisions, letters on springs to their DOM positions, and WebGL2 instanced rendering.
+## Phase 0: production foundation (on `main`)
 
-## In progress: hero spike
+Goal: the chosen hero running from production-quality code on `main`, built by CI, and deployable.
 
-**Round 4 (current), in `spikes/hero4/`.** Welding-spark currents, built on round 3's engine.
-- `sim/` (Rust → WASM, 60 KB): short-lived sparks fired from wandering emitters (torches). Each torch appears at a random edge or open spot, never inside text, sprays a wobbling cone for 2–5.5 s, then reappears elsewhere in a new hue. Sparks ride the curl currents and ricochet off text. Grain-to-grain collisions are optional (off for sparks). A bouncy kinematic forcefield; parameters set by key with `world_set`. 15 native tests. About 5 ms per step at 14–18k sparks.
-- Sparks only come from off-screen. Torches sit about 50 px past a random open edge and aim inward within a random cone. Sparks are slow (120–360 px/s), live 2.5–6 s, follow tight six-wave currents, and each one wanders on its own heading. A fading pull toward the center carries newcomers into the screen. Fading trails show their curving paths.
-- Text readability is a hard rule. Text is composited last, after tone mapping and bloom, as an opaque surface with constant base brightness, a dark halo and capped lighting, so sparks pass behind it and can't wash it out.
-- Cursor: a 12 px deflector on hover. Press and hold raises a 72 px hex-shell forcefield that sparks bounce off (0.85 restitution); it lingers 0.6 s after release.
-- Schemes: all three ship. The site picks one at random per visit; swatches in the nav switch it, the choice is saved, and the simulation keeps running.
-- The motion-clip Reel is retired; the live Lab is the review surface.
+1. **Workspace.** A root `Cargo.toml` workspace.
+   - `crates/sim`: the pure physics library ported from `spikes/hero4/sim`, with its tests and benches, and no FFI.
+   - `crates/hero-wasm`: a `cdylib` holding only the C-ABI exports.
+   - Shared `.cargo/config.toml` (wasm `simd128`).
+2. **Site.**
+   - `site/index.html`: markup and CSS from the hero template, with real copy.
+   - `site/hero.js`: the renderer and WASM glue.
+   - `site/hero.wasm`: copied in by the build, loaded with `instantiateStreaming` rather than inlined.
+3. **Build.** `scripts/build.sh` runs the WASM release build and assembles `dist/`. Local preview uses any static server (WASM can't load from `file://`).
+4. **CI.** A GitHub Actions workflow runs `cargo test`, clippy, the wasm build and `dist/` assembly on every push and PR.
+5. **Deploy.** Cloudflare Pages from `dist/`. This needs David's Cloudflare login: either Git integration in the dashboard, or an API token for `wrangler pages deploy` from CI.
 
-**Round 3, in `spikes/hero3/`.** Granular grains (dunes, currents, downpour) on the first version of the Rust engine. It includes the fixed-substep fix that keeps piles stable at 30 fps.
+Acceptance:
+- `cargo test --workspace` passes (the 15 sim tests).
+- The `dist/` page renders the hero in headless Chrome with no console errors, and text stays readable.
+- `hero.wasm` is ≤ 80 KB.
+- CI is green on `main`.
 
-**Round 2, in `spikes/hero2/`.** Shader-only neon variants (hypercube, sandfall, vortex). Superseded.
+## Phase 1: the game (`/play`, lazy-loaded)
 
-**Round 2 (current), in `spikes/hero2/`.** Round 1 was too tasteful. Your feedback: not enough motion, particles not distinct, too little contrast. You asked for more neon, swirl without the cursor, particles pooling from a source, and a "granular tesseract Rumble Box". Round 2 answers that:
-- **A · Hypercube**: a 4D tesseract rotating on its own, built from about 40k grains. Grains burst from the core, swirl, settle onto the edges and flow along them, then fall back into the core. Drag rotates it in 4D.
-- **B · Sandfall**: a Rumble Box arena. A Margolus falling-sand automaton on an RGBA8UI grid; two roaming spouts, floor vents that open and close, and grains that slowly decay so the piles stay at a steady height. Self-triggered blasts.
-- **C · Vortex pool**: a fountain feeds a whirlpool that pools into the name. The particle count scales with glyph area, so the grains stay distinct.
-- Shared across all three: a pure black background, three neon schemes (`netrunner`, `synthwave`, `gold`), round sprites with white-hot centers, a 3-level bloom, and self-triggered shockwaves.
-- Clips: `spikes/hero2/motion/*.mp4`, recorded with `spikes/hero2/capture/record2.mjs`.
+Rumble Box's loop: defeated enemies stay in the arena as physical debris, and you pile them up to climb out ([MobyGames](https://www.mobygames.com/game/32162/rumble-box/), [bit-tech](https://bit-tech.net/blogs/free-games-i-like-rumble-box/1/)).
 
-**Round 1 (superseded), in `spikes/hero/`.** Details below are kept for reference.
+Each slice below is playable on its own, in order:
+1. **Tracer bullet.** A Bevy app in `crates/game` builds to WASM and loads at `site/play/`. It shows a box arena where a player body runs and jumps (avian2d dynamic body with ground detection).
+2. **Combat.** Punch, kick and grab hitboxes with knockback and hit-stop. One enemy type ("fodder") walks over and attacks. Health and defeat.
+3. **Debris.** A defeated enemy breaks into its block parts as avian rigid bodies that persist. The pile is solid and climbable.
+4. **Escape.** Wave spawner; an exit hatch at the top of the box; reaching it loads the next, harder box. Score and run timer.
+5. **Look.** Neon blocks in the active scheme, spark FX from `crates/sim` on hits and shatters, Bevy bloom, a minimal HUD.
+6. **Integration.** A "Play" link on the landing page loads `/play` only on click. Back-navigation returns to the hero.
 
-The spike lives on branch `spike/hero` (draft PR #1, do not merge). `spikes/hero/hero-prototype.html` is a throwaway WebGL2 page. It answers only "which look?"; the shader math is what carries over to WGSL.
+Later, not v1: more enemy types (thugs, ninjas, bomb-heads), bonus stages, gamepad and touch, the 3D port.
 
-- `?variant=particles` (A): about 147k particles spring-bound to pixels of the name. The cursor repels them, a click sends a shockwave, Space scatters them.
-- `?variant=flow` (B): about 262k particles following curl noise that flows around the name's SDF (Bridson's ramp). The cursor makes a vortex; `t` cycles the text style.
-- `?n=<side>` sets the particle count to side², and `?warm=<frames>` pre-runs the sim (useful for screenshots).
-- Colour schemes, chosen with `?palette=`, the bar's second control, or `p`. The particle math is the same for both; the look comes from colours, a post-processing pass, and the font:
-  - `netrunner` (Cyberpunk 2077, green/blue): Chakra Petch; a cyan → mint → acid-green palette; scanlines, chromatic aberration, a neon halo, random slice-tear glitches, and a square grid lit by the particles.
-  - `renaissance` (Deus Ex: Human Revolution): Rajdhani with wide tracking; a luminance → black/umber/gold gradient map at 85% (the "piss filter"); film grain; bloom; a hex grid lit by the particles.
-  - Screenshots: `spikes/hero/{netrunner,renaissance}-{particles,flow}.png`.
-- Motion clips: `spikes/hero/motion/<variant>-<palette>.{gif,mp4}` (gitignored).
-  - To regenerate, run `spikes/hero/capture/record.mjs` and then `encode.sh`.
-  - Recording uses `?capture=1`, which advances the sim exactly 1/30 s per frame while Playwright scripts the cursor, so playback timing doesn't depend on render speed.
+Risks:
+- **Bevy WASM size** (several MB). It's acceptable behind a click. Measure after slice 1; apply `wasm-opt -Oz`, trimmed Bevy features and LTO.
+- **The GNU host toolchain** may hit issues with native Bevy builds on Windows. Fallback: `rustup toolchain install stable-msvc` (needs VS Build Tools), or iterate in WASM only.
+- **Avian performance** with hundreds of debris bodies in single-threaded WASM. Measure in slice 3. If needed, fewer and larger chunks, or sleeping bodies.
 
-Verified: both variants render with no console errors in headless Chrome using SwiftShader (software renderer, so fps is meaningless there). Not yet measured on a real GPU.
+## Hero spike history (on `spike/hero`)
 
-Known spike issues: in B, text placed over the flow (the tagline) is hard to read. Under reduced motion, the page shows a settled still and animates only after a click.
+- **Round 4: chosen.** Welding sparks from off-screen torches that relocate every 2.5–6.5 s. Sparks meander through tight curl currents with per-spark wander, then fade. Text is composited last as an opaque, haloed surface, so it's always readable. Holding the pointer raises a 40 px forcefield. 15 native tests; about 5 ms per physics step for 14k sparks.
+- **Round 3:** granular grains on the first version of the Rust engine, and the fixed-substep fix that keeps piles stable at 30 fps.
+- **Round 2:** shader-only neon variants (hypercube, sandfall, vortex).
+- **Round 1:** particle-name and flow-field heroes.
 
-Published previews (private Claude artifacts; share them from each page's Share menu):
-- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. Runs round 4: the `hero4` page with its document wrapper stripped. Republish it after spike changes.
-- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. Retired and frozen at round 2; not maintained.
+Previews: the live Lab at https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh runs the chosen hero (private Claude artifact). The clip Reel is retired.
 
 ## Environment
 
-- Rust 1.99 stable, installed via rustup with the **GNU host** (`x86_64-pc-windows-gnu`, using the bundled linker, so no Visual Studio Build Tools), plus the `wasm32-unknown-unknown` target, clippy and rustfmt. Verified that a Rust 2024 cdylib builds to wasm32 and runs under Node. If a crate with C dependencies ever needs MSVC, run `rustup toolchain install stable-msvc`.
-- Pushes go over HTTPS with `gh` as the credential helper; there is no GitHub SSH key on this machine.
+- **Rust:** 1.99 stable via rustup with the **GNU host** (bundled linker, no VS Build Tools), plus the `wasm32-unknown-unknown` target, clippy and rustfmt.
+- **Tools:** Node 24, ffmpeg, and Playwright (`playwright-core` against the installed Chrome) for headless checks.
+- **Git:** pushes go over HTTPS with `gh` as the credential helper; there is no GitHub SSH key on this machine.
 
 ## Open (needs David)
 
-1. Pick A, B, or a mix (e.g. B's flow with A's particles forming the name on load), and pick a colour scheme. The schemes could also be a user-facing theme toggle.
-2. Connect Cloudflare Pages to the repo (needs your Cloudflare login).
-3. Game shape. Recommendation: low-poly 3D with a fixed isometric camera, `rapier3d` for physics, and enemies built from primitives drawn with instancing. The pile-of-bodies mechanic doubles as the performance showcase (thousands of live rigid bodies).
-
-## Next
-
-1. Hero choice → capture the verdict here and on PR #1, then close the PR.
-2. Install `wasm-bindgen-cli`, pinned to the `wasm-bindgen` crate version, and scaffold a Cargo workspace: `crates/sim` (pure and native-testable), `crates/web` (wasm-bindgen + wgpu), `site/` (static HTML/CSS).
-3. Port the chosen hero to wgpu: compute-shader update on WebGPU, CPU/WASM update on the WebGL2 fallback.
-4. Deploy the hero-only page to Cloudflare Pages, then start the game.
+1. **Cloudflare Pages:** connect the repo in the dashboard (Git integration), or create an API token for CI deploys.
+2. **Real content** for the landing page: the project list (names, one-liners, links) and the GitHub/contact links. Placeholders until then.
