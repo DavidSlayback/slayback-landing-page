@@ -33,15 +33,17 @@
   .projects a:hover { color: var(--accent); }
   .projects a { color: var(--fg); text-decoration: none; font-size: 22px; font-weight: 600; }
   .projects span { color: var(--muted); font-size: 14px; align-self: center; }
-  .hud { position: fixed; top: 12px; left: 12px; z-index: 10; pointer-events: none; white-space: pre;
+  .hud { position: fixed; top: 12px; left: 12px; z-index: 10; pointer-events: none; white-space: pre-wrap; max-width: calc(100vw - 24px);
     font: 12px/1.5 ui-monospace, Consolas, monospace; color: #cfd3e0; background: rgba(0,0,0,.55);
     padding: 8px 10px; border-radius: 8px; }
-  .switcher { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10;
+  .switcher { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 10;
+    flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 32px);
     display: flex; align-items: center; gap: 10px; background: #fff; color: #111; border-radius: 999px;
     padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 600 13px system-ui, sans-serif; }
   .switcher button { border: 0; background: #111; color: #fff; width: 28px; height: 28px; border-radius: 50%;
     cursor: pointer; font-size: 14px; }
   .switcher .sep { width: 1px; height: 20px; background: #ccc; margin: 0 4px; }
+  @media (max-width: 480px) { .switcher { font-size: 12px; border-radius: 20px; } .switcher .sep { display: none; } }
   .err { position: absolute; inset: auto 16px 40% 16px; text-align: center; color: #ff8a80; font: 14px ui-monospace, monospace; white-space: pre-wrap; }
 </style>
 </head>
@@ -97,6 +99,8 @@ const qs = new URLSearchParams(location.search);
 let pi = Math.max(0, PALETTES.findIndex(p => p.key === qs.get('palette')));
 let vi = Math.max(0, VARIANTS.findIndex(v => v.key === qs.get('variant')));
 const sideOverride = parseInt(qs.get('n'), 10) || 0;
+const compact = Math.min(innerWidth, innerHeight) < 600;  // phones: fewer particles
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const FONT = '"Segoe UI Variable Display","Segoe UI","SF Pro Display",system-ui,-apple-system,Arial,sans-serif';
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 const canvas = document.getElementById('c'), hud = document.getElementById('hud');
@@ -407,7 +411,7 @@ addEventListener('keydown', e => {
 
 // ---------- Variants ----------
 function variantParticles() {
-  const side = sideOverride || 384, N = side * side;
+  const side = sideOverride || (compact ? 256 : 384), N = side * side;
   const m = maskCanvas(1), a = alphaOf(m), mw = m.width;
   const inside = []; for (let j = 0; j < mw * m.height; j++) if (a[j * 4 + 3] > 127) inside.push(j);
   const home = new Float32Array(N * 4), st = new Float32Array(N * 4);
@@ -441,7 +445,7 @@ function variantParticles() {
 }
 
 function variantFlow() {
-  const side = sideOverride || 512, N = side * side, infl = layout().fs * 0.22;
+  const side = sideOverride || (compact ? 362 : 512), N = side * side, infl = layout().fs * 0.22;
   const s = 0.5, m = maskCanvas(s), w = m.width, h = m.height, a = alphaOf(m);
   const mask = new Uint8Array(w * h); for (let j = 0; j < w * h; j++) mask[j] = a[j * 4 + 3] > 127 ? 1 : 0;
   const dOut = chamfer(mask, w, h, 1), dIn = chamfer(mask, w, h, 0), sdf = new Float32Array(w * h);
@@ -535,7 +539,12 @@ if (capture) document.querySelectorAll('.hud, .switcher').forEach(e => e.hidden 
 build().then(() => {
   for (let i = 0, n = parseInt(qs.get('warm'), 10) || 0; i < n; i++) { simT += 1 / 60; tick(1 / 60, simT); }  // screenshot aid
   if (capture) window.__capture = { frame: present, scatter: () => { scatter = true; } };
-  else requestAnimationFrame(frame);
+  else if (reduceMotion) {  // show a settled still; animate only on request
+    for (let i = 0; i < 240; i++) { simT += 1 / 60; tick(1 / 60, simT); }
+    present(1 / 60);
+    hud.textContent = 'Reduced motion is on: showing a still frame. Click the hero to animate.';
+    canvas.addEventListener('pointerdown', () => requestAnimationFrame(frame), { once: true });
+  } else requestAnimationFrame(frame);
 });
 </script>
 </body>
