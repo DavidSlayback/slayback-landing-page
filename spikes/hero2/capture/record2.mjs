@@ -1,5 +1,5 @@
 // Frame-exact recorder for spikes/hero2/hero2-prototype.html (?capture=1 mode).
-// Setup: npm i playwright-core (uses the installed Chrome). Usage: node record2.mjs <outRoot>
+// Setup: npm i playwright-core (uses the installed Chrome). Usage: node record2.mjs <outRoot> [variant]
 import { chromium } from 'playwright-core';
 import { mkdirSync, rmSync } from 'node:fs';
 
@@ -47,5 +47,5 @@ async function record(C) {
   await page.close();
   console.log('done', C.variant);
 }
-await Promise.all(CLIPS.map(record));
+const only = process.argv[3]; await Promise.all(CLIPS.filter(c => !only || c.variant === only).map(record));
 await browser.close();

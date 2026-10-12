@@ -428,9 +428,12 @@ addEventListener('pointermove', e => {
   if (e.buttons & 1) { drag.x += (e.movementX || 0) * 0.008; drag.y += (e.movementY || 0) * 0.008; }
 }, { passive: true });
 document.documentElement.addEventListener('pointerleave', () => { mouse.active = false; });
-addEventListener('pointerdown', e => {
-  if (e.target.closest('.switcher, a, button')) return;
-  const r = canvas.getBoundingClientRect();
+// A click (press and release without travel) fires the shockwave; a drag only rotates.
+let down = null;
+addEventListener('pointerdown', e => { down = e.target.closest('.switcher, a, button') ? null : [e.clientX, e.clientY]; });
+addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) { down = null; return; }
+  const r = canvas.getBoundingClientRect(); down = null;
   firePulse(e.clientX - r.left, e.clientY - r.top);
 });
 function firePulse(x, y) { pulse.x = x; pulse.y = y; pulse.t0 = simT; pulse.fresh = true; }
