@@ -16,6 +16,17 @@ Reference studied: canwetakethis.online ("letterfall"): ~46 KB vanilla JS, a cus
 
 ## In progress: hero spike
 
+**Round 4 (current), in `spikes/hero4/`.** Welding-spark currents, built on round 3's engine.
+- `sim/` (Rust → WASM, 60 KB): short-lived sparks fired from wandering emitters (torches). Each torch appears at a random edge or open spot, never inside text, sprays a wobbling cone for 2–5.5 s, then reappears elsewhere in a new hue. Sparks ride the curl currents and ricochet off text. Grain-to-grain collisions are optional (off for sparks). A bouncy kinematic forcefield; parameters set by key with `world_set`. 13 native tests. About 5 ms per step at 18k sparks.
+- Text readability is a hard rule. Text is composited last, after tone mapping and bloom, as an opaque surface with constant base brightness, a dark halo and capped lighting, so sparks pass behind it and can't wash it out.
+- Cursor: a 12 px deflector on hover. Press and hold raises a 72 px hex-shell forcefield that sparks bounce off (0.85 restitution); it lingers 0.6 s after release.
+- Schemes: all three ship. The site picks one at random per visit; swatches in the nav switch it, the choice is saved, and the simulation keeps running.
+- The motion-clip Reel is retired; the live Lab is the review surface.
+
+**Round 3, in `spikes/hero3/`.** Granular grains (dunes, currents, downpour) on the first version of the Rust engine. It includes the fixed-substep fix that keeps piles stable at 30 fps.
+
+**Round 2, in `spikes/hero2/`.** Shader-only neon variants (hypercube, sandfall, vortex). Superseded.
+
 **Round 2 (current), in `spikes/hero2/`.** Round 1 was too tasteful. Your feedback: not enough motion, particles not distinct, too little contrast. You asked for more neon, swirl without the cursor, particles pooling from a source, and a "granular tesseract Rumble Box". Round 2 answers that:
 - **A · Hypercube**: a 4D tesseract rotating on its own, built from about 40k grains. Grains burst from the core, swirl, settle onto the edges and flow along them, then fall back into the core. Drag rotates it in 4D.
 - **B · Sandfall**: a Rumble Box arena. A Margolus falling-sand automaton on an RGBA8UI grid; two roaming spouts, floor vents that open and close, and grains that slowly decay so the piles stay at a steady height. Self-triggered blasts.
@@ -43,8 +54,8 @@ Verified: both variants render with no console errors in headless Chrome using S
 Known spike issues: in B, text placed over the flow (the tagline) is hard to read. Under reduced motion, the page shows a settled still and animates only after a click.
 
 Published previews (private Claude artifacts; share them from each page's Share menu):
-- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. Now runs round 2: the `hero2` spike with its document wrapper stripped. Republish it after spike changes.
-- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. Now shows the round-2 clips, one per variant, each in a different scheme.
+- Live lab: https://claude.ai/artifact/S1DT4sha9mGCRC8znsC2Wh. Runs round 4: the `hero4` page with its document wrapper stripped. Republish it after spike changes.
+- Clip reel: https://claude.ai/artifact/LVFFQgJU4BrekxMQt5qwag. Retired and frozen at round 2; not maintained.
 
 ## Environment
 
