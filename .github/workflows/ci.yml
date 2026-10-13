@@ -45,6 +45,38 @@ jobs:
           name: dist-with-game
           path: dist
 
+  # Browser smoke harness (ticket A3, tests/e2e) against the full build, so /play is covered too.
+  browser:
+    needs: game
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-with-game
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # REQUIRE_GAME turns a missing game build into a failure instead of a skip.
+      - run: npx playwright test
+        env:
+          REQUIRE_GAME: 1
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+
   # Homepage deploys (ticket C1): main → production, same-repo PRs → preview. Hero only: the game stays out of
   # deploys until its release switch flips (tickets C4 / E1). Direct Upload, so the project can't move to
   # Cloudflare's Git integration later; that is intended (our CI does the build).
