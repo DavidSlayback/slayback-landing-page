@@ -310,6 +310,8 @@ fn death_restarts_the_run_at_box_one_with_full_health() {
     step(&mut app, 0.1);
     assert_eq!(run_state(&app).spec.number, 1, "back to box 1");
     assert_eq!(player_hp(&mut app), PLAYER_MAX_HP);
+}
+
 fn body_of(app: &App, e: Entity) -> RigidBody {
     *app.world().get::<RigidBody>(e).expect("still exists")
 }
