@@ -10,10 +10,11 @@ use crate::player::Player;
 use crate::fighter::Hp;
 use crate::run::RunState;
 use crate::score::{BestScore, LastRun, RunScore};
+use crate::sound::Sound;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, (spawn_hud, spawn_screens, |mut next: ResMut<NextState<Phase>>| next.set(Phase::Start)))
-        .add_systems(Update, (update_hud, show_screens))
+        .add_systems(Update, (update_hud, show_screens, show_sound))
         // Every frame while over: the run's final numbers can land a frame after the screen appears.
         .add_systems(Update, write_game_over.run_if(in_state(Phase::Over)));
 }
@@ -30,6 +31,10 @@ struct Screen(Phase);
 
 #[derive(Component)]
 struct GameOverText;
+
+/// The pause screen's sound toggle.
+#[derive(Component)]
+struct SoundLine;
 
 const INK: Color = Color::srgb(0.93, 0.98, 0.9);
 
@@ -92,6 +97,9 @@ fn spawn_screens(mut commands: Commands) {
                 if phase == Phase::Over {
                     s.spawn((GameOverText, text("", 22.0, INK), TextLayout::justify(Justify::Center)));
                 }
+                if phase == Phase::Paused {
+                    s.spawn((SoundLine, text("", 18.0, INK), TextLayout::justify(Justify::Center)));
+                }
             });
     }
 }
@@ -132,4 +140,9 @@ fn write_game_over(last: Res<LastRun>, best: Res<BestScore>, mut text: Query<&mu
         None => String::new(),
     };
     t.0 = format!("Score  {}    Box  {}\n{}\n\nClick or press Enter to play again", last.score, last.reached, best_line);
+}
+
+fn show_sound(sound: Option<Res<Sound>>, mut line: Query<&mut Text, With<SoundLine>>) {
+    let (Some(sound), Ok(mut t)) = (sound, line.single_mut()) else { return };
+    t.0 = format!("M  sound {}", if sound.on { "on" } else { "off" });
 }
