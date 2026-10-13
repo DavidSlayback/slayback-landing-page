@@ -22,8 +22,7 @@ fn spawn(mut commands: Commands) {
     commands.spawn((
         Player::default(),
         Name::new("player"),
-        Sprite::from_color(Color::srgb(0.9, 1.0, 0.8), SIZE),
-        Transform::from_translation(SPAWN.extend(1.0)),
+        Transform::from_translation(SPAWN.extend(0.0)),
         RigidBody::Dynamic,
         Collider::rectangle(SIZE.x, SIZE.y),
         LockedAxes::ROTATION_LOCKED,
