@@ -5,21 +5,32 @@ edition.workspace = true
 publish.workspace = true
 description = "Rumble Box-style escape-the-box brawler (Bevy + Avian), served lazily at /play."
 
+[features]
+default = ["render"]
+# Everything the window needs and the headless scenarios don't: windowing, rendering, the 2.5D look, UI and text.
+# CI runs the scenarios with `--no-default-features`, so a change to these doesn't rebuild Bevy's renderer there.
+render = [
+    "bevy/bevy_winit", "bevy/web", "bevy/webgl2", "bevy/x11",
+    "bevy/2d_api", "bevy/bevy_render", "bevy/bevy_core_pipeline", "bevy/bevy_post_process", "bevy/bevy_sprite_render",
+    "bevy/default_font",
+    # The 2.5D look (B2 spike, docs/research/game-research.md section 6): +0.83 MB gzipped. HDR, bloom and ACES
+    # tonemapping already come with bevy_core_pipeline / bevy_post_process; no tonemapping LUTs (+0.57 MB).
+    "bevy/bevy_pbr",
+    # HUD and screens (D5; decision Q34 accepted ~+0.4 MB gzipped). No scenes, picking or input focus.
+    "bevy/bevy_ui", "bevy/bevy_ui_render", "bevy/bevy_text",
+]
+
+[[bin]]
+name = "game"
+path = "src/main.rs"
+required-features = ["render"]
+
 [dependencies]
 game-core = { path = "../game-core" }
 # Pinned pair: avian2d 0.7 targets Bevy 0.19 (Bevy 0.20 is not yet supported by Avian). Upgrade together.
-# Explicit features instead of the "2d" bundle: no scenes, reflection auto-registration, picking, gamepads,
-# clipboard or sysinfo. Each of those adds megabytes to the wasm and the game uses none of them.
-bevy = { version = "=0.19.1", default-features = false, features = [
-    "std", "async_executor", "bevy_asset", "bevy_log", "bevy_state",
-    "bevy_winit", "web", "webgl2",
-    "2d_api", "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_sprite_render", "default_font",
-    # The 2.5D look (B2 spike, docs/research/game-research.md section 6): +0.83 MB gzipped. HDR, bloom and ACES
-    # tonemapping already come with bevy_core_pipeline / bevy_post_process; no tonemapping LUTs (+0.57 MB).
-    "bevy_pbr",
-    # HUD and screens (D5; decision Q34 accepted ~+0.4 MB gzipped). No scenes, picking or input focus.
-    "bevy_ui", "bevy_ui_render", "bevy_text",
-] }
+# Explicit features instead of the "2d" bundle (no scenes, reflection auto-registration, picking, clipboard or
+# sysinfo: megabytes of wasm the game doesn't use). The base set is what the gameplay needs; `render` adds the rest.
+bevy = { version = "=0.19.1", default-features = false, features = ["std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse"] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
 
 # The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it), the best
@@ -28,7 +39,3 @@ avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32
 web-sys = { version = "0.3", features = ["Window", "Document", "Storage", "Location"] }
 js-sys = "0.3"
 
-# winit needs a windowing backend to compile on Linux (CI runs the headless scenarios there). X11 loads its libraries
-# at runtime, so this adds no build-time system packages; wasm and Windows builds are unaffected.
-[target.'cfg(target_os = "linux")'.dependencies]
-bevy = { version = "=0.19.1", default-features = false, features = ["x11"] }

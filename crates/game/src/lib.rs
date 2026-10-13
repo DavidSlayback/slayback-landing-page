@@ -11,10 +11,12 @@ pub mod enemy;
 pub mod fighter;
 pub mod flow;
 pub mod grab;
+#[cfg(feature = "render")]
 pub mod look;
 pub mod player;
 pub mod run;
 pub mod score;
+#[cfg(feature = "render")]
 pub mod ui;
 
 use avian2d::prelude::*;
