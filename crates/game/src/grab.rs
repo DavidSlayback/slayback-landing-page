@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use game_core::combat::{Aabb, HitOutcome, Move};
 use game_core::grab::{FLIGHT, HITSTOP, Held, REACH, SPIN, hold_offset, impact, throw_velocity};
 
+use crate::bomb::{BOMB_RADIUS, LitBomb};
 use crate::debris::DebrisPart;
 use crate::enemy::Brain;
 use crate::fighter::{Defeated, FLASH, Fighter, Flash, Hit, HitStopClock, Hp, Team};
@@ -39,6 +40,15 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, (grab, start_throw, carry, fly).chain().after(crate::player::control));
 }
 
+/// Everything the player could pick up.
+#[allow(clippy::type_complexity)]
+#[derive(SystemParam)]
+struct Grabbable<'w, 's> {
+    enemies: Query<'w, 's, (Entity, &'static Transform, &'static Fighter), (With<Brain>, Without<Carried>, Without<Player>)>,
+    parts: Query<'w, 's, (Entity, &'static Transform, &'static ColliderAabb, &'static mut DebrisPart), (Without<Carried>, Without<Player>)>,
+    bombs: Query<'w, 's, (Entity, &'static Transform), (With<LitBomb>, Without<Carried>, Without<Player>)>,
+}
+
 #[allow(clippy::type_complexity)]
 fn grab(
     mut commands: Commands,
@@ -46,8 +56,7 @@ fn grab(
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     time: Res<Time>,
     player: Query<(Entity, &Transform, &Fighter, &Hp, Option<&Holding>), With<Player>>,
-    enemies: Query<(Entity, &Transform, &Fighter), (With<Brain>, Without<Carried>, Without<Player>)>,
-    mut parts: Query<(Entity, &Transform, &ColliderAabb, &mut DebrisPart), (Without<Carried>, Without<Player>)>,
+    mut things: Grabbable,
 ) {
     let pressed = keys.just_pressed(GRAB_KEY) || mouse.as_ref().is_some_and(|m| m.just_pressed(MouseButton::Middle));
     let Ok((me, at, fighter, hp, holding)) = player.single() else { return };
@@ -74,20 +83,26 @@ fn grab(
             best = Some((d, e, k));
         }
     };
-    for (e, t, f) in &enemies {
+    for (e, t, f) in &things.enemies {
         let q = t.translation.truncate();
         if front(q, f.half.x) {
             consider(q.distance(p), e, Held::Enemy);
         }
     }
-    for (e, t, aabb, _) in &parts {
+    for (e, t, aabb, _) in &things.parts {
         let q = t.translation.truncate();
         if front(q, (aabb.max.x - aabb.min.x) / 2.0) {
             consider(q.distance(p), e, Held::Debris);
         }
     }
+    for (e, t) in &things.bombs {
+        let q = t.translation.truncate();
+        if front(q, BOMB_RADIUS) {
+            consider(q.distance(p), e, Held::Bomb);
+        }
+    }
     let Some((_, target, kind)) = best else { return };
-    if let Ok((_, _, _, mut part)) = parts.get_mut(target) {
+    if let Ok((_, _, _, mut part)) = things.parts.get_mut(target) {
         part.born = time.elapsed_secs(); // thawed: it freezes again only after it lands
     }
     commands.entity(target).insert((Carried, RigidBody::Kinematic, ColliderDisabled, LinearVelocity::ZERO, AngularVelocity::ZERO));

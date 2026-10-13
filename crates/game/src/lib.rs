@@ -1,10 +1,10 @@
 //! Escape the box: the portfolio's playable brawler (Bevy + Avian), served lazily at `/play`.
 //!
 //! The library holds the gameplay ([`plugin`]) and, separately, its 2.5D look ([`look::plugin`]); `main.rs` adds the
-//! window and renderer. Keeping them apart lets
-//! tests build a headless app from the real game systems (see `tests/scenarios.rs`).
+//! window and renderer. Keeping them apart lets tests build a headless app from the real game systems (see `tests/scenarios.rs`).
 
 pub mod arena;
+pub mod bomb;
 pub mod debris;
 pub mod demo;
 pub mod enemy;
@@ -31,5 +31,5 @@ pub fn plugin(app: &mut App) {
     // ~32 world units per metre keeps Avian's internal tolerances sensible at pixel scale.
     app.add_plugins(PhysicsPlugins::default().with_length_unit(32.0))
         .insert_resource(Gravity(Vec2::NEG_Y * GRAVITY))
-        .add_plugins((flow::plugin, arena::plugin, fighter::plugin, player::plugin, enemy::plugin, debris::plugin, grab::plugin, run::plugin, score::plugin));
+        .add_plugins((flow::plugin, arena::plugin, fighter::plugin, player::plugin, enemy::plugin, debris::plugin, grab::plugin, bomb::plugin, run::plugin, score::plugin));
 }

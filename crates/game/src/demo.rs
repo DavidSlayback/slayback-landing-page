@@ -13,7 +13,9 @@ use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
 use crate::run::RunState;
 use game_core::combat::Health;
-use crate::enemy::{Brain, HALF, Waves, fodder};
+use crate::bomb::BombHead;
+use crate::enemy::{Brain, HALF, Waves, enemy};
+use game_core::enemy::Kind;
 use game_core::debris::humanoid_parts;
 use crate::grab::GRAB_KEY;
 use crate::player::{KICK_KEY, PUNCH_KEY, Player};
@@ -41,11 +43,19 @@ pub fn plugin(app: &mut App) {
     let speed = setting("slow").and_then(|s| s.parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
     // `debris` drops that many loose parts into the box at the start, to check the frame time of a full pile.
     let debris = setting("debris").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+    // `enemy` picks who steps up each beat (fodder, thug or ninja) and `bombs=1` gives them bomb heads.
+    let foe = match setting("enemy").as_deref() {
+        Some("thug") => Kind::Thug,
+        Some("ninja") => Kind::Ninja,
+        _ => Kind::Fodder,
+    };
+    let bombs = setting("bombs").as_deref() == Some("1");
     // `timer` (seconds on the box clock) and `hp` (the player's starting health) make a run end on cue, e.g. to check
     // the game-over screen and the best score: `?demo=1&timer=6&hp=20`.
     let timer = setting("timer").and_then(|s| s.parse::<f32>().ok());
     let hp = setting("hp").and_then(|s| s.parse::<f32>().ok());
     app.insert_resource(Waves { enabled: false, ..default() })
+        .insert_resource(Foe { kind: foe, bombs })
         .add_systems(Startup, move |mut time: ResMut<Time<Virtual>>| time.set_relative_speed(speed))
         // Straight into play: no start overlay.
         .add_systems(PostStartup, move |mut next: ResMut<NextState<Phase>>, mut run: ResMut<RunState>, mut player: Query<&mut Hp, With<Player>>| {
@@ -77,6 +87,13 @@ fn drop_debris(commands: &mut Commands, n: usize) {
 
 const DEMO_FODDER_HP: f32 = 8.0;
 
+/// Who steps up each beat.
+#[derive(Resource)]
+struct Foe {
+    kind: Kind,
+    bombs: bool,
+}
+
 /// One beat of the loop: what to press, and how far away the next fodder stands.
 const BEATS: [(&[KeyCode], f32); 4] =
     [(&[PUNCH_KEY], 48.0), (&[KICK_KEY], 58.0), (&[KeyCode::Space, PUNCH_KEY], 150.0), (&[GRAB_KEY, PUNCH_KEY], 45.0)];
@@ -88,6 +105,7 @@ fn script(
     mut commands: Commands,
     player: Query<(&Transform, &avian2d::prelude::ShapeHits), With<Player>>,
     fodder_left: Query<Entity, With<Brain>>,
+    foe: Res<Foe>,
     mut clock: Local<(f32, usize, bool)>,
 ) {
     let (t, beat, spawned) = &mut *clock;
@@ -108,7 +126,11 @@ fn script(
         // Repeated dashes walk the player right; keep the fodder inside the box.
         let x = (at.translation.x + gap).min(ARENA.x / 2.0 - WALL - HALF.x - 4.0);
         // Weak fodder, so every beat ends with a kill (and the box fills with debris).
-        commands.spawn(fodder(Vec2::new(x, at.translation.y + 2.0))).insert(Hp(Health::new(DEMO_FODDER_HP)));
+        let mut e = commands.spawn(enemy(foe.kind, Vec2::new(x, at.translation.y + 2.0)));
+        e.insert(Hp(Health::new(DEMO_FODDER_HP)));
+        if foe.bombs {
+            e.insert(BombHead);
+        }
         *spawned = true;
     }
     // Strike just before the fodder's own punch would come out, then move on.

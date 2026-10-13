@@ -7,16 +7,18 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use game::arena::{WALL, Wall};
+use game::bomb::{BombHead, LitBomb, lit_bomb};
 use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
 use game::flow::Phase;
 use game::run::RunState;
 use game::score::{LastRun, RunScore};
 use game::ARENA;
-use game::enemy::{Brain, MAX_HP, Waves, fodder};
+use game::enemy::{Brain, MAX_HP, Waves, enemy, fodder};
 use game::debris::{DebrisPart, part};
 use game::fighter::Hp;
 use game::grab::{Carried, Thrown};
 use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
+use game_core::enemy::{Kind, THUG};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
 use game_core::run::{Run, TIMEOUT_PENALTY, box_spec};
 
@@ -416,4 +418,152 @@ fn a_punch_lands_even_when_a_slow_frame_skips_its_active_window() {
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     step(&mut app, 0.1);
     assert!(fodder_state(&app, target).0 < MAX_HP, "the punch still landed");
+}
+
+/// A thug standing just in front of the player, already winding up.
+fn winding_thug(app: &mut App) -> Entity {
+    let x = player(app).0.x + 60.0;
+    let thug = app.world_mut().spawn(enemy(Kind::Thug, Vec2::new(x, -ARENA.y / 2.0 + WALL + 31.0))).id();
+    step(app, 0.2);
+    assert!(thug_telegraph(app, thug) > 0.0, "the thug is winding up");
+    thug
+}
+
+fn thug_telegraph(app: &App, thug: Entity) -> f32 {
+    app.world().get::<Brain>(thug).unwrap().0.telegraph()
+}
+
+#[test]
+fn punches_hurt_a_thug_but_dont_interrupt_its_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.15);
+    let hp = app.world().get::<Hp>(thug).unwrap().0;
+    assert!(hp.hp < THUG.max_hp, "the punch hurt");
+    assert!(!hp.stunned() && thug_telegraph(&app, thug) > 0.4, "but the wind-up carried on");
+}
+
+#[test]
+fn a_kick_interrupts_a_thugs_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    keys(&mut app).press(KeyCode::KeyK);
+    step(&mut app, 0.25);
+    assert!(app.world().get::<Hp>(thug).unwrap().0.stunned(), "a kick staggers it");
+    assert_eq!(thug_telegraph(&app, thug), 0.0, "and resets its wind-up");
+}
+
+#[test]
+fn doors_deliver_thugs_when_the_box_calls_for_them() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.spec.thugs = 1.0;
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    step(&mut app, 3.0);
+    let mut q = app.world_mut().query::<&Brain>();
+    let kinds: Vec<Kind> = q.iter(app.world()).map(|b| b.0.style().kind).collect();
+    assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Kind::Thug), "entered: {kinds:?}");
+}
+
+fn x_of(app: &App, e: Entity) -> f32 {
+    app.world().get::<Transform>(e).unwrap().translation.x
+}
+
+#[test]
+fn a_ninja_strikes_from_behind_and_backs_off() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    // Behind the player (who faces right).
+    let ninja = app.world_mut().spawn(enemy(Kind::Ninja, Vec2::new(start - 150.0, floor + 25.0))).id();
+    let mut closest = f32::MAX;
+    let mut hurt_at = None;
+    for frame in 0..(2.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        closest = closest.min((x_of(&app, ninja) - player(&mut app).0.x).abs());
+        if hurt_at.is_none() && player_hp(&mut app) < PLAYER_MAX_HP {
+            hurt_at = Some(frame);
+        }
+    }
+    assert!(hurt_at.is_some_and(|f| f < 60), "it closed in and struck within a second: {hurt_at:?}");
+    assert!(closest < 60.0);
+    let gap = (x_of(&app, ninja) - player(&mut app).0.x).abs();
+    assert!(gap > closest + 30.0, "then backed off: {gap} vs closest {closest}");
+}
+
+#[test]
+fn a_ninja_runs_through_rather_than_standing_in_front() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    // In front of the player (who faces right), inside its avoid range.
+    let ninja = app.world_mut().spawn(enemy(Kind::Ninja, Vec2::new(start + 120.0, floor + 25.0))).id();
+    let mut got_behind = false;
+    for _ in 0..FPS as usize {
+        step(&mut app, 1.0 / FPS);
+        got_behind |= x_of(&app, ninja) < player(&mut app).0.x;
+    }
+    assert!(got_behind, "it darted through to the player's back");
+}
+
+fn lit_bombs(app: &mut App) -> Vec<Entity> {
+    let mut q = app.world_mut().query_filtered::<Entity, With<LitBomb>>();
+    q.iter(app.world()).collect()
+}
+
+#[test]
+fn a_blast_knocks_debris_loose_without_deleting_any() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    // A frozen pile around x = 300, plus one part far away.
+    let near: Vec<Entity> = (0..8)
+        .map(|i| app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(260.0 + 12.0 * i as f32, floor + 5.0), 0.0)).insert(RigidBody::Static).id())
+        .collect();
+    let far = app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(-500.0, floor + 5.0), 0.0)).insert(RigidBody::Static).id();
+    let before = debris_parts(&mut app).len();
+    let bomb = app.world_mut().spawn(lit_bomb(Vec2::new(300.0, floor + 30.0), Vec2::ZERO)).id();
+    app.world_mut().get_mut::<LitBomb>(bomb).unwrap().fuse.left = 0.05;
+    step(&mut app, 0.1);
+    assert!(app.world().get_entity(bomb).is_err(), "the bomb went off");
+    assert_eq!(debris_parts(&mut app).len(), before, "no debris was deleted");
+    assert!(near.iter().all(|e| body_of(&app, *e) == RigidBody::Dynamic), "the pile in range was knocked loose");
+    assert_eq!(body_of(&app, far), RigidBody::Static, "debris out of range stayed put");
+}
+
+#[test]
+fn a_defeated_bomb_head_drops_a_lit_bomb_instead_of_its_head() {
+    let mut app = standing();
+    let target = fodder_at(&mut app, 50.0);
+    app.world_mut().entity_mut(target).insert(BombHead);
+    app.world_mut().get_mut::<Hp>(target).unwrap().0.hp = 1.0;
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.3);
+    assert_eq!(debris_parts(&mut app).len(), MAX_PARTS_PER_ENEMY - 1, "five parts join the pile");
+    assert_eq!(lit_bombs(&mut app).len(), 1, "and the head is a lit bomb");
+}
+
+#[test]
+fn a_lit_bomb_can_be_grabbed_and_thrown() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    let bomb = app.world_mut().spawn(lit_bomb(Vec2::new(start + 28.0, floor + 10.0), Vec2::ZERO)).id();
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyL);
+    step(&mut app, 1.0 / FPS);
+    keys(&mut app).release(KeyCode::KeyL);
+    assert!(app.world().get::<Carried>(bomb).is_some(), "grabbed the lit bomb");
+    keys(&mut app).press(KeyCode::KeyJ);
+    let mut farthest = f32::MIN;
+    for _ in 0..(0.8 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        keys(&mut app).release(KeyCode::KeyJ);
+        if let Some(t) = app.world().get::<Transform>(bomb) {
+            farthest = farthest.max(t.translation.x);
+        }
+    }
+    assert!(farthest > start + 150.0, "thrown: {farthest} from {start}");
+    step(&mut app, 1.0);
+    assert!(lit_bombs(&mut app).is_empty(), "and it went off");
 }
