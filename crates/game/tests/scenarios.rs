@@ -9,6 +9,8 @@ use bevy::time::TimeUpdateStrategy;
 use game::arena::WALL;
 use game::player::{Player, SIZE, SPAWN};
 use game::ARENA;
+use game::enemy::{Brain, MAX_HP, Waves, fodder};
+use game::fighter::Hp;
 use game_core::movement::{DASH_SPEED, DASH_TIME};
 
 const FPS: f32 = 60.0;
@@ -16,10 +18,12 @@ const FPS: f32 = 60.0;
 /// The y the player's centre settles at when standing on the floor.
 const STANDING_Y: f32 = -ARENA.y / 2.0 + WALL + SIZE.y / 2.0;
 
-/// A game app without window or renderer. Keyboard state is driven by the test (no input plugin clears it).
+/// A game app without window or renderer. Keyboard state is driven by the test (no input plugin clears it), and
+/// enemies only appear where a test puts them.
 fn headless() -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, TransformPlugin, game::plugin))
+        .insert_resource(Waves { enabled: false, ..default() })
         .init_resource::<ButtonInput<KeyCode>>()
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     app.finish();
@@ -117,4 +121,69 @@ fn there_is_no_jump() {
         }
         step(&mut app, 0.6);   // past the dash cooldown
     }
+}
+
+/// Puts a fodder on the floor `dx` from the player (the player faces right after `standing()`).
+fn fodder_at(app: &mut App, dx: f32) -> Entity {
+    let x = player(app).0.x + dx;
+    app.world_mut().spawn(fodder(Vec2::new(x, STANDING_Y - 2.0))).id()
+}
+
+fn fodder_state(app: &App, e: Entity) -> (f32, Vec2) {
+    let hp = app.world().get::<Hp>(e).expect("fodder still in the box").0.hp;
+    (hp, app.world().get::<LinearVelocity>(e).unwrap().0)
+}
+
+#[test]
+fn a_punch_lands_on_fodder_in_range_and_not_out_of_range() {
+    let mut app = standing();
+    let near = fodder_at(&mut app, 50.0);
+    let far = fodder_at(&mut app, 220.0);
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.2);
+    let (near_hp, near_v) = fodder_state(&app, near);
+    assert!(near_hp < MAX_HP, "the punch hurt the fodder in range: {near_hp}");
+    assert!(near_v.x > 200.0, "and knocked it away: {near_v}");
+    assert_eq!(fodder_state(&app, far).0, MAX_HP, "the fodder out of range is untouched");
+}
+
+#[test]
+fn attacking_during_a_dash_is_a_drop_kick_that_launches_harder_than_a_punch() {
+    let mut app = standing();
+    let target = fodder_at(&mut app, 140.0);
+    keys(&mut app).press(KeyCode::Space);
+    step(&mut app, 1.0 / 60.0);
+    keys(&mut app).release(KeyCode::Space);
+    keys(&mut app).press(KeyCode::KeyJ);
+    let mut fastest: f32 = 0.0;
+    for _ in 0..20 {
+        step(&mut app, 1.0 / 60.0);
+        keys(&mut app).release(KeyCode::KeyJ);
+        fastest = fastest.max(fodder_state(&app, target).1.x);
+    }
+    let punch = game_core::combat::Move::Punch.spec().knockback.0;
+    assert!(fodder_state(&app, target).0 < MAX_HP, "the drop-kick landed");
+    assert!(fastest > punch, "launched at {fastest}, harder than a punch ({punch})");
+}
+
+#[test]
+fn fodder_enter_through_a_door_only_after_its_warning() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    let count = |app: &mut App| app.world_mut().query_filtered::<(), With<Brain>>().iter(app.world()).count();
+    let mut doors = app.world_mut().query::<&game::enemy::WallDoor>();
+    let mut warned_for = 0.0;
+    let mut first_entry = None;
+    for frame in 0..(4.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if doors.iter(app.world()).any(|d| d.door.warning()) {
+            warned_for += 1.0 / FPS;
+        }
+        if first_entry.is_none() && count(&mut app) > 0 {
+            first_entry = Some(frame);
+        }
+    }
+    assert!(first_entry.is_some(), "fodder entered within 4 s");
+    assert!(warned_for >= game_core::doors::WARNING - 0.05, "a door warned for {warned_for} s before it opened");
 }
