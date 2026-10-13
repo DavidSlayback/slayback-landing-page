@@ -133,6 +133,50 @@ Bevy 0.19, and Bevy 0.20.0 shipped 2026-10-08. [verified]
 - **No browser or wasm figure for Avian was found. [unverified]** Our build already turns off Avian's `parallel` feature
   and compiles with `+simd128` (`.cargo/config.toml`). Avian's own `simd` feature is not enabled.
 
+**Our measurement: debris pile in Chrome (B1 spike, 2026-10-12).** [verified locally] Code is on branch `spike/debris`
+(`crates/game/examples/debris.rs`, not merged).
+- **Setup.** N box parts (10–28 units a side) drop in batches of 10, one batch per 0.1 s, with gravity 2000. Every 1.5 s
+  a heavy ball is fired into the pile to stand in for fights; it keeps islands waking. The build is the shipping `game`
+  profile (fat LTO, `opt-level="z"`, `wasm-opt -Oz`, 16.5 MB raw). It ran in headless Chrome on the laptop's **Intel UHD
+  iGPU** (ANGLE D3D11) at 1280×720, a conservative stand-in for a visitor.
+- **Metrics.** "Update" is the CPU time from `First` to `Last`: physics plus game logic, but not the render sub-app.
+  "Interval" is the uncapped frame interval, which does include rendering (sprites here).
+- **Phases.** Spawning, then settling (0–3 s after the last spawn), then settled (3–8 s after).
+
+| Parts | Substeps | Freeze policy | Spawning ms avg/p95 | Settled ms avg/p95 | Settled interval | Frozen at end |
+|---|---|---|---|---|---|---|
+| 300 | 6 | none | 1.21 / 2.3 | 1.70 / 3.6 | 10.4 ms | 0 |
+| 600 | 6 | none | 1.46 / 4.9 | 2.77 / 6.6 | 7.8 ms | 0 |
+| 1000 | 6 | none | 2.99 / 10.0 | 8.64 / 14.0 | 12.2 ms | 0 |
+| 1000 | 6 | when asleep | 2.78 / 9.3 | 6.71 / 12.1 | 10.3 ms | 3 |
+| 1000 | 4 | after 3 s | 1.46 / 3.7 | 0.70 / 1.2 | 7.7 ms | 1000 |
+| 1000 | 6 | after 3 s | 1.47 / 3.9 | 0.69 / 1.2 | 7.8 ms | 1000 |
+
+- **"Freeze when asleep" does not work under activity.** A connected pile is one island, so a single kick wakes all of
+  it. At 600 and 1000 parts only 3–8 parts ever froze. 300 parts froze fully only at 6 substeps; 100 parts froze fully at both. "Freeze after N
+  seconds" (`RigidBody::Static`) caps the cost at whatever is still falling.
+- **Substeps 4 vs 6** make no measurable difference once parts freeze. They matter only for live piles (8.6 vs 5.0 ms
+  at 1000 parts).
+- **The island panics** (#1025, #1076) were **not reproduced**. The search covered 72 native headless configs (4 sizes
+  × 2 substep counts × 3 policies × 3 seeds), each 60 simulated seconds, with body-type changes, kicker despawns and
+  repeated island wake-ups; 0 panics. The 24 browser runs had no errors either. #1076 needs `JointCollisionDisabled`
+  on touching bodies, which the design avoids. #1025's trigger is still unknown upstream, so it is "not reproduced",
+  not "ruled out".
+- Some small-N runs show a 15–17 ms interval with a low update time. That looks like headless Chrome's frame pacing,
+  not load.
+
+**Decision (B1).**
+- **Freeze rule:** a debris part becomes `RigidBody::Static` 3 s after it spawns, or earlier if Avian puts it to sleep.
+  Frozen debris is solid, climbable terrain and is never knocked loose again.
+- **Substeps:** 6, Avian's default, for steadier stacks under the player. With freezing it costs nothing extra.
+- **Per-enemy cap:** at most 12 parts.
+- **Total cap:** 1000 parts. Past the cap, the oldest frozen parts merge or despawn. Even then the spawning p95 stays
+  under 4 ms on the iGPU.
+- **What stays live:** live (unfrozen) bodies are bounded by the spawn rate × 3 s, about 300 at the bench's extreme
+  spawn rate.
+- **Never use** `JointCollisionDisabled` on debris.
+- **Open check for B2/D1:** the render cost of 1000 parts as 2.5D meshes, which this sprite bench does not measure.
+
 ## 4. Bevy wasm dev iteration
 
 - **No dynamic linking on wasm.** Reproduced locally (rustc 1.99.0): `cargo build --target wasm32-unknown-unknown`
