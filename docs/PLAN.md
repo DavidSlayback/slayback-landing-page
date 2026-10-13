@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 13:00 CDT
+As of: Tue Oct 13 2026 15:35 CDT
 In flight: nothing running.
-Next: E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
+Next: David reviews the game's look on rc-1 (camera #55 + look pass #56, after "the game looks kinda shit"); more look work if he redirects. Then E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
 Waiting on: David: playtesters (#29), gamepad check (#26), C2 content; optionally an Actions spending limit or a self-hosted runner to bring CI back before Nov 1. Q43: no permission asks.
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: main 21653b1: deploy.sh now gates on tests/e2e. Production deployed (5 passed, 7 game-only skipped); rc-1 redeployed with the game (10 passed, /play/game_bg.wasm 200, 6.4 MB gzipped). C3 closed: the beacon loads and posts a page view, 0 cookies (headless Chrome, live site).
+Verified: main 886d685 on rc-1 (10 e2e passed): camera frames the fight (fighters ~2x larger); key light now reaches the scene (WebGL2 allows one directional light; shadow map off, blob shadows). Earlier, main 21653b1: deploy.sh gates on tests/e2e. Production deployed (5 passed, 7 game-only skipped); rc-1 redeployed with the game (10 passed, /play/game_bg.wasm 200, 6.4 MB gzipped). C3 closed: the beacon loads and posts a page view, 0 cookies (headless Chrome, live site).
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
