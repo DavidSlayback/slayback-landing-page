@@ -69,8 +69,13 @@ Rarst adds that some group enemies "sacrifice their allies" to get you. [seconda
 - A reader reports three levels, after which the game restarts in Challenge mode. [secondary] (JayIsGames)
   The total level count is **[unverified]**.
 - There are 13 background color schemes with no textures, and scripts interpolate the color scheme over a level (`InterpEvents`). [verified] (interview; modding guide)
-- The game is rendered in 3D ("geometric 3D brawler") but played on a floor inside a box. Camera behavior is
-  **[unverified]**; the interview mentions only a months-long camera bug.
+- The game is rendered in 3D ("geometric 3D brawler") and played on a floor inside a box. **Camera, verified
+  2026-10-13 from DigiPen's four official screenshots:** an open-topped box seen from above at roughly 45°.
+  Fighters move across the floor in two dimensions, and debris heaps over the whole floor, hundreds of cubes and
+  spheres. Figures are several cubes per limb plus a sphere head, in flat saturated colours with dark outlines.
+  Debris takes the arena's pastel colours, so the dead read apart from the living. Impacts are comic: "BOOM!" burst
+  sprites, star badges counting the combo, and floating score numbers ("750", "500").
+  [verified] ([DigiPen showcase screenshots](https://www.digipen.edu/showcase/student-games/rumble-box))
 
 **Why it was fun, per reviewers**
 - "Smooth animations and clever use of colors to differentiate living and dead guys". [secondary] (HotU)
