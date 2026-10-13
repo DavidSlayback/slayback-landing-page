@@ -63,6 +63,7 @@ Informed by `docs/research/game-research.md`.
 | Q39 | Merge authority | **Claude merges a ticket's PR once CI is green and the acceptance check passes**, then reports | Deploys need David's go-ahead. |
 | Q41 | When CI runs (David, 2026-10-13) | **"I don't really want feature branches to have to build until complete and ready to merge."** PRs open as drafts while in progress; CI runs only for non-draft PRs into main (marking ready triggers it), on main pushes, or by hand | Stacked PRs don't build until retargeted to main; docs-only PRs skip CI; newer runs cancel older ones. |
 | Q42 | How much CI (David, 2026-10-13) | **"Feature branch CI/CD should be ruthlessly pared down. We should optimize the shit out of CI."** PRs get one `check` job (tests incl. headless game, clippy, hero build + budget); the wasm game build, browser harness and deploys run only on main and `rc/` branches. No PR preview deploys. | Wasm-only compile errors and browser regressions surface after merge, on main. |
+| Q43 | Asking permission (David, 2026-10-13) | **"Can you stop fucking asking me for permission."** Standing authorization: merge, deploy (production and previews, including the rc/ game preview) and run the backlog without asking first, then report. | Only things the agent physically can't do (logins, payments) go to David, as a short action list, not a question. |
 
 ## Round 4 (2026-10-12)
 
