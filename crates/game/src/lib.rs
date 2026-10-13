@@ -9,6 +9,7 @@ pub mod debris;
 pub mod demo;
 pub mod enemy;
 pub mod fighter;
+pub mod grab;
 pub mod look;
 pub mod player;
 pub mod run;
@@ -27,5 +28,5 @@ pub fn plugin(app: &mut App) {
     // ~32 world units per metre keeps Avian's internal tolerances sensible at pixel scale.
     app.add_plugins(PhysicsPlugins::default().with_length_unit(32.0))
         .insert_resource(Gravity(Vec2::NEG_Y * GRAVITY))
-        .add_plugins((arena::plugin, fighter::plugin, player::plugin, enemy::plugin, debris::plugin, run::plugin));
+        .add_plugins((arena::plugin, fighter::plugin, player::plugin, enemy::plugin, debris::plugin, grab::plugin, run::plugin));
 }

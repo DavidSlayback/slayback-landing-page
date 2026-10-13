@@ -13,6 +13,7 @@ use game::ARENA;
 use game::enemy::{Brain, MAX_HP, Waves, fodder};
 use game::debris::{DebrisPart, part};
 use game::fighter::Hp;
+use game::grab::{Carried, Thrown};
 use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
 use game_core::run::{Run, TIMEOUT_PENALTY, box_spec};
@@ -309,4 +310,57 @@ fn death_restarts_the_run_at_box_one_with_full_health() {
     step(&mut app, 0.1);
     assert_eq!(run_state(&app).spec.number, 1, "back to box 1");
     assert_eq!(player_hp(&mut app), PLAYER_MAX_HP);
+fn body_of(app: &App, e: Entity) -> RigidBody {
+    *app.world().get::<RigidBody>(e).expect("still exists")
+}
+
+#[test]
+fn a_grabbed_frozen_part_thaws_and_once_thrown_lands_as_debris() {
+    let mut app = standing();
+    let floor_top = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x + 32.0;
+    let piece = app.world_mut().spawn(part(Shape::Box { w: 20.0, h: 10.0 }, Vec2::new(start, floor_top + 5.0), 0.0)).insert(RigidBody::Static).id();
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyL);
+    step(&mut app, 1.0 / FPS);
+    keys(&mut app).release(KeyCode::KeyL);
+    assert_ne!(body_of(&app, piece), RigidBody::Static, "grabbing thaws it");
+    assert!(app.world().get::<Carried>(piece).is_some(), "and the player holds it");
+
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.3);
+    keys(&mut app).release(KeyCode::KeyJ);
+    assert!(app.world().get::<Thrown>(piece).is_some(), "an attack throws it");
+    assert_eq!(body_of(&app, piece), RigidBody::Dynamic);
+
+    step(&mut app, 1.2);
+    let x = app.world().get::<Transform>(piece).unwrap().translation.x;
+    assert!(x > start + 120.0, "it flew: {x} from {start}");
+    assert!(app.world().get::<Thrown>(piece).is_none(), "and landed");
+    step(&mut app, FREEZE_AFTER);
+    assert_eq!(body_of(&app, piece), RigidBody::Static, "it freezes again as debris");
+}
+
+#[test]
+fn a_thrown_enemy_damages_the_enemies_it_hits() {
+    let mut app = standing();
+    let held = fodder_at(&mut app, 45.0);
+    let target = fodder_at(&mut app, 260.0);
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyL);
+    step(&mut app, 1.0 / FPS);
+    keys(&mut app).release(KeyCode::KeyL);
+    assert!(app.world().get::<Carried>(held).is_some(), "grabbed the near fodder");
+    let start = player(&mut app).0.x;
+    keys(&mut app).press(KeyCode::KeyJ);
+    let mut farthest = f32::MIN;
+    for _ in 0..(1.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        keys(&mut app).release(KeyCode::KeyJ);
+        farthest = farthest.max(app.world().get::<Transform>(held).unwrap().translation.x);
+    }
+    assert!(farthest > start + 200.0, "the throw carried the fodder well away: {farthest} from {start}");
+    let (hp, _) = fodder_state(&app, target);
+    assert!(hp < MAX_HP, "the thrown fodder hurt the other one: {hp}");
+    assert!(fodder_state(&app, held).0 < MAX_HP, "and was hurt by the impact itself");
 }

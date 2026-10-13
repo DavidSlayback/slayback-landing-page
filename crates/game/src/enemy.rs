@@ -11,6 +11,7 @@ use game_core::movement::run_velocity;
 use crate::ARENA;
 use crate::arena::WALL;
 use crate::fighter::{Attack, Fighter, Hp, Team, body};
+use crate::grab::Carried;
 use crate::player::Player;
 
 #[derive(Component)]
@@ -92,7 +93,7 @@ fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut Wal
 fn think(
     time: Res<Time>,
     player: Query<&Transform, (With<Player>, Without<Brain>)>,
-    mut enemies: Query<(&Transform, &mut Brain, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity)>,
+    mut enemies: Query<(&Transform, &mut Brain, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity), Without<Carried>>,
 ) {
     let Ok(target) = player.single() else { return };
     let dt = time.delta_secs();

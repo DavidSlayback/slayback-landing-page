@@ -7,6 +7,7 @@ pub mod combat;
 pub mod debris;
 pub mod doors;
 pub mod enemy;
+pub mod grab;
 pub mod run;
 
 /// Player movement: run and dash (there is no jump; the player climbs by walking up debris).

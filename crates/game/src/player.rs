@@ -7,6 +7,7 @@ use game_core::combat::Move;
 use game_core::movement::{Input, Mover, run_velocity};
 
 use crate::fighter::{Attack, Fighter, Hp, Team, body};
+use crate::grab::Holding;
 
 /// The player, with its engine-free movement state.
 #[derive(Component, Default)]
@@ -37,13 +38,15 @@ fn spawn(mut commands: Commands) {
     ));
 }
 
-fn control(
+/// Reads the keyboard and mouse into movement and attacks. Public so other systems can order themselves after it.
+#[allow(clippy::type_complexity)]
+pub fn control(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
-    mut players: Query<(&mut Player, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity)>,
+    mut players: Query<(&mut Player, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity, Has<Holding>)>,
 ) {
-    let Ok((mut player, mut fighter, mut attack, hp, mut velocity)) = players.single_mut() else { return };
+    let Ok((mut player, mut fighter, mut attack, hp, mut velocity, holding)) = players.single_mut() else { return };
     let dt = time.delta_secs();
     if hp.0.stunned() {
         return; // knockback plays out
@@ -56,7 +59,8 @@ fn control(
     } else {
         None
     };
-    if let Some(button) = button {
+    // While holding something, the attack buttons throw it instead (see `grab`).
+    if let Some(button) = button.filter(|_| !holding) {
         attack.start(Move::for_button(button, player.0.dashing()));
     }
     // A punch or kick plants the feet; a drop-kick rides the dash.
