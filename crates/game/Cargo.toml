@@ -21,3 +21,7 @@ avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32
 # at runtime, so this adds no build-time system packages; wasm and Windows builds are unaffected.
 [target.'cfg(target_os = "linux")'.dependencies]
 bevy = { version = "=0.19.1", default-features = false, features = ["x11"] }
+
+# SPIKE (B1): the debris bench example reads its parameters from the page URL.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location"] }
