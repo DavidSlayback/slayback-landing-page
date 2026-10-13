@@ -3,6 +3,10 @@
 //! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game`
 //! wires it into ECS systems.
 
+pub mod combat;
+pub mod doors;
+pub mod enemy;
+
 /// Player movement: run and dash (there is no jump; the player climbs by walking up debris).
 ///
 /// Units are world units (the arena is 1280×720) and seconds.
