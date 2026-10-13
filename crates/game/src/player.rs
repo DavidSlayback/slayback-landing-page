@@ -20,7 +20,6 @@ pub const SIZE: Vec2 = Vec2::new(28.0, 56.0);
 pub const SPAWN: Vec2 = Vec2::new(0.0, -200.0);
 pub const MAX_HP: f32 = 100.0;
 
-
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn).add_systems(Update, control);
 }

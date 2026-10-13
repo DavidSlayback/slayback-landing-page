@@ -70,7 +70,10 @@ mod tests {
             };
             assert!(hw > 0.0 && hh > 0.0);
             // Within the body's height, with a little slack for arms and head
-            assert!(p.offset.1 - hh >= -half.1 - 0.5 && p.offset.1 + hh <= half.1 + 2.0, "{p:?} sticks out of the body");
+            assert!(
+                p.offset.1 - hh >= -half.1 - 0.5 && p.offset.1 + hh <= half.1 + 2.0,
+                "{p:?} sticks out of the body"
+            );
         }
     }
 

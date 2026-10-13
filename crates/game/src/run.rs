@@ -51,7 +51,13 @@ pub fn floor_top() -> f32 {
     -ARENA.y / 2.0 + WALL
 }
 
-fn clock(time: Res<Time>, mut run: ResMut<RunState>, mut players: Query<&mut Hp, With<Player>>, mut defeated: MessageWriter<Defeated>, player: Query<Entity, With<Player>>) {
+fn clock(
+    time: Res<Time>,
+    mut run: ResMut<RunState>,
+    mut players: Query<&mut Hp, With<Player>>,
+    mut defeated: MessageWriter<Defeated>,
+    player: Query<Entity, With<Player>>,
+) {
     if run.0.tick(time.delta_secs()) == Tick::TimedOut
         && let Ok(mut hp) = players.single_mut()
         && hp.0.hurt(TIMEOUT_PENALTY) == HitOutcome::Defeated
@@ -105,7 +111,12 @@ fn escape(
 }
 
 /// The player's health ran out (a blow or a timeout): the game-over screen.
-fn die(mut defeats: MessageReader<Defeated>, run: Res<RunState>, mut ended: MessageWriter<BoxEnded>, mut next: ResMut<NextState<Phase>>) {
+fn die(
+    mut defeats: MessageReader<Defeated>,
+    run: Res<RunState>,
+    mut ended: MessageWriter<BoxEnded>,
+    mut next: ResMut<NextState<Phase>>,
+) {
     if defeats.read().any(|d| d.team == Team::Player) {
         ended.write(BoxEnded::Died { reached: run.0.spec.number });
         next.set(Phase::Over);
@@ -113,7 +124,11 @@ fn die(mut defeats: MessageReader<Defeated>, run: Res<RunState>, mut ended: Mess
 }
 
 /// Again: box 1, full health, an empty box.
-fn restart(mut run: ResMut<RunState>, mut player: Query<(&mut Transform, &mut LinearVelocity, &mut Hp), With<Player>>, mut reset: BoxReset) {
+fn restart(
+    mut run: ResMut<RunState>,
+    mut player: Query<(&mut Transform, &mut LinearVelocity, &mut Hp), With<Player>>,
+    mut reset: BoxReset,
+) {
     let Ok((mut transform, mut velocity, mut hp)) = player.single_mut() else { return };
     run.0.restart();
     hp.0 = Health::new(MAX_HP);

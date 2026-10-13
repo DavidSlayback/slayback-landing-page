@@ -21,13 +21,13 @@ use game_core::movement::RUN_SPEED;
 
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
-use crate::enemy::{Brain, HALF, WallDoor, door_spot};
-use crate::comfort::Comfort;
 use crate::bomb::{BOMB_RADIUS, BombHead, Exploded, LitBomb};
+use crate::comfort::Comfort;
 use crate::debris::{DebrisPart, Shattered};
+use crate::enemy::{Brain, HALF, WallDoor, door_spot};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
-use crate::run::BoxStarted;
 use crate::player::Player;
+use crate::run::BoxStarted;
 
 /// Depth of the box, world units (the 2D game lives on the z = 0 plane).
 pub const DEPTH: f32 = 192.0;
@@ -42,15 +42,30 @@ pub struct Scheme {
 pub const SCHEMES: [Scheme; 3] = [
     Scheme {
         key: "netrunner",
-        accents: [Color::srgb(0.62, 1.0, 0.0), Color::srgb(0.15, 1.0, 0.2), Color::srgb(0.0, 1.0, 0.72), Color::srgb(0.88, 1.0, 0.12)],
+        accents: [
+            Color::srgb(0.62, 1.0, 0.0),
+            Color::srgb(0.15, 1.0, 0.2),
+            Color::srgb(0.0, 1.0, 0.72),
+            Color::srgb(0.88, 1.0, 0.12),
+        ],
     },
     Scheme {
         key: "synthwave",
-        accents: [Color::srgb(1.0, 0.08, 0.72), Color::srgb(0.0, 0.9, 1.0), Color::srgb(1.0, 0.92, 0.05), Color::srgb(0.5, 0.15, 1.0)],
+        accents: [
+            Color::srgb(1.0, 0.08, 0.72),
+            Color::srgb(0.0, 0.9, 1.0),
+            Color::srgb(1.0, 0.92, 0.05),
+            Color::srgb(0.5, 0.15, 1.0),
+        ],
     },
     Scheme {
         key: "gold",
-        accents: [Color::srgb(1.0, 0.55, 0.04), Color::srgb(1.0, 0.82, 0.2), Color::srgb(1.0, 0.3, 0.0), Color::srgb(1.0, 0.95, 0.65)],
+        accents: [
+            Color::srgb(1.0, 0.55, 0.04),
+            Color::srgb(1.0, 0.82, 0.2),
+            Color::srgb(1.0, 0.3, 0.0),
+            Color::srgb(1.0, 0.95, 0.65),
+        ],
     },
 ];
 
@@ -66,7 +81,8 @@ impl Scheme {
         {
             let window = web_sys::window();
             let query = window.as_ref().and_then(|w| w.location().search().ok()).unwrap_or_default();
-            let from_query = query.trim_start_matches('?').split('&').find_map(|kv| kv.strip_prefix("palette=")).map(str::to_owned);
+            let from_query =
+                query.trim_start_matches('?').split('&').find_map(|kv| kv.strip_prefix("palette=")).map(str::to_owned);
             let saved = || window.as_ref()?.local_storage().ok()??.get_item("slayback-scheme").ok()?;
             if let Some(i) = from_query.or_else(saved).and_then(|k| SCHEMES.iter().position(|s| s.key == k)) {
                 return i;
@@ -91,7 +107,19 @@ pub fn plugin(app: &mut App) {
         .add_systems(PreUpdate, (rotate_scheme, build_frame))
         .add_systems(
             Update,
-            (dress_walls, dress_fighters, dress_doors, dress_debris, dress_bombs, blink_bombs, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
+            (
+                dress_walls,
+                dress_fighters,
+                dress_doors,
+                dress_debris,
+                dress_bombs,
+                blink_bombs,
+                animate_fighters,
+                tint_fighters,
+                light_doors,
+                spawn_sparks,
+                fly_sparks,
+            ),
         );
 }
 
@@ -118,10 +146,21 @@ fn flat(mesh: impl Into<Mesh>) -> Mesh {
     mesh.into().with_duplicated_vertices().with_computed_flat_normals()
 }
 
-fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+fn load_kit(
+    mut commands: Commands,
+    scheme: Res<Scheme>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
     let accent = scheme.accents[0];
     let mut mat = |base: Color, emissive: LinearRgba| {
-        mats.add(StandardMaterial { base_color: base, emissive, perceptual_roughness: 0.85, metallic: 0.0, ..default() })
+        mats.add(StandardMaterial {
+            base_color: base,
+            emissive,
+            perceptual_roughness: 0.85,
+            metallic: 0.0,
+            ..default()
+        })
     };
     let kit = Kit {
         wall: mat(Color::srgb(0.05, 0.07, 0.05), LinearRgba::BLACK),
@@ -137,7 +176,12 @@ fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Asse
         plate: meshes.add(flat(Cuboid::new(0.45, 0.18, 0.5))),
         // A bomb: a dark, slightly glossy ball (world units for lit bombs; heads scale it to rig units).
         bomb: meshes.add(flat(Sphere::new(BOMB_RADIUS).mesh().ico(1).expect("ico subdivision 1 is valid"))),
-        shell: mats.add(StandardMaterial { base_color: Color::srgb(0.06, 0.06, 0.07), perceptual_roughness: 0.4, metallic: 0.3, ..default() }),
+        shell: mats.add(StandardMaterial {
+            base_color: Color::srgb(0.06, 0.06, 0.07),
+            perceptual_roughness: 0.4,
+            metallic: 0.3,
+            ..default()
+        }),
         // A figure in "rig units" (about 2.45 tall), scaled to each fighter's collider by its `Rig`.
         torso: meshes.add(flat(Cuboid::new(0.7, 1.0, 0.4))),
         head: meshes.add(flat(Sphere::new(0.32).mesh().ico(1).expect("ico subdivision 1 is valid"))),
@@ -188,7 +232,11 @@ fn build_frame(
     let (inner, strip, h) = (half.x - WALL, 5.0, spec.rim);
     let slabs = [
         // The back wall, from under the floor to the rim, behind the play plane.
-        (Vec3::new(ARENA.x, h + WALL, WALL), Vec3::new(0.0, floor + h / 2.0 - WALL / 2.0, -DEPTH / 2.0 - WALL / 2.0), &kit.wall),
+        (
+            Vec3::new(ARENA.x, h + WALL, WALL),
+            Vec3::new(0.0, floor + h / 2.0 - WALL / 2.0, -DEPTH / 2.0 - WALL / 2.0),
+            &kit.wall,
+        ),
         // Neon: a frame on the back wall, along the tops of the side walls (the rim), and the floor's front edge.
         (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, rim, -DEPTH / 2.0), &kit.rim),
         (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, floor, -DEPTH / 2.0), &kit.rim),
@@ -199,7 +247,12 @@ fn build_frame(
         (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, floor, DEPTH / 2.0), &kit.rim),
     ];
     for (size, pos, mat) in slabs {
-        commands.spawn((FramePiece, Mesh3d(meshes.add(flat(Cuboid::from_size(size)))), MeshMaterial3d(mat.clone()), Transform::from_translation(pos)));
+        commands.spawn((
+            FramePiece,
+            Mesh3d(meshes.add(flat(Cuboid::from_size(size)))),
+            MeshMaterial3d(mat.clone()),
+            Transform::from_translation(pos),
+        ));
     }
 }
 
@@ -235,9 +288,17 @@ fn rotate_scheme(
     }
 }
 
-fn dress_walls(mut commands: Commands, kit: Res<Kit>, mut meshes: ResMut<Assets<Mesh>>, walls: Query<(Entity, &Wall), Added<Wall>>) {
+fn dress_walls(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    walls: Query<(Entity, &Wall), Added<Wall>>,
+) {
     for (e, wall) in &walls {
-        commands.entity(e).insert((Mesh3d(meshes.add(flat(Cuboid::new(wall.0.x, wall.0.y, DEPTH)))), MeshMaterial3d(kit.wall.clone())));
+        commands.entity(e).insert((
+            Mesh3d(meshes.add(flat(Cuboid::new(wall.0.x, wall.0.y, DEPTH)))),
+            MeshMaterial3d(kit.wall.clone()),
+        ));
     }
 }
 
@@ -301,7 +362,12 @@ fn dress_fighters(
         let base = accent.darker(0.55);
         let glow_base = accent.to_linear() * 6.0;
         let body = mats.add(StandardMaterial { base_color: base, perceptual_roughness: 0.85, ..default() });
-        let glow = mats.add(StandardMaterial { base_color: accent, emissive: glow_base, perceptual_roughness: 0.85, ..default() });
+        let glow = mats.add(StandardMaterial {
+            base_color: accent,
+            emissive: glow_base,
+            perceptual_roughness: 0.85,
+            ..default()
+        });
         let scale = fighter.half.y * 2.0 / RIG_HEIGHT;
         // Thugs are built broad and deep, with shoulder plates; ninjas slim, with a headband trailing behind.
         let thug = kind == Some(Kind::Thug);
@@ -321,25 +387,55 @@ fn dress_fighters(
             .with_children(|r| {
                 if thug {
                     for dx in [-0.5, 0.5] {
-                        r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(dx, 1.05, 0.0)));
+                        r.spawn((
+                            Mesh3d(kit.plate.clone()),
+                            MeshMaterial3d(glow.clone()),
+                            Transform::from_xyz(dx, 1.05, 0.0),
+                        ));
                     }
                 }
                 if *team == Team::Player {
                     // The player's shape cue (colour-blind safe, decision Q35): a glowing pack on the back, which no enemy has.
-                    r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.55, -0.32).with_scale(Vec3::new(1.1, 2.6, 0.5))));
+                    r.spawn((
+                        Mesh3d(kit.plate.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_xyz(0.0, 0.55, -0.32).with_scale(Vec3::new(1.1, 2.6, 0.5)),
+                    ));
                 }
                 if ninja {
                     // Band round the head, tails streaming back.
-                    r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.5, -0.32).with_scale(Vec3::new(1.2, 1.0, 1.0))));
-                    r.spawn((Mesh3d(kit.limb.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.35, -0.55).with_rotation(Quat::from_rotation_x(1.2)).with_scale(Vec3::new(0.5, 0.8, 0.5))));
+                    r.spawn((
+                        Mesh3d(kit.visor.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_xyz(0.0, 1.5, -0.32).with_scale(Vec3::new(1.2, 1.0, 1.0)),
+                    ));
+                    r.spawn((
+                        Mesh3d(kit.limb.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_xyz(0.0, 1.35, -0.55)
+                            .with_rotation(Quat::from_rotation_x(1.2))
+                            .with_scale(Vec3::new(0.5, 0.8, 0.5)),
+                    ));
                 }
                 r.spawn((Mesh3d(kit.torso.clone()), MeshMaterial3d(body.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
                 if bomb_head {
                     // A bomb for a head (a shape cue, not just a colour): dark ball, fuse spike glowing on top.
-                    r.spawn((Mesh3d(kit.bomb.clone()), MeshMaterial3d(kit.shell.clone()), Transform::from_xyz(0.0, 1.35, 0.0).with_scale(Vec3::splat(0.045))));
-                    r.spawn((Mesh3d(kit.limb.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.8, 0.0).with_scale(Vec3::new(0.4, 0.35, 0.4))));
+                    r.spawn((
+                        Mesh3d(kit.bomb.clone()),
+                        MeshMaterial3d(kit.shell.clone()),
+                        Transform::from_xyz(0.0, 1.35, 0.0).with_scale(Vec3::splat(0.045)),
+                    ));
+                    r.spawn((
+                        Mesh3d(kit.limb.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_xyz(0.0, 1.8, 0.0).with_scale(Vec3::new(0.4, 0.35, 0.4)),
+                    ));
                 } else {
-                    r.spawn((Mesh3d(kit.head.clone()), MeshMaterial3d(kit.skin.clone()), Transform::from_xyz(0.0, 1.35, 0.0)));
+                    r.spawn((
+                        Mesh3d(kit.head.clone()),
+                        MeshMaterial3d(kit.skin.clone()),
+                        Transform::from_xyz(0.0, 1.35, 0.0),
+                    ));
                 }
                 r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.4, 0.3)));
                 for (dx, dy, limb, mat) in [
@@ -391,7 +487,13 @@ fn animate_fighters(
                 let Ok((limb, mut lt)) = limbs.get_mut(c) else { continue };
                 let walk = rig.stride.sin() * 0.7 * speed * limb.swing();
                 let angle = match (pose, *limb) {
-                    (Some((Move::Smash, r)), Limb::FrontArm | Limb::BackArm) => if r < 0.0 { -2.7 } else { -2.7 + 2.0 * r },
+                    (Some((Move::Smash, r)), Limb::FrontArm | Limb::BackArm) => {
+                        if r < 0.0 {
+                            -2.7
+                        } else {
+                            -2.7 + 2.0 * r
+                        }
+                    }
                     (None, Limb::FrontArm | Limb::BackArm) if raise > 0.0 => -2.7 * raise,
                     (Some((Move::Punch, r)), Limb::FrontArm) => -1.55 * r,
                     (Some((Move::Kick | Move::DropKick, r)), Limb::FrontLeg) => -1.4 * r,
@@ -423,7 +525,11 @@ fn tint_fighters(
             }
             let windup = brain.map_or(0.0, |b| b.0.telegraph());
             if let Some(mut m) = mats.get_mut(&tint.glow) {
-                m.emissive = if lit && !comfort.reduced_motion { LinearRgba::rgb(8.0, 8.0, 8.0) } else { tint.glow_base * (1.0 + 3.0 * windup) };
+                m.emissive = if lit && !comfort.reduced_motion {
+                    LinearRgba::rgb(8.0, 8.0, 8.0)
+                } else {
+                    tint.glow_base * (1.0 + 3.0 * windup)
+                };
             }
         }
     }
@@ -433,9 +539,18 @@ fn tint_fighters(
 #[derive(Component)]
 struct DoorPanel(Handle<StandardMaterial>);
 
-fn dress_doors(mut commands: Commands, kit: Res<Kit>, mut mats: ResMut<Assets<StandardMaterial>>, doors: Query<(Entity, &WallDoor), Added<WallDoor>>) {
+fn dress_doors(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    doors: Query<(Entity, &WallDoor), Added<WallDoor>>,
+) {
     for (e, door) in &doors {
-        let mat = mats.add(StandardMaterial { base_color: Color::srgb(0.05, 0.07, 0.05), perceptual_roughness: 0.85, ..default() });
+        let mat = mats.add(StandardMaterial {
+            base_color: Color::srgb(0.05, 0.07, 0.05),
+            perceptual_roughness: 0.85,
+            ..default()
+        });
         // On the inside face of the wall, standing on the floor.
         let x = door.side * (ARENA.x / 2.0 - WALL - 1.0) - door_spot(door.side, HALF).x;
         commands.entity(e).insert((DoorPanel(mat.clone()), Visibility::default())).with_child((
@@ -447,7 +562,12 @@ fn dress_doors(mut commands: Commands, kit: Res<Kit>, mut mats: ResMut<Assets<St
 }
 
 /// Closed doors are faint outlines; a warning pulses hot; an open door goes dark.
-fn light_doors(time: Res<Time<Real>>, scheme: Res<Scheme>, doors: Query<(&WallDoor, &DoorPanel)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+fn light_doors(
+    time: Res<Time<Real>>,
+    scheme: Res<Scheme>,
+    doors: Query<(&WallDoor, &DoorPanel)>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
     let warn = scheme.accents[3].to_linear();
     for (door, panel) in &doors {
         let Some(mut m) = mats.get_mut(&panel.0) else { continue };
@@ -562,10 +682,24 @@ fn fly_sparks(mut commands: Commands, time: Res<Time>, mut sparks: Query<(Entity
 #[derive(Component)]
 struct BombLight(Handle<StandardMaterial>);
 
-fn dress_bombs(mut commands: Commands, kit: Res<Kit>, mut mats: ResMut<Assets<StandardMaterial>>, bombs: Query<Entity, Added<LitBomb>>) {
+fn dress_bombs(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    bombs: Query<Entity, Added<LitBomb>>,
+) {
     for e in &bombs {
-        let light = mats.add(StandardMaterial { base_color: Color::srgb(0.06, 0.06, 0.07), perceptual_roughness: 0.4, ..default() });
-        commands.entity(e).insert((Mesh3d(kit.bomb.clone()), MeshMaterial3d(light.clone()), BombLight(light), Visibility::default()));
+        let light = mats.add(StandardMaterial {
+            base_color: Color::srgb(0.06, 0.06, 0.07),
+            perceptual_roughness: 0.4,
+            ..default()
+        });
+        commands.entity(e).insert((
+            Mesh3d(kit.bomb.clone()),
+            MeshMaterial3d(light.clone()),
+            BombLight(light),
+            Visibility::default(),
+        ));
     }
 }
 
@@ -578,4 +712,3 @@ fn blink_bombs(scheme: Res<Scheme>, bombs: Query<(&LitBomb, &BombLight)>, mut ma
         }
     }
 }
-

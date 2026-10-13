@@ -119,7 +119,11 @@ pub fn body(team: Team, half: Vec2, max_hp: f32) -> impl Bundle {
 /// Walking into a low ledge (debris, mostly) hops the fighter onto it: a capsule alone stalls against a step's edge.
 /// A forward ray at the feet finds the ledge, a ray `MAX_STEP` higher checks it is low enough, and a downward ray
 /// measures its height for the hop.
-fn step_up(spatial: SpatialQuery, gravity: Res<Gravity>, mut fighters: Query<(&Fighter, &Transform, &ShapeHits, &mut LinearVelocity)>) {
+fn step_up(
+    spatial: SpatialQuery,
+    gravity: Res<Gravity>,
+    mut fighters: Query<(&Fighter, &Transform, &ShapeHits, &mut LinearVelocity)>,
+) {
     let filter = SpatialQueryFilter::from_mask([Layer::World, Layer::Debris]);
     for (fighter, transform, ground, mut velocity) in &mut fighters {
         if ground.is_empty() || velocity.x.abs() < 20.0 || velocity.y > 1.0 {
@@ -179,7 +183,10 @@ fn resolve_hits(
         for (target, target_team, body) in &bodies {
             if target_team != team && !attack.victims.contains(target) && reach.overlaps(body) {
                 attack.victims.push(*target);
-                let at = Vec2::new((reach.min.0.max(body.min.0) + reach.max.0.min(body.max.0)) / 2.0, (reach.min.1 + reach.max.1) / 2.0);
+                let at = Vec2::new(
+                    (reach.min.0.max(body.min.0) + reach.max.0.min(body.max.0)) / 2.0,
+                    (reach.min.1 + reach.max.1) / 2.0,
+                );
                 hits.push((*target, swing.mv, fighter.facing, at));
             }
         }

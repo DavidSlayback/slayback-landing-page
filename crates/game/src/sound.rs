@@ -83,7 +83,8 @@ const KEY: &str = "slayback-sound";
 
 fn load() -> bool {
     #[cfg(target_arch = "wasm32")]
-    let stored = web_sys::window().and_then(|w| w.local_storage().ok().flatten()).and_then(|s| s.get_item(KEY).ok().flatten());
+    let stored =
+        web_sys::window().and_then(|w| w.local_storage().ok().flatten()).and_then(|s| s.get_item(KEY).ok().flatten());
     #[cfg(not(target_arch = "wasm32"))]
     let stored = std::fs::read_to_string(std::env::temp_dir().join(KEY)).ok();
     stored.is_some_and(|s| s.trim() == "on")

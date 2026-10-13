@@ -62,8 +62,14 @@ fn burn(
     mut commands: Commands,
     time: Res<Time>,
     mut bombs: Query<(Entity, &mut LitBomb, &Transform)>,
-    mut fighters: Query<(Entity, &Team, &Transform, &mut Hp, &mut LinearVelocity, &mut Flash, Has<Carried>), (With<Fighter>, Without<LitBomb>)>,
-    mut parts: Query<(Entity, &Transform, &mut DebrisPart, &mut LinearVelocity), (Without<Fighter>, Without<LitBomb>, Without<Carried>)>,
+    mut fighters: Query<
+        (Entity, &Team, &Transform, &mut Hp, &mut LinearVelocity, &mut Flash, Has<Carried>),
+        (With<Fighter>, Without<LitBomb>),
+    >,
+    mut parts: Query<
+        (Entity, &Transform, &mut DebrisPart, &mut LinearVelocity),
+        (Without<Fighter>, Without<LitBomb>, Without<Carried>),
+    >,
     mut out: BlastEffects,
 ) {
     for (bomb, mut lit, at) in &mut bombs {

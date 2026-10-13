@@ -6,17 +6,17 @@ use std::time::Duration;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
+use game::ARENA;
 use game::arena::{WALL, Wall};
 use game::bomb::{BombHead, LitBomb, lit_bomb};
-use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
+use game::debris::{DebrisPart, part};
+use game::enemy::{Brain, MAX_HP, Waves, enemy, fodder};
+use game::fighter::Hp;
 use game::flow::Phase;
+use game::grab::{Carried, Thrown};
+use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
 use game::run::RunState;
 use game::score::{LastRun, RunScore};
-use game::ARENA;
-use game::enemy::{Brain, MAX_HP, Waves, enemy, fodder};
-use game::debris::{DebrisPart, part};
-use game::fighter::Hp;
-use game::grab::{Carried, Thrown};
 use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
 use game_core::enemy::{Kind, THUG};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
@@ -128,7 +128,7 @@ fn there_is_no_jump() {
             let y = player(&mut app).0.y;
             assert!(y < STANDING_Y + 2.0, "{key:?} lifted the player to {y}");
         }
-        step(&mut app, 0.6);   // past the dash cooldown
+        step(&mut app, 0.6); // past the dash cooldown
     }
 }
 
@@ -263,7 +263,7 @@ fn player_hp(app: &mut App) -> f32 {
 
 fn right_wall_height(app: &mut App) -> f32 {
     let mut q = app.world_mut().query::<(&Wall, &Name)>();
-    q.iter(app.world()).find(|(_, n)| n.as_str() == "right wall").expect("a right wall").0 .0.y
+    q.iter(app.world()).find(|(_, n)| n.as_str() == "right wall").expect("a right wall").0.0.y
 }
 
 #[test]
@@ -332,7 +332,11 @@ fn a_grabbed_frozen_part_thaws_and_once_thrown_lands_as_debris() {
     let mut app = standing();
     let floor_top = -ARENA.y / 2.0 + WALL;
     let start = player(&mut app).0.x + 32.0;
-    let piece = app.world_mut().spawn(part(Shape::Box { w: 20.0, h: 10.0 }, Vec2::new(start, floor_top + 5.0), 0.0)).insert(RigidBody::Static).id();
+    let piece = app
+        .world_mut()
+        .spawn(part(Shape::Box { w: 20.0, h: 10.0 }, Vec2::new(start, floor_top + 5.0), 0.0))
+        .insert(RigidBody::Static)
+        .id();
     step(&mut app, 0.05);
     keys(&mut app).press(KeyCode::KeyL);
     step(&mut app, 1.0 / FPS);
@@ -517,9 +521,18 @@ fn a_blast_knocks_debris_loose_without_deleting_any() {
     let floor = -ARENA.y / 2.0 + WALL;
     // A frozen pile around x = 300, plus one part far away.
     let near: Vec<Entity> = (0..8)
-        .map(|i| app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(260.0 + 12.0 * i as f32, floor + 5.0), 0.0)).insert(RigidBody::Static).id())
+        .map(|i| {
+            app.world_mut()
+                .spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(260.0 + 12.0 * i as f32, floor + 5.0), 0.0))
+                .insert(RigidBody::Static)
+                .id()
+        })
         .collect();
-    let far = app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(-500.0, floor + 5.0), 0.0)).insert(RigidBody::Static).id();
+    let far = app
+        .world_mut()
+        .spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(-500.0, floor + 5.0), 0.0))
+        .insert(RigidBody::Static)
+        .id();
     let before = debris_parts(&mut app).len();
     let bomb = app.world_mut().spawn(lit_bomb(Vec2::new(300.0, floor + 30.0), Vec2::ZERO)).id();
     app.world_mut().get_mut::<LitBomb>(bomb).unwrap().fuse.left = 0.05;

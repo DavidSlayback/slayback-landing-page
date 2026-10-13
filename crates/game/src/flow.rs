@@ -50,7 +50,12 @@ fn toggle_pause(actions: Res<Actions>, phase: Res<State<Phase>>, mut next: ResMu
     }
 }
 
-fn pause_on_blur(mut focus: MessageReader<WindowFocused>, on: Res<PauseOnBlur>, phase: Res<State<Phase>>, mut next: ResMut<NextState<Phase>>) {
+fn pause_on_blur(
+    mut focus: MessageReader<WindowFocused>,
+    on: Res<PauseOnBlur>,
+    phase: Res<State<Phase>>,
+    mut next: ResMut<NextState<Phase>>,
+) {
     if focus.read().any(|f| !f.focused) && on.0 && *phase.get() == Phase::Playing {
         next.set(Phase::Paused);
     }

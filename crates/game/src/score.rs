@@ -41,7 +41,12 @@ fn count(time: Res<Time>, mut score: ResMut<RunScore>, mut defeats: MessageReade
     }
 }
 
-fn tally(mut ended: MessageReader<BoxEnded>, mut score: ResMut<RunScore>, mut best: ResMut<BestScore>, mut last: ResMut<LastRun>) {
+fn tally(
+    mut ended: MessageReader<BoxEnded>,
+    mut score: ResMut<RunScore>,
+    mut best: ResMut<BestScore>,
+    mut last: ResMut<LastRun>,
+) {
     for e in ended.read() {
         match *e {
             BoxEnded::Escaped { number, time_left } => {

@@ -1,0 +1,3 @@
+# The code was written to 120 columns with compact one-line expressions; this keeps rustfmt's diff to that style small.
+max_width = 120
+use_small_heuristics = "Max"

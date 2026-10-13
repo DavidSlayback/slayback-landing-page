@@ -30,7 +30,12 @@ fn spawn_bounds(mut commands: Commands) {
         (Vec2::new(half.x + WALL / 2.0, 0.0), Vec2::new(WALL, ARENA.y * 2.0)),
         (Vec2::new(0.0, half.y + WALL / 2.0), Vec2::new(ARENA.x + 2.0 * WALL, WALL)),
     ] {
-        commands.spawn((Name::new("bound"), Transform::from_translation(pos.extend(0.0)), RigidBody::Static, Collider::rectangle(size.x, size.y)));
+        commands.spawn((
+            Name::new("bound"),
+            Transform::from_translation(pos.extend(0.0)),
+            RigidBody::Static,
+            Collider::rectangle(size.x, size.y),
+        ));
     }
 }
 
