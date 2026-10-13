@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Mon Oct 12 2026 (planning complete)
+As of: Tue Oct 13 2026 (homepage live)
 In flight: nothing running.
-Next: work the ticket frontier on GitHub: A1 #6 (dev loop), A2 #7 (native runs), A3 #8 (browser harness), A4 #9 (headless scenarios), C4 #15 (game entry switch). Each is a PR the agent may merge after green CI and a passing acceptance check (Q39).
-Waiting on: David: Cloudflare API token (#12), landing content (#13), playtesters and release approval (#29). Default: those tickets wait; nothing is deployed.
-Re-arm: nothing.
-Verified: spec #5 and tickets #6–#29 published with 21 native blocked-by links; main CI green at 4086b8a.
+Next: ticket frontier: A1 #6 (dev loop), A2 #7 (native runs), A3 #8 (browser harness), A4 #9 (headless scenarios), C3 #14 (analytics), C4 #15 (game entry switch). Agent merges each after green CI + acceptance (Q39).
+Waiting on: David: landing content (#13); later playtesters and release approval (#29). Default: those wait.
+Re-arm: nothing. Note: the stale edge-cached /play/ on slayback.pages.dev expires by ~2026-10-20 (unlinked; pages.dev can't be purged).
+Verified: C1 #12 done. https://slayback.pages.dev serves the hero (application/wasm, 0 console errors, no-WebGL fallback ok); main CI green.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
