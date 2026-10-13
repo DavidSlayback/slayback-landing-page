@@ -1,5 +1,9 @@
 // Shared page probes for the smoke specs.
 
+/** The homepage with a lighter hero: these checks are about behaviour (lit text, animation, no errors), and CI's
+ *  software WebGL renders the full spark count slowly enough to brush the test timeout. */
+export const HOME = '/?n=3000';
+
 /** Every console error and uncaught page error, as readable strings. */
 export function collectErrors(page) {
   const errors = [];
