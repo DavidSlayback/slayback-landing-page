@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Mon Oct 12 2026 23:23 CDT (AFK backlog run)
-In flight: D3 #18 PR #42 (debris pile; CI running). Next branch: D4 #19 (escape + run loop) from main after #42.
-Next: merge #42 after CI; D4 (rules in game-core: escape test, per-box timer, timeout penalty, health carry-over, difficulty data; open-top boxes whose rim rises per box); then D5 HUD/screens (bevy_ui, +0.38 MB), D6 grab/throw, D7 thug, D8 ninja.
-Waiting on: David: C3 #14 analytics (enable Cloudflare Web Analytics; token lacks scope), C2 #13 content, E2 #29 playtest/release. Size budget: game_bg.wasm is 6.0 MB gz at D3 (B2's line, set for D1); D5's UI adds ~0.4 MB, so default is to accept ~6.5 MB unless David wants size work. Agent-chosen tuning (playtest-adjustable): dash Space/Shift 176 u; J/K + mouse attacks; step-up 24 u; figure size unchanged (small, ~8% of arena height).
-Re-arm: nothing scheduled. Disk ~29 GB free (shared target/). Stale edge-cached /play/ on slayback.pages.dev expires ~2026-10-20.
-Verified: merged A1-A4, C4, B1 a14cf1d, B2 c5a115b, D1 88739e2, D2 e9720b2 (all CI green). D3 local: 26 rules + 10 headless scenarios; Chrome iGPU 1000-part frozen pile 10.0 ms/frame.
+As of: Tue Oct 13 2026 02:26 CDT (AFK backlog run)
+In flight: nothing running. Open PRs, held because CI cannot start (GitHub Actions billing/spending limit): #48 D10 sound (branch d10-sound), #49 D11 gamepad (stacked on #48). Local checks green on both.
+Next: when CI runs again, merge #48 then retarget/merge #49; then D12 #27 (reduced motion, quality scaling, greyscale check), then E1 #28 prep (clip from ?demo=1&slow=, scripted run to box 2).
+Waiting on: David: (1) CI billing: raise the Actions spending limit, fix the payment, make the repo public, or approve a self-hosted runner (default: hold merges, keep building locally); (2) E1's preview deploy with the release switch on (puts the unreleased game on a public preview URL; default: wait); (3) D11 manual gamepad check; (4) C3 analytics, C2 content, E2 playtest.
+Re-arm: nothing scheduled. GitHub's ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (CI may need apt package fixes).
+Verified: merged through D9 (main 33cff19, CI green). D10+D11 local: 55 rules + 26 scenarios + 3 input tests, native/wasm clippy clean, browser smoke 3/3; game_bg.wasm 6.57 MB gz.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
