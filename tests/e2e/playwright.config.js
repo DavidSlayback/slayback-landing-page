@@ -14,7 +14,8 @@ const channel = process.env.PW_CHANNEL ?? (process.env.CI ? '' : 'chrome');
 
 export default defineConfig({
   testDir: '.',
-  timeout: 60_000,
+  // Headroom for CI's software WebGL (canvas screenshots of the hero took 15-50 s there).
+  timeout: 120_000,
   expect: { timeout: 30_000 },
   forbidOnly: !!process.env.CI,
   retries: 0,

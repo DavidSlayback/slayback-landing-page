@@ -4,12 +4,12 @@ import { test, expect } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DIST } from './playwright.config.js';
-import { collectErrors, hasGl, litFraction } from './helpers.js';
+import { HOME, collectErrors, hasGl, litFraction } from './helpers.js';
 
 test.describe('homepage', () => {
   test('hero renders WebGL text and animates with no console errors', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/');
+    await page.goto(HOME);
     await expect.poll(() => hasGl(page), { message: 'html.gl is set once the first frame is drawn' }).toBe(true);
 
     const canvas = page.locator('#c');
@@ -36,7 +36,7 @@ test.describe('reduced motion', () => {
 
   test('shows a still frame', async ({ page }) => {
     const errors = collectErrors(page);
-    await page.goto('/');
+    await page.goto(HOME);
     await expect.poll(() => hasGl(page)).toBe(true);
     const canvas = page.locator('#c');
     const a = await canvas.screenshot();

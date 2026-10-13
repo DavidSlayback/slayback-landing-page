@@ -1,7 +1,7 @@
 // The game's release switch (ticket C4). Set GAME_RELEASE=1 when the build under test was made with the switch on;
 // otherwise the build must be the plain site, with no way into the game.
 import { test, expect } from '@playwright/test';
-import { collectErrors, hasGl, litFraction } from './helpers.js';
+import { HOME, collectErrors, hasGl, litFraction } from './helpers.js';
 
 const ON = process.env.GAME_RELEASE === '1';
 const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
@@ -14,14 +14,14 @@ test.describe('release switch off', () => {
   test.skip(ON, 'GAME_RELEASE=1: this build has the switch on');
 
   test('the homepage has no Play nav item, call to action or game link', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(HOME);
     await expect(page.locator('.topnav a')).toHaveText(['GitHub']);
     await expect(page.locator('a[href*="play"]')).toHaveCount(0);
     expect((await page.request.get('/play/watch/')).status(), 'no clip page').toBe(404);
   });
 
   test('the easter egg does nothing', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(HOME);
     for (const k of KONAMI) await page.keyboard.press(k);
     await page.waitForTimeout(500);
     expect(path(page)).toBe('/');
@@ -33,7 +33,7 @@ test.describe('release switch on', () => {
 
   test('the Play nav item opens the game', async ({ page }) => {
     await blockGame(page);
-    await page.goto('/');
+    await page.goto(HOME);
     await page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Play' }).click();
     await expect(page).toHaveURL(/\/play\/$/);
   });
@@ -41,7 +41,7 @@ test.describe('release switch on', () => {
   test('the hero call to action is drawn as hero text and opens the game', async ({ page }) => {
     const errors = collectErrors(page);
     await blockGame(page);
-    await page.goto('/');
+    await page.goto(HOME);
     await expect.poll(() => hasGl(page)).toBe(true);
     const cta = page.locator('.hero .cta');
     await expect(cta).toHaveAttribute('data-collide', '');   // an obstacle: the sparks flow around it
@@ -55,7 +55,7 @@ test.describe('release switch on', () => {
 
   test('the Konami code opens the game', async ({ page }) => {
     await blockGame(page);
-    await page.goto('/');
+    await page.goto(HOME);
     for (const k of KONAMI) await page.keyboard.press(k);
     await expect(page).toHaveURL(/\/play\/$/);
   });
@@ -66,7 +66,7 @@ test.describe('release switch on', () => {
     test('Play leads to the clip page and the game is never downloaded', async ({ page }) => {
       const gameRequests = [];
       page.on('request', r => { if (GAME_FILES.test(new URL(r.url()).pathname)) gameRequests.push(r.url()); });
-      await page.goto('/');
+      await page.goto(HOME);
       await page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Play' }).tap();
       await expect(page).toHaveURL(/\/play\/watch\/$/);
       const video = page.locator('video');
