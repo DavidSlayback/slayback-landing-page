@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 (homepage live)
-In flight: nothing running.
-Next: ticket frontier: A1 #6 (dev loop), A2 #7 (native runs), A3 #8 (browser harness), A4 #9 (headless scenarios), C3 #14 (analytics), C4 #15 (game entry switch). Agent merges each after green CI + acceptance (Q39).
-Waiting on: David: landing content (#13); later playtesters and release approval (#29). Default: those wait.
-Re-arm: nothing. Note: the stale edge-cached /play/ on slayback.pages.dev expires by ~2026-10-20 (unlinked; pages.dev can't be purged).
-Verified: C1 #12 done. https://slayback.pages.dev serves the hero (application/wasm, 0 console errors, no-WebGL fallback ok); main CI green.
+As of: Mon Oct 12 2026 20:50 CDT (AFK backlog run)
+In flight: C4 #15 helper worker (worktree under .claude/worktrees/, draft PR `c4-entry-switch` when done). A2 PR (`a2-native`): scripts/native.sh.
+Next: merge A2 after CI; A4 #9 headless scenarios inline (add a native player-moves scenario to close A2's open check); review + merge C4; then B1 #10, B2 #11, D-series.
+Waiting on: David: Cloudflare Web Analytics for C3 #14 (token lacks scope; default: wait); landing content (#13); playtest + release (#29); 10 s keyboard check of `bash scripts/native.sh` (screen was locked).
+Re-arm: nothing scheduled. Stale edge-cached /play/ on slayback.pages.dev expires by ~2026-10-20 (unlinked).
+Verified: A1 #6 merged 6ef9537, A3 #8 merged 67a2cda (CI browser job 4/4 incl. /play). Native game.exe via scripts/native.sh opens its window, wgpu on Vulkan (LLD link, PE linker 14.0).
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**

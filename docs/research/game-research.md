@@ -165,6 +165,14 @@ Bevy 0.19, and Bevy 0.20.0 shipped 2026-10-08. [verified]
   ([incan#1344](https://github.com/encero-systems/incan/issues/1344), [secondary])
   Even with a working toolchain, Bevy `dynamic_linking` on GNU fails with "export ordinal too large", reported through
   Bevy 0.16 ([bevy#4758](https://github.com/bevyengine/bevy/issues/4758)). That leaves a static native build plus LLD as the realistic native option.
+- **Resolved 2026-10-12 (ticket A2): `scripts/native.sh`.** [verified locally] With `llvm-dlltool` and GNU ld 2.44, the
+  game links but crashes at startup with `0xC0000005`. The cause is the unbound IAT slot for `kernel32!GetCurrentThreadId`:
+  the fault address is in `.idata$6`, and no import descriptor lists the slot. A small `windows-sys` program doesn't
+  reproduce it, so it depends on how the binary is composed. `-C link-arg=-fuse-ld=lld` does nothing, because the mingw
+  gcc passes it to `ld` unchanged. What works is putting a copy of the toolchain's `rust-lld.exe`, named `ld.exe`, first
+  on gcc's `-B` path. Called as `ld` with `-m i386pep`, LLD runs its MinGW driver; the PE header then reads linker version
+  14.0 instead of 2.44. The exe then opens its window and initialises wgpu (Vulkan, RTX 4060). The cold dev build takes
+  ~7.5 min.
 
 ## 5. Bevy 0.19 text and HUD features
 
