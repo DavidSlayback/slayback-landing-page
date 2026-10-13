@@ -7,7 +7,8 @@ import { extname, join, resolve, sep } from 'node:path';
 const root = resolve(process.argv[2] ?? '../../dist');
 const port = Number(process.argv[3] ?? 4173);
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+  '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg', '.mp4': 'video/mp4' };
 
 createServer(async (req, res) => {
   try {

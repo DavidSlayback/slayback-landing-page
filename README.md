@@ -10,9 +10,9 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
 | `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
 | `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. Web-only build. |
-| `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game. |
-| `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests). |
-| `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build). |
+| `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game and `site/play/watch/` its touch-device clip page. |
+| `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests), plus the clip recorder. |
+| `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME_RELEASE=1` for the release switch). |
 
 ## Develop
 
@@ -43,13 +43,32 @@ Requires Rust stable with the `wasm32-unknown-unknown` target, plus `wasm-bindge
 
 The first game build takes about 10 minutes (fat LTO for size); the web build is about 16 MB, or 5 MB gzipped. Throwaway design spikes live on the `spike/hero` branch.
 
+`scripts/build.sh` honours `CARGO_TARGET_DIR`, so worktrees can share one target directory.
+
+## Game release switch
+
+Visitors can't find the game until it ships. `GAME_RELEASE=1 bash scripts/build.sh` turns on its entry points:
+
+- a **Play** item in the nav and a small **Play the game** call to action under the tagline (a `data-collide` hero element, so the sparks flow around it), both linking to `/play/`;
+- an easter egg: the Konami code (↑ ↑ ↓ ↓ ← → ← → B A) on the homepage opens `/play/`;
+- touch devices (`(hover: none) and (pointer: coarse)`) that reach `/play/` are sent to `/play/watch/`, a looping gameplay clip with a "Play on a computer" note, before any game JS or wasm is fetched.
+
+The switch is off by default, and deploys never set it. Off, the homepage is byte-for-byte the pre-switch page. In `site/`, switch-only content sits between `<!-- GAME_RELEASE -->` and `<!-- /GAME_RELEASE -->` markers (`/* … */` in CSS and JS), on their own lines or inline. The build deletes the marked content when the switch is off and only the markers when it is on. The switch needs the game, so the build refuses `GAME_RELEASE=1` with `SKIP_GAME=1`.
+
+The clip (`site/play/watch/clip.mp4` plus `poster.jpg`) comes from the frame-exact recorder `tests/e2e/record-clip.mjs`. It loads a page with `?capture=1`, steps its `window.__capture.frame(dt)` hook one fixed timestep per frame, screenshots each frame and encodes them with ffmpeg (640×360 H.264, 5 s, muted). **The committed clip is a placeholder recorded from the hero**, because the game has no capture hook yet. The release ticket re-records it from gameplay with `PAGE=/play/` once the game has that hook.
+
+```sh
+SKIP_GAME=1 bash scripts/build.sh && cd tests/e2e && npm ci
+node record-clip.mjs                    # → site/play/watch/clip.mp4 + poster.jpg (needs ffmpeg; FRAMES=150, PAGE=/?…)
+```
+
 ## Browser tests
 
-Playwright smoke checks in `tests/e2e/` run against the built `dist/`: the homepage renders with no console errors, the no-WebGL fallback keeps readable text, reduced motion shows a still frame, and `/play` loads cleanly (skipped when the build has no game).
+Playwright smoke checks in `tests/e2e/` run against the built `dist/`: the homepage renders with no console errors, the no-WebGL fallback keeps readable text, reduced motion shows a still frame, `/play` loads cleanly (skipped when the build has no game), and the release switch behaves (see above).
 
 ```sh
 SKIP_GAME=1 bash scripts/build.sh       # or a full build to cover /play
 cd tests/e2e && npm ci && npx playwright test
 ```
 
-Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. CI's `browser` job runs it on every PR against the `game` job's full build.
+Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. CI's `browser` job tests both: the `game` job's full switch-on build (test-only, never deployed) and the `build` job's switch-off `dist`, which is what deploys.
