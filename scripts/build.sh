@@ -12,8 +12,11 @@ cp target/wasm32-unknown-unknown/release/hero_wasm.wasm dist/hero.wasm
 if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals dist/hero.wasm -o dist/hero.wasm; fi
 echo "dist/: hero.wasm $(( $(wc -c < dist/hero.wasm) / 1024 )) KB"
 
-# The game (/play): Bevy → wasm-bindgen glue. Skip with SKIP_GAME=1 for fast hero-only builds.
-if [ "${SKIP_GAME:-0}" != 1 ]; then
+# The game (/play): Bevy → wasm-bindgen glue. Skip with SKIP_GAME=1 for hero-only builds, which also drop the
+# /play host page: deploys are hero-only until the game's release switch, and a page with no game would hang.
+if [ "${SKIP_GAME:-0}" = 1 ]; then
+  rm -rf dist/play
+else
   cargo build -p game --profile game --target wasm32-unknown-unknown --quiet
   wasm-bindgen --target web --no-typescript --out-dir dist/play --out-name game target/wasm32-unknown-unknown/game/game.wasm
   # The workspace builds with simd128, so wasm-opt must be told which post-MVP features the module already uses.
