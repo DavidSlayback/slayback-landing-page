@@ -1,6 +1,21 @@
 # Portfolio plan
 
-Status: 2026-10-12. Phase 0 (production foundation) is in PR #2, with CI green. Phase 1, slice 1 (the game's tracer bullet) is in PR #3, stacked on #2. Next: slice 2, combat. The spikes live on branch `spike/hero` (draft PR #1, do not merge).
+```text
+As of: Mon Oct 12 2026 (planning complete)
+In flight: nothing running.
+Next: work the ticket frontier on GitHub: A1 #6 (dev loop), A2 #7 (native runs), A3 #8 (browser harness), A4 #9 (headless scenarios), C4 #15 (game entry switch). Each is a PR the agent may merge after green CI and a passing acceptance check (Q39).
+Waiting on: David: Cloudflare API token (#12), landing content (#13), playtesters and release approval (#29). Default: those tickets wait; nothing is deployed.
+Re-arm: nothing.
+Verified: spec #5 and tickets #6–#29 published with 21 native blocked-by links; main CI green at 4086b8a.
+```
+
+Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
+- grilling decisions in `docs/planning/game-decisions.md`
+- research in `docs/research/game-research.md`
+- the spec in `docs/planning/spec.md` (issue #5)
+- 24 tickets (#6–#29) with dependencies
+
+The homepage launches first; the game ships behind a switch after a cohort playtest. The parked slice-2 combat prototype (draft PR #4) is superseded by ticket D2 (#17). The hero spikes live on branch `spike/hero` (draft PR #1, do not merge). The sections below record the earlier phases and decisions; the spec and tickets supersede the Phase 1 outline.
 
 ## Settled
 
