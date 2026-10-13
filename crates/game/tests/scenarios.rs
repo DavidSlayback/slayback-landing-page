@@ -6,14 +6,16 @@ use std::time::Duration;
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
-use game::arena::WALL;
-use game::player::{Player, SIZE, SPAWN};
+use game::arena::{WALL, Wall};
+use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
+use game::run::RunState;
 use game::ARENA;
 use game::enemy::{Brain, MAX_HP, Waves, fodder};
 use game::debris::{DebrisPart, part};
 use game::fighter::Hp;
 use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
+use game_core::run::{Run, TIMEOUT_PENALTY, box_spec};
 
 const FPS: f32 = 60.0;
 
@@ -243,4 +245,68 @@ fn the_player_walks_up_a_ramp_of_debris() {
         highest = highest.max(player(&mut app).0.y);
     }
     assert!(highest > STANDING_Y + 50.0, "climbed to {highest} from {STANDING_Y}");
+}
+
+fn run_state(app: &App) -> Run {
+    app.world().resource::<RunState>().0
+}
+
+fn player_hp(app: &mut App) -> f32 {
+    let mut q = app.world_mut().query_filtered::<&Hp, With<Player>>();
+    q.single(app.world()).unwrap().0.hp
+}
+
+fn right_wall_height(app: &mut App) -> f32 {
+    let mut q = app.world_mut().query::<(&Wall, &Name)>();
+    q.iter(app.world()).find(|(_, n)| n.as_str() == "right wall").expect("a right wall").0 .0.y
+}
+
+#[test]
+fn building_the_pile_under_the_player_to_the_rim_moves_on_to_a_taller_box() {
+    let mut app = standing();
+    let rim = run_state(&app).spec.rim;
+    assert_eq!(right_wall_height(&mut app), rim);
+    // A staircase of frozen debris, 12-unit steps, up past the rim.
+    let floor_top = -ARENA.y / 2.0 + WALL;
+    let steps = (rim / 12.0).ceil() as usize + 1;
+    for i in 0..steps {
+        let h = 12.0 * (i + 1) as f32;
+        let at = Vec2::new(50.0 + 36.0 * i as f32, floor_top + h / 2.0);
+        app.world_mut().spawn(part(Shape::Box { w: 36.0, h }, at, 0.0)).insert(RigidBody::Static);
+    }
+    keys(&mut app).press(KeyCode::KeyD);
+    for _ in 0..(4.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if run_state(&app).spec.number > 1 {
+            break;
+        }
+    }
+    keys(&mut app).release(KeyCode::KeyD);
+    assert_eq!(run_state(&app).spec.number, 2, "escaped to box 2");
+    step(&mut app, 0.1);
+    assert!(debris_parts(&mut app).is_empty(), "the new box starts empty");
+    assert_eq!(right_wall_height(&mut app), box_spec(2).rim, "and its walls are taller");
+    assert!((player(&mut app).0.x - SPAWN.x).abs() < 5.0, "the player starts over at the spawn point");
+}
+
+#[test]
+fn running_out_of_time_costs_health_but_a_healthy_player_carries_on() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.time_left = 0.01;
+    step(&mut app, 0.05);
+    assert_eq!(player_hp(&mut app), PLAYER_MAX_HP - TIMEOUT_PENALTY);
+    assert_eq!(run_state(&app).spec.number, 1);
+    assert!(run_state(&app).time_left > box_spec(1).timer - 1.0, "the clock restarted");
+}
+
+#[test]
+fn death_restarts_the_run_at_box_one_with_full_health() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.escape(PLAYER_MAX_HP, PLAYER_MAX_HP);
+    let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
+    q.single_mut(app.world_mut()).unwrap().0.hp = 5.0;
+    app.world_mut().resource_mut::<RunState>().0.time_left = 0.01;
+    step(&mut app, 0.1);
+    assert_eq!(run_state(&app).spec.number, 1, "back to box 1");
+    assert_eq!(player_hp(&mut app), PLAYER_MAX_HP);
 }
