@@ -14,6 +14,7 @@ use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
 use game_core::combat::{Move, Phase};
+use game_core::debris::Shape;
 use game_core::doors::Door;
 use game_core::enemy::FodderBrain;
 use game_core::movement::RUN_SPEED;
@@ -21,6 +22,7 @@ use game_core::movement::RUN_SPEED;
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
 use crate::enemy::{Brain, WallDoor, door_spot};
+use crate::debris::{DebrisPart, Shattered};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
 use crate::player::Player;
 
@@ -77,7 +79,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, (load_kit, spawn_stage).chain())
         .add_systems(
             Update,
-            (dress_walls, dress_fighters, dress_doors, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
+            (dress_walls, dress_fighters, dress_doors, dress_debris, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
         );
 }
 
@@ -348,29 +350,71 @@ struct Spark {
 const SPARKS_PER_HIT: usize = 14;
 const SPARK_LIFE: f32 = 0.28;
 
-fn spawn_sparks(mut commands: Commands, kit: Res<Kit>, mut hits: MessageReader<Hit>, mut seed: Local<u32>) {
+fn spawn_sparks(mut commands: Commands, kit: Res<Kit>, mut hits: MessageReader<Hit>, mut shattered: MessageReader<Shattered>, mut seed: Local<u32>) {
     for hit in hits.read() {
+        // Along the blow, fanned up and down; heavier blows throw more.
         let heavy = matches!(hit.mv, Move::Kick | Move::DropKick);
-        for _ in 0..SPARKS_PER_HIT + if heavy { 8 } else { 0 } {
-            // xorshift: a spray of directions without a rand dependency.
-            *seed = seed.wrapping_add(0x9E37_79B9);
-            let mut s = *seed;
-            s ^= s << 13;
-            s ^= s >> 17;
-            s ^= s << 5;
-            let a = (s & 0xFFFF) as f32 / 65535.0;
-            let b = (s >> 16) as f32 / 65535.0;
-            // Mostly along the blow, fanned up and down.
-            let angle = (a - 0.5) * 2.2;
-            let dir = Vec2::new(hit.facing * angle.cos(), angle.sin());
-            let velocity = (dir * (350.0 + 650.0 * b)).extend((b - 0.5) * 300.0);
-            commands.spawn((
-                Spark { velocity, life: SPARK_LIFE * (0.6 + 0.4 * a) },
-                Mesh3d(kit.spark_mesh.clone()),
-                MeshMaterial3d(kit.spark.clone()),
-                Transform::from_translation(hit.at.extend(20.0)).with_rotation(Quat::from_rotation_z(dir.y.atan2(dir.x))),
-            ));
-        }
+        spray(&mut commands, &kit, &mut seed, hit.at, SPARKS_PER_HIT + if heavy { 8 } else { 0 }, hit.facing, 1.1);
+    }
+    for s in shattered.read() {
+        // A figure breaking apart: a full ring, twice as many.
+        spray(&mut commands, &kit, &mut seed, s.at, SPARKS_PER_HIT * 2, 1.0, std::f32::consts::PI);
+    }
+}
+
+/// `count` sparks from `at`, aimed along `facing` (+1 / -1) within ±`fan` radians.
+fn spray(commands: &mut Commands, kit: &Kit, seed: &mut u32, at: Vec2, count: usize, facing: f32, fan: f32) {
+    for _ in 0..count {
+        // xorshift: a spray of directions without a rand dependency.
+        *seed = seed.wrapping_add(0x9E37_79B9);
+        let mut s = *seed;
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        let a = (s & 0xFFFF) as f32 / 65535.0;
+        let b = (s >> 16) as f32 / 65535.0;
+        let angle = (a - 0.5) * 2.0 * fan;
+        let dir = Vec2::new(facing * angle.cos(), angle.sin());
+        let velocity = (dir * (350.0 + 650.0 * b)).extend((b - 0.5) * 300.0);
+        commands.spawn((
+            Spark { velocity, life: SPARK_LIFE * (0.6 + 0.4 * a) },
+            Mesh3d(kit.spark_mesh.clone()),
+            MeshMaterial3d(kit.spark.clone()),
+            Transform::from_translation(at.extend(20.0)).with_rotation(Quat::from_rotation_z(dir.y.atan2(dir.x))),
+        ));
+    }
+}
+
+/// Debris keeps its enemy's colours: the body tone for every part, so a pile reads as the fallen.
+fn dress_debris(
+    mut commands: Commands,
+    scheme: Res<Scheme>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    parts: Query<(Entity, &DebrisPart), Added<DebrisPart>>,
+    mut material: Local<Option<Handle<StandardMaterial>>>,
+    // One mesh per distinct shape (an enemy type breaks into a few repeated ones), so a whole pile batches.
+    mut shapes: Local<Vec<(Shape, Handle<Mesh>)>>,
+) {
+    let mat = material
+        .get_or_insert_with(|| {
+            let accent = scheme.accents[2];
+            mats.add(StandardMaterial { base_color: accent.darker(0.45), emissive: accent.to_linear() * 0.6, perceptual_roughness: 0.85, ..default() })
+        })
+        .clone();
+    for (e, part) in &parts {
+        let mesh = match shapes.iter().find(|(s, _)| *s == part.shape) {
+            Some((_, mesh)) => mesh.clone(),
+            None => {
+                let mesh = meshes.add(match part.shape {
+                    Shape::Box { w, h } => flat(Cuboid::new(w, h, w.min(h).max(4.0))),
+                    Shape::Ball { r } => flat(Sphere::new(r).mesh().ico(1).expect("ico subdivision 1 is valid")),
+                });
+                shapes.push((part.shape, mesh.clone()));
+                mesh
+            }
+        };
+        commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(mat.clone())));
     }
 }
 

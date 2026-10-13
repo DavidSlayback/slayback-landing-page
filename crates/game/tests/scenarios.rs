@@ -10,7 +10,9 @@ use game::arena::WALL;
 use game::player::{Player, SIZE, SPAWN};
 use game::ARENA;
 use game::enemy::{Brain, MAX_HP, Waves, fodder};
+use game::debris::{DebrisPart, part};
 use game::fighter::Hp;
+use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
 
 const FPS: f32 = 60.0;
@@ -186,4 +188,59 @@ fn fodder_enter_through_a_door_only_after_its_warning() {
     }
     assert!(first_entry.is_some(), "fodder entered within 4 s");
     assert!(warned_for >= game_core::doors::WARNING - 0.05, "a door warned for {warned_for} s before it opened");
+}
+
+fn debris_parts(app: &mut App) -> Vec<(Vec2, RigidBody)> {
+    let mut q = app.world_mut().query::<(&DebrisPart, &Transform, &RigidBody)>();
+    q.iter(app.world()).map(|(_, t, b)| (t.translation.truncate(), *b)).collect()
+}
+
+/// Punches a nearly beaten fodder until it breaks apart.
+fn defeat_fodder(app: &mut App) {
+    let target = fodder_at(app, 50.0);
+    app.world_mut().get_mut::<Hp>(target).unwrap().0.hp = 1.0;
+    step(app, 0.05);
+    keys(app).press(KeyCode::KeyJ);
+    step(app, 0.3);
+    assert!(app.world().get_entity(target).is_err(), "the defeated fodder is gone");
+}
+
+#[test]
+fn a_defeated_enemy_leaves_its_capped_number_of_solid_parts() {
+    let mut app = standing();
+    defeat_fodder(&mut app);
+    assert_eq!(debris_parts(&mut app).len(), MAX_PARTS_PER_ENEMY);
+    step(&mut app, 1.5);
+    let floor_top = -ARENA.y / 2.0 + WALL;
+    for (pos, _) in debris_parts(&mut app) {
+        assert!(pos.y > floor_top && pos.y < floor_top + 40.0, "parts rest on the floor, not through it: {pos}");
+    }
+}
+
+#[test]
+fn debris_freezes_once_settled_per_the_spike_rule() {
+    let mut app = standing();
+    defeat_fodder(&mut app);
+    step(&mut app, FREEZE_AFTER + 0.2);
+    let parts = debris_parts(&mut app);
+    assert!(parts.iter().all(|(_, b)| *b == RigidBody::Static), "all parts frozen: {parts:?}");
+}
+
+#[test]
+fn the_player_walks_up_a_ramp_of_debris() {
+    let mut app = standing();
+    // A staircase of frozen parts in front of the player: 12-unit steps, 36 wide.
+    let floor_top = -ARENA.y / 2.0 + WALL;
+    for i in 0..6 {
+        let h = 12.0 * (i + 1) as f32;
+        let at = Vec2::new(60.0 + 36.0 * i as f32, floor_top + h / 2.0);
+        app.world_mut().spawn(part(Shape::Box { w: 36.0, h }, at, 0.0)).insert(RigidBody::Static);
+    }
+    keys(&mut app).press(KeyCode::KeyD);
+    let mut highest = f32::MIN;
+    for _ in 0..(2.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        highest = highest.max(player(&mut app).0.y);
+    }
+    assert!(highest > STANDING_Y + 50.0, "climbed to {highest} from {STANDING_Y}");
 }

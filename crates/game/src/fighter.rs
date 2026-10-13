@@ -6,6 +6,7 @@
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use game_core::combat::{Aabb, Health, HitOutcome, HitStop, Move, Swing, hitbox, knockback};
+use game_core::movement::{MAX_STEP, step_hop};
 
 /// Collision layers. Fighters pass through each other (a crowd can't pin the player) but stand on walls and debris.
 #[derive(PhysicsLayer, Clone, Copy, Debug, Default)]
@@ -83,7 +84,9 @@ pub fn plugin(app: &mut App) {
         .add_message::<Hit>()
         .add_message::<Defeated>()
         .add_systems(Update, (advance_swings, resolve_hits, tick_health).chain())
-        .add_systems(Update, hit_stop);
+        .add_systems(Update, hit_stop)
+        // After the player's and enemies' controls have set this frame's run velocity.
+        .add_systems(PostUpdate, step_up.before(PhysicsSystems::First));
 }
 
 /// Physics and combat components every fighter carries.
@@ -95,7 +98,8 @@ pub fn body(team: Team, half: Vec2, max_hp: f32) -> impl Bundle {
         Attack::default(),
         Flash::default(),
         RigidBody::Dynamic,
-        Collider::rectangle(half.x * 2.0, half.y * 2.0),
+        // A capsule: its rounded bottom rides up the edges of debris, so fighters climb piles without a jump.
+        Collider::capsule(half.x, half.y * 2.0 - half.x * 2.0),
         LockedAxes::ROTATION_LOCKED,
         // Frictionless so walls don't hold fighters up; horizontal control is set directly on velocity.
         Friction::ZERO.with_combine_rule(CoefficientCombine::Min),
@@ -106,6 +110,32 @@ pub fn body(team: Team, half: Vec2, max_hp: f32) -> impl Bundle {
             .with_max_distance(4.0)
             .with_query_filter(SpatialQueryFilter::from_mask([Layer::World, Layer::Debris])),
     )
+}
+
+/// Walking into a low ledge (debris, mostly) hops the fighter onto it: a capsule alone stalls against a step's edge.
+/// A forward ray at the feet finds the ledge, a ray `MAX_STEP` higher checks it is low enough, and a downward ray
+/// measures its height for the hop.
+fn step_up(spatial: SpatialQuery, gravity: Res<Gravity>, mut fighters: Query<(&Fighter, &Transform, &ShapeHits, &mut LinearVelocity)>) {
+    let filter = SpatialQueryFilter::from_mask([Layer::World, Layer::Debris]);
+    for (fighter, transform, ground, mut velocity) in &mut fighters {
+        if ground.is_empty() || velocity.x.abs() < 20.0 || velocity.y > 1.0 {
+            continue;
+        }
+        let dir = velocity.x.signum();
+        let Ok(forward) = Dir2::new(Vec2::X * dir) else { continue };
+        let feet = transform.translation.truncate() - Vec2::Y * fighter.half.y;
+        let reach = fighter.half.x + 6.0;
+        if spatial.cast_ray(feet + Vec2::Y * 3.0, forward, reach, true, &filter).is_none()
+            || spatial.cast_ray(feet + Vec2::Y * (MAX_STEP + 2.0), forward, reach, true, &filter).is_some()
+        {
+            continue;
+        }
+        let above = feet + Vec2::new(dir * reach, MAX_STEP + 2.0);
+        let Some(top) = spatial.cast_ray(above, Dir2::NEG_Y, MAX_STEP + 2.0, true, &filter) else { continue };
+        if let Some(hop) = step_hop(MAX_STEP + 2.0 - top.distance, gravity.0.length()) {
+            velocity.y = hop;
+        }
+    }
 }
 
 fn advance_swings(time: Res<Time>, mut attacks: Query<&mut Attack>) {
