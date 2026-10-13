@@ -22,6 +22,7 @@ use game_core::movement::RUN_SPEED;
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
 use crate::enemy::{Brain, HALF, WallDoor, door_spot};
+use crate::comfort::Comfort;
 use crate::bomb::{BOMB_RADIUS, BombHead, Exploded, LitBomb};
 use crate::debris::{DebrisPart, Shattered};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
@@ -82,6 +83,7 @@ struct BaseScheme(usize);
 pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(GlobalAmbientLight { color: Color::WHITE, brightness: 120.0, ..default() })
+        .add_plugins(crate::comfort::plugin)
         .insert_resource(BaseScheme(Scheme::page_index()))
         .insert_resource(SCHEMES[Scheme::page_index()])
         .add_systems(Startup, (load_kit, spawn_stage).chain())
@@ -322,6 +324,10 @@ fn dress_fighters(
                         r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(dx, 1.05, 0.0)));
                     }
                 }
+                if *team == Team::Player {
+                    // The player's shape cue (colour-blind safe, decision Q35): a glowing pack on the back, which no enemy has.
+                    r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.55, -0.32).with_scale(Vec3::new(1.1, 2.6, 0.5))));
+                }
                 if ninja {
                     // Band round the head, tails streaming back.
                     r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.5, -0.32).with_scale(Vec3::new(1.2, 1.0, 1.0))));
@@ -399,18 +405,25 @@ fn animate_fighters(
 }
 
 /// Hit flash (white) and the fodder telegraph (the visor and front leg brighten as the windup builds).
-fn tint_fighters(fighters: Query<(&Flash, Option<&Brain>, &Children)>, rigs: Query<&Tint>, mut mats: ResMut<Assets<StandardMaterial>>) {
+fn tint_fighters(
+    comfort: Res<Comfort>,
+    fighters: Query<(&Flash, Option<&Brain>, &Children)>,
+    rigs: Query<&Tint>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
+    // Reduced motion: a hit tints the body toward white instead of flashing it.
+    let (flash_mix, flash_glow) = if comfort.reduced_motion { (0.35, 0.6) } else { (1.0, 3.0) };
     for (flash, brain, children) in &fighters {
         for &child in children {
             let Ok(tint) = rigs.get(child) else { continue };
             let lit = flash.0 > 0.0;
             if let Some(mut m) = mats.get_mut(&tint.body) {
-                m.base_color = if lit { Color::WHITE } else { tint.base };
-                m.emissive = if lit { LinearRgba::rgb(3.0, 3.0, 3.0) } else { LinearRgba::BLACK };
+                m.base_color = if lit { tint.base.mix(&Color::WHITE, flash_mix) } else { tint.base };
+                m.emissive = if lit { LinearRgba::rgb(flash_glow, flash_glow, flash_glow) } else { LinearRgba::BLACK };
             }
             let windup = brain.map_or(0.0, |b| b.0.telegraph());
             if let Some(mut m) = mats.get_mut(&tint.glow) {
-                m.emissive = if lit { LinearRgba::rgb(8.0, 8.0, 8.0) } else { tint.glow_base * (1.0 + 3.0 * windup) };
+                m.emissive = if lit && !comfort.reduced_motion { LinearRgba::rgb(8.0, 8.0, 8.0) } else { tint.glow_base * (1.0 + 3.0 * windup) };
             }
         }
     }
@@ -462,21 +475,23 @@ fn spawn_sparks(
     mut hits: MessageReader<Hit>,
     mut shattered: MessageReader<Shattered>,
     mut blasts: MessageReader<Exploded>,
+    comfort: Res<Comfort>,
     mut seed: Local<u32>,
 ) {
+    let n = |count: usize| ((count as f32) * comfort.sparks()).ceil() as usize;
     for hit in hits.read() {
         // Along the blow, fanned up and down; heavier blows throw more.
         let heavy = matches!(hit.mv, Move::Kick | Move::DropKick);
-        spray(&mut commands, &kit, &mut seed, hit.at, SPARKS_PER_HIT + if heavy { 8 } else { 0 }, hit.facing, 1.1);
+        spray(&mut commands, &kit, &mut seed, hit.at, n(SPARKS_PER_HIT + if heavy { 8 } else { 0 }), hit.facing, 1.1);
     }
     for s in shattered.read() {
         // A figure breaking apart: a full ring, twice as many.
-        spray(&mut commands, &kit, &mut seed, s.at, SPARKS_PER_HIT * 2, 1.0, std::f32::consts::PI);
+        spray(&mut commands, &kit, &mut seed, s.at, n(SPARKS_PER_HIT * 2), 1.0, std::f32::consts::PI);
     }
     for b in blasts.read() {
         // A blast: three full rings.
         for _ in 0..3 {
-            spray(&mut commands, &kit, &mut seed, b.at, SPARKS_PER_HIT * 2, 1.0, std::f32::consts::PI);
+            spray(&mut commands, &kit, &mut seed, b.at, n(SPARKS_PER_HIT * 2), 1.0, std::f32::consts::PI);
         }
     }
 }

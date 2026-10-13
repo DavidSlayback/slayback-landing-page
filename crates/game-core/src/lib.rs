@@ -9,6 +9,7 @@ pub mod debris;
 pub mod doors;
 pub mod enemy;
 pub mod grab;
+pub mod quality;
 pub mod run;
 pub mod score;
 

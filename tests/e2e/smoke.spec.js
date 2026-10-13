@@ -63,4 +63,20 @@ test.describe('/play', () => {
     // winit starts Bevy's loop by throwing out of init(); the page catches it, but Chrome may still log it.
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
+
+  test.describe('with reduced motion', () => {
+    test.use({ reducedMotion: 'reduce' });
+
+    test('the game softens its flashes and sparks', async ({ page }) => {
+      test.setTimeout(180_000);
+      const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+      if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+      test.skip(!built, 'game not in this build');
+      const logs = [];
+      page.on('console', m => logs.push(m.text()));
+      await page.goto('/play/');
+      await page.waitForFunction(() => document.getElementById('game').width !== 300, null, { timeout: 150_000 });
+      await expect.poll(() => logs.some(l => l.includes('comfort: reduced motion on'))).toBe(true);
+    });
+  });
 });
