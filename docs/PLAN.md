@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 11:19 CDT
-In flight: production deploy of main from this machine (wrangler), waiting on David's `wrangler login` (CI can't deploy until Actions billing is fixed).
-Next: after login: SKIP_GAME=1 build, then `npx wrangler pages deploy dist --project-name=slayback --branch=main`, then check https://slayback.pages.dev. Later: an rc/ branch for the game preview (needs David's go-ahead), then E2 playtest.
-Waiting on: David: (1) wrangler login (one browser click); (2) Actions billing, or keep merging without CI; (3) go-ahead for the rc/ preview; (4) gamepad check (#26); (5) C3 analytics, C2 content, E2 playtest.
-Re-arm: nothing scheduled. CI rules: Q41 (drafts and stacked PRs don't build), Q42 (PRs run one `check` job; game build, browser and deploys only on main and rc/). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: D10-D12 and the CI rework merged to main WITHOUT CI (David's call, 2026-10-13); each was verified locally before merging (headless tests, wasm clippy, clean tree; full build + browser 5/5 at the top of the stack).
+As of: Tue Oct 13 2026 11:34 CDT
+In flight: nothing running.
+Next: E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Deploy from this machine with `bash scripts/deploy.sh` (prod) / `bash scripts/deploy.sh rc <n>` (preview) until CI can deploy again.
+Waiting on: David: playtesters (#29), gamepad check (#26), C3 analytics, C2 content; Actions billing only if CI deploys are wanted back. Q43: no permission asks.
+Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
+Verified: main b0d243b+ deployed: production 200, no Play links, 0 errors; rc-1 Play -> /play 0 errors, scripted run reaches box 2, phones get the clip page with no game fetch. D10-D12/E1 merged without CI (David's call); verified locally first.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**

@@ -18,6 +18,8 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 
 Pull requests get one cheap `check` job: tests (including the headless game), clippy, and the hero build with its size budget. It runs only for non-draft PRs into `main`, so open PRs as drafts while iterating. The wasm game build, browser harness and deploys run on `main` (production, hero only) and on `rc/…` branches (a preview with the game). See decisions Q41 and Q42.
 
+Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n>` ships a preview of the full game at `https://rc-<n>.slayback.pages.dev`. Both need wrangler logged in, or credentials in `.env.local`.
+
 ## Develop
 
 ```sh
