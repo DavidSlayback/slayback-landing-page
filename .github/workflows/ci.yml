@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Docs-only PRs need no build. Pushes to main always run (they deploy).
+    paths-ignore: ['docs/**', '**/*.md']
 
 jobs:
   build:
@@ -14,6 +16,9 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # Default members only: sim, hero-wasm, game-core (the Bevy shell is checked in the game job).
       - run: cargo test --release
       - run: cargo clippy --all-targets --release -- -D warnings
@@ -34,6 +39,9 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock.
       - uses: taiki-e/install-action@v2
         with:
@@ -58,8 +66,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p game
-      - run: cargo clippy -p game --all-targets -- -D warnings
+        with:
+          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Headless: without the `render` feature, so changes to the renderer, UI or audio features don't rebuild Bevy's
+      # rendering crates here (that cost ~13 min a run). The wasm build in the `game` job still covers `render`.
+      - run: cargo test -p game --no-default-features
+      - run: cargo clippy -p game --no-default-features --all-targets -- -D warnings
 
   # Browser smoke harness (tickets A3, C4; tests/e2e) against both builds: the full switch-on build (/play and the
   # game's entry points) and the deployable switch-off build (no way into the game).
