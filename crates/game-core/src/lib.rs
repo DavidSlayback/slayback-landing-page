@@ -4,6 +4,7 @@
 //! wires it into ECS systems.
 
 pub mod combat;
+pub mod debris;
 pub mod doors;
 pub mod enemy;
 
@@ -28,6 +29,15 @@ pub mod movement {
     /// Next horizontal velocity for an input axis in -1..=1.
     pub fn run_velocity(current: f32, axis: f32, dt: f32) -> f32 {
         move_toward(current, axis.clamp(-1.0, 1.0) * RUN_SPEED, RUN_ACCEL * dt)
+    }
+
+    /// Tallest ledge a fighter walks up without a jump (debris ramps), world units: about a torso lying on its side.
+    pub const MAX_STEP: f32 = 24.0;
+
+    /// Upward speed for a hop that just clears a ledge `height` tall under `gravity` (with 15% to spare), or `None`
+    /// if the ledge is too tall to step.
+    pub fn step_hop(height: f32, gravity: f32) -> Option<f32> {
+        (height > 0.0 && height <= MAX_STEP).then(|| (2.0 * gravity * height).sqrt() * 1.15)
     }
 
     /// One frame of movement input.
@@ -152,6 +162,16 @@ pub mod movement {
             let mut m = Mover::default();
             let (_, vx) = run(&mut m, 0.0, Input { axis: 0.0, dash: true }, 12);
             assert_eq!(vx, 0.0);
+        }
+
+        #[test]
+        fn a_step_hop_clears_low_ledges_and_refuses_tall_ones() {
+            let g = 2000.0;
+            let v = step_hop(12.0, g).expect("a 12-unit ledge is a step");
+            assert!(v * v / (2.0 * g) > 12.0, "the hop rises above the ledge");
+            assert!(v * v / (2.0 * g) < 12.0 * 1.5, "and not much more: it's a step, not a jump");
+            assert_eq!(step_hop(MAX_STEP + 1.0, g), None);
+            assert_eq!(step_hop(0.0, g), None);
         }
 
         #[test]

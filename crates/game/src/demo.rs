@@ -1,14 +1,16 @@
 //! A scripted demo (`/play/?demo=1`, or `DEMO=1` natively): fodder stepping up to the player, who punches, kicks and
 //! drop-kicks them in a loop. It drives the real game through synthetic key presses, so what it shows is what
-//! playing looks like. Uses: checking the look of a fight without a person at the keyboard, and recording the
-//! touch-device gameplay clip.
+//! playing looks like. Uses: checking the look of a fight without a person at the keyboard, recording the
+//! touch-device gameplay clip, and loading the box with debris (`debris=1000`) to measure frame time.
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
 
 use crate::ARENA;
 use crate::arena::WALL;
+use crate::debris::part;
 use crate::enemy::{Brain, HALF, Waves, fodder};
+use game_core::debris::humanoid_parts;
 use crate::player::{KICK_KEY, PUNCH_KEY, Player};
 
 /// A demo setting from the page query (`demo=1&slow=0.25`) or, natively, the environment (`DEMO=1 SLOW=0.25`).
@@ -32,9 +34,24 @@ pub fn requested() -> bool {
 pub fn plugin(app: &mut App) {
     // `slow` plays the demo in slow motion (e.g. 0.25), so short effects can be captured frame by frame.
     let speed = setting("slow").and_then(|s| s.parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
+    // `debris` drops that many loose parts into the box at the start, to check the frame time of a full pile.
+    let debris = setting("debris").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
     app.insert_resource(Waves { enabled: false, ..default() })
         .add_systems(Startup, move |mut time: ResMut<Time<Virtual>>| time.set_relative_speed(speed))
+        .add_systems(Startup, move |mut commands: Commands| drop_debris(&mut commands, debris))
         .add_systems(PreUpdate, script.after(InputSystems));
+}
+
+/// `n` parts of a broken figure's shapes, in rows across the top of the box.
+fn drop_debris(commands: &mut Commands, n: usize) {
+    let shapes = humanoid_parts((HALF.x, HALF.y));
+    let cols = 40;
+    for i in 0..n {
+        let (col, row) = ((i % cols) as f32, (i / cols) as f32);
+        let x = -ARENA.x / 2.0 + WALL + 20.0 + col * (ARENA.x - 2.0 * WALL - 40.0) / (cols - 1) as f32;
+        let y = ARENA.y / 2.0 - WALL - 30.0 - row * 26.0 + (i % 3) as f32 * 4.0;
+        commands.spawn(part(shapes[i % shapes.len()].shape, Vec2::new(x, y.max(-ARENA.y / 2.0 + 120.0)), 0.0));
+    }
 }
 
 /// One beat of the loop: what to press, and how far away the next fodder stands.

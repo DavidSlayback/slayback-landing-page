@@ -10,7 +10,7 @@ use game_core::movement::run_velocity;
 
 use crate::ARENA;
 use crate::arena::WALL;
-use crate::fighter::{Attack, Defeated, Fighter, Hp, Team, body};
+use crate::fighter::{Attack, Fighter, Hp, Team, body};
 use crate::player::Player;
 
 #[derive(Component)]
@@ -45,7 +45,7 @@ impl Default for Waves {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Waves>()
         .add_systems(Startup, spawn_doors)
-        .add_systems(Update, (request_entries, open_doors, think, remove_defeated));
+        .add_systems(Update, (request_entries, open_doors, think));
 }
 
 /// Where a door's fodder appears: just inside the wall, standing on the floor.
@@ -114,12 +114,5 @@ fn think(
                 attack.start(mv);
             }
         }
-    }
-}
-
-/// D2: defeated fodder simply leave (D3 turns them into climbable debris).
-fn remove_defeated(mut defeated: MessageReader<Defeated>, mut commands: Commands) {
-    for d in defeated.read().filter(|d| d.team == Team::Enemy) {
-        commands.entity(d.entity).despawn();
     }
 }
