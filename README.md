@@ -9,7 +9,7 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 | `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield). Native tests. |
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
 | `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
-| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. Web-only build. |
+| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input (`cargo test -p game`, Linux CI job `game-tests`). |
 | `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game and `site/play/watch/` its touch-device clip page. |
 | `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests), plus the clip recorder. |
 | `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME_RELEASE=1` for the release switch). |
