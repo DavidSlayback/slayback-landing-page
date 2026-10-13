@@ -5,6 +5,7 @@
 
 pub mod arena;
 pub mod bomb;
+pub mod comfort;
 pub mod debris;
 pub mod demo;
 pub mod enemy;

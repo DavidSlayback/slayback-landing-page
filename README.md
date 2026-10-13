@@ -87,6 +87,11 @@ There is no jump: you climb by walking up debris.
 **The look** follows the B2 spike's budget (`docs/research/game-research.md`, section 6): `bevy_pbr`, one directional light with a single shadow cascade, emissive neon plus bloom, and ACES tonemapping.
 - **Resolution:** `site/play/` caps the canvas at a 16:9 stage of 1280×720 CSS px and scales it up with a CSS transform; the game ignores the display's pixel ratio. The backbuffer therefore never exceeds 1280×720.
 - **Measured** (headless Chrome, Intel UHD, vsync off): about 8 ms per frame, or 10 ms with a full 1000-part pile. `game_bg.wasm` is about 6.0 MB gzipped.
+- **Reduced motion:** with `prefers-reduced-motion` (or `?motion=reduce`), a hit tints the body instead of flashing it white, and sparks drop to 40%. There is no screen shake to remove. The browser harness checks that the game picks the setting up.
+- **Quality scaling** (`game-core::quality`): if frames average over 18 ms for 1.5 s, the game sheds bloom, then MSAA, then shadows, and never steps back up.
+  - **Measured on software WebGL** (SwiftShader, 1920×1080): it stepped through all three levels, and frames went from 112 to 86 ms.
+  - **On the Intel UHD** (~8 ms per frame) it never engages.
+- **Shapes, not just colours** (Q35): thugs are broad with shoulder plates, ninjas slim with a trailing headband, bomb-heads have a bomb for a head, and the player wears a glowing pack. See the greyscale check in `docs/media/enemies-greyscale.png`.
 - **Colour scheme:** the game starts in the visitor's hero colour scheme (`slayback-scheme` in localStorage), and `?palette=` overrides it. It then rotates the scheme box by box.
 
 ### Score and screens
