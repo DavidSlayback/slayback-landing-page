@@ -64,6 +64,8 @@ The first game build takes about 10 minutes (fat LTO for size); the web build is
 | Spin-throw | attack while holding; it hurts every enemy it passes through |
 | Set down | L again |
 
+Gamepads work too, with nothing to set up: left stick or d-pad to run, A or the right trigger to dash, X punch, Y kick, B grab, Start to pause or start (`crates/game/src/input.rs` maps every device to the same actions; +0.03 MB gzipped).
+
 There is no jump: you climb by walking up debris.
 
 **The box.**
