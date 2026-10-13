@@ -326,6 +326,10 @@ remaining time is GPU work.
 - **Lighting:** one directional key light with a single-cascade shadow map, low global ambient, and neon from
   emissive materials plus bloom. No point lights by default. At most one short-lived point light for explosions.
   Materials are lit `StandardMaterial` on flat-normal meshes (`with_duplicated_vertices().with_computed_flat_normals()`).
+  *Revised 2026-10-13 (look pass):* Bevy's WebGL2 build uses **one** directional light (`MAX_DIRECTIONAL_LIGHTS = 1`,
+  an Adreno workaround; extra lights are dropped with a one-time warning), so a second rim light silently replaced
+  the key light. The shadow map is off too: in the web build it left the scene unlit, and it was the costliest pass.
+  The look now uses one frontal key light, cool ambient, and blob shadows under the fighters.
 - **Quality:** bloom and MSAA 4× on at full quality. Automatic scaling drops bloom first, then MSAA, then shadows.
 - **Resolution:** cap the backbuffer at about 1280×720 physical pixels and let CSS upscale the canvas. At 1080p the
   full look misses 60 fps on the integrated GPU (22 ms). D1 must verify how to cap it in Bevy (window resolution and

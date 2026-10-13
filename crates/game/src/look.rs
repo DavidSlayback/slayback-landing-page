@@ -2,14 +2,16 @@
 //! with emissive neon and bloom in the page's colour scheme.
 //!
 //! Gameplay entities carry no visuals; this plugin dresses them when they appear, so the headless scenarios run the
-//! same game without assets or a renderer. Choices and budget come from the B2 spike (docs/research/game-research.md,
-//! section 6): one directional light with a single shadow cascade, low ambient, no point lights, ACES tonemapping,
-//! bloom and MSAA 4x, a backbuffer capped at 1280x720 by the host page.
+//! same game without assets or a renderer. Budget from the B2 spike (docs/research/game-research.md, section 6): no
+//! point lights, ACES tonemapping, bloom and MSAA 4x, a backbuffer capped at 1280x720 by the host page. The set is a
+//! cool, neutral dark (back-wall grid, semi-gloss floor, drifting embers) so the scheme's neon is the only colour:
+//! a frontal key light, a cool rim light from behind, blob shadows rather than a shadow map.
+
+use std::f32::consts::FRAC_PI_2;
 
 use avian2d::prelude::LinearVelocity;
 use bevy::camera::Hdr;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::light::CascadeShadowConfigBuilder;
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
@@ -32,6 +34,25 @@ use crate::run::BoxStarted;
 
 /// Depth of the box, world units (the 2D game lives on the z = 0 plane).
 pub const DEPTH: f32 = 192.0;
+
+/// Emissive strengths (times the accent): the back-wall grid, background embers, debris.
+const GRID_GLOW: f32 = 0.4;
+const EMBER_GLOW: f32 = 5.0;
+const DEBRIS_GLOW: f32 = 0.06;
+/// Back-wall grid spacing, world units (a fodder is ~52 tall).
+const GRID: f32 = 80.0;
+
+/// A figure's (and its debris's) body: a cool mid-grey with a hint of its accent (a darker tone goes near-black after
+/// ACES). The accent itself is kept for the parts that glow, so silhouettes read against the dark set and colour
+/// marks only what matters.
+fn body_tone(accent: Color) -> Color {
+    Color::srgb(0.3, 0.31, 0.36).mix(&accent, 0.2)
+}
+
+/// Debris: darker and nearly neutral, so a pile reads as scrap in every scheme (a yellow accent would turn it olive).
+fn debris_tone(accent: Color) -> Color {
+    Color::srgb(0.2, 0.21, 0.25).mix(&accent, 0.08)
+}
 
 /// A colour scheme shared with the homepage hero (`site/hero.js`): four neon accents, the first one primary.
 #[derive(Resource, Clone, Copy, Debug)]
@@ -99,11 +120,11 @@ struct BaseScheme(usize);
 
 pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::BLACK))
-        .insert_resource(GlobalAmbientLight { color: Color::WHITE, brightness: 120.0, ..default() })
+        .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 350.0, ..default() })
         .add_plugins((crate::comfort::plugin, camera::plugin))
         .insert_resource(BaseScheme(Scheme::page_index()))
         .insert_resource(SCHEMES[Scheme::page_index()])
-        .add_systems(Startup, (load_kit, spawn_stage).chain())
+        .add_systems(Startup, (load_kit, (spawn_stage, spawn_embers)).chain())
         // Before anything is dressed for the new box.
         .add_systems(PreUpdate, (rotate_scheme, build_frame))
         .add_systems(
@@ -120,6 +141,7 @@ pub fn plugin(app: &mut App) {
                 light_doors,
                 spawn_sparks,
                 fly_sparks,
+                drift_embers,
             ),
         );
 }
@@ -128,8 +150,12 @@ pub fn plugin(app: &mut App) {
 #[derive(Resource)]
 struct Kit {
     wall: Handle<StandardMaterial>,
+    floor: Handle<StandardMaterial>,
     rim: Handle<StandardMaterial>,
-    skin: Handle<StandardMaterial>,
+    /// The back wall's grid: brighter inside the box, faint above the rim.
+    grid: Handle<StandardMaterial>,
+    grid_faint: Handle<StandardMaterial>,
+    ember: Handle<StandardMaterial>,
     spark: Handle<StandardMaterial>,
     debris: Handle<StandardMaterial>,
     spark_mesh: Handle<Mesh>,
@@ -141,6 +167,9 @@ struct Kit {
     head: Handle<Mesh>,
     limb: Handle<Mesh>,
     visor: Handle<Mesh>,
+    /// A soft dark disc on the floor under each fighter (the scene has no shadow map).
+    blob: Handle<Mesh>,
+    blob_shade: Handle<StandardMaterial>,
 }
 
 fn flat(mesh: impl Into<Mesh>) -> Mesh {
@@ -154,6 +183,13 @@ fn load_kit(
     mut mats: ResMut<Assets<StandardMaterial>>,
 ) {
     let accent = scheme.accents[0];
+    // A lighter, semi-gloss floor: the key light and the neon above it catch on its surface.
+    let floor = mats.add(StandardMaterial {
+        base_color: Color::srgb(0.13, 0.135, 0.16),
+        perceptual_roughness: 0.35,
+        metallic: 0.3,
+        ..default()
+    });
     let mut mat = |base: Color, emissive: LinearRgba| {
         mats.add(StandardMaterial {
             base_color: base,
@@ -164,13 +200,17 @@ fn load_kit(
         })
     };
     let kit = Kit {
-        wall: mat(Color::srgb(0.05, 0.07, 0.05), LinearRgba::BLACK),
+        // A cool, neutral dark set, so the scheme's neon is the only colour on screen.
+        wall: mat(Color::srgb(0.035, 0.04, 0.055), LinearRgba::BLACK),
+        floor,
         rim: mat(accent, accent.to_linear() * 4.0),
-        skin: mat(Color::srgb(0.85, 0.9, 0.8), LinearRgba::BLACK),
+        grid: mat(Color::BLACK, accent.to_linear() * GRID_GLOW),
+        grid_faint: mat(Color::BLACK, accent.to_linear() * GRID_GLOW * 0.25),
+        ember: mat(Color::BLACK, accent.to_linear() * EMBER_GLOW),
         // White-hot, like the hero's welding sparks; bloom does the rest.
         spark: mat(Color::WHITE, LinearRgba::rgb(14.0, 12.0, 8.0)),
-        // Debris keeps the fallen enemy's colours (recoloured with the scheme each box).
-        debris: mat(scheme.accents[2].darker(0.45), scheme.accents[2].to_linear() * 0.6),
+        // Debris is the fallen enemies' charcoal bodies, still faintly lit (recoloured with the scheme each box).
+        debris: mat(debris_tone(scheme.accents[2]), scheme.accents[2].to_linear() * DEBRIS_GLOW),
         spark_mesh: meshes.add(Cuboid::new(7.0, 1.6, 1.6)),
         door_mesh: meshes.add(flat(Cuboid::new(4.0, 64.0, 72.0))),
         // A thug's shoulder plate (rig units).
@@ -188,6 +228,14 @@ fn load_kit(
         head: meshes.add(flat(Sphere::new(0.32).mesh().ico(1).expect("ico subdivision 1 is valid"))),
         limb: meshes.add(flat(Cuboid::new(0.22, 0.75, 0.22))),
         visor: meshes.add(flat(Cuboid::new(0.4, 0.08, 0.1))),
+        // A unit disc lying on the floor (XZ plane).
+        blob: meshes.add(Circle::new(1.0).mesh().resolution(20).build().rotated_by(Quat::from_rotation_x(-FRAC_PI_2))),
+        blob_shade: mats.add(StandardMaterial {
+            base_color: Color::srgba(0.0, 0.0, 0.0, 0.55),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        }),
     };
     commands.insert_resource(kit);
 }
@@ -206,11 +254,13 @@ fn spawn_stage(mut commands: Commands) {
         Tonemapping::AcesFitted,
         Bloom::NATURAL,
     ));
-    // One key light; WebGL2 supports a single shadow cascade.
+    // The one key light: Bevy's WebGL2 build uses a single directional light (any more and only one counts, with a
+    // one-time warning), so there is no separate rim light; the glowing parts and the grid behind separate the
+    // figures. From the front and above, so a fighter is lit the same whichever way it faces. No shadow map (the
+    // costliest pass on an integrated GPU): blob shadows under the fighters ground them instead.
     commands.spawn((
-        DirectionalLight { illuminance: 6_000.0, shadow_maps_enabled: true, ..default() },
-        Transform::from_xyz(-320.0, 960.0, 800.0).looking_at(Vec3::ZERO, Vec3::Y),
-        CascadeShadowConfigBuilder { num_cascades: 1, maximum_distance: 4_000.0, ..default() }.build(),
+        DirectionalLight { illuminance: 9_000.0, shadow_maps_enabled: false, ..default() },
+        Transform::from_xyz(-140.0, 900.0, 1000.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }
 
@@ -232,11 +282,13 @@ fn build_frame(
     let half = ARENA / 2.0;
     let (floor, rim) = (-half.y + WALL, -half.y + WALL + spec.rim);
     let (inner, strip, h) = (half.x - WALL, 5.0, spec.rim);
+    // The back wall runs from under the floor to the top of the world, so a tight camera never shows a void above
+    // the box; the rim's neon marks where the box ends.
+    let top = half.y + WALL;
     let slabs = [
-        // The back wall, from under the floor to the rim, behind the play plane.
         (
-            Vec3::new(ARENA.x, h + WALL, WALL),
-            Vec3::new(0.0, floor + h / 2.0 - WALL / 2.0, -DEPTH / 2.0 - WALL / 2.0),
+            Vec3::new(ARENA.x, top - floor + WALL, WALL),
+            Vec3::new(0.0, (top + floor - WALL) / 2.0, -DEPTH / 2.0 - WALL / 2.0),
             &kit.wall,
         ),
         // Neon: a frame on the back wall, along the tops of the side walls (the rim), and the floor's front edge.
@@ -248,7 +300,28 @@ fn build_frame(
         (Vec3::new(strip, strip, DEPTH), Vec3::new(half.x - WALL / 2.0, rim, 0.0), &kit.rim),
         (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, floor, DEPTH / 2.0), &kit.rim),
     ];
-    for (size, pos, mat) in slabs {
+    // A grid on the back wall gives the set depth and scale: brighter inside the box, faint above the rim. Lines are
+    // thin, barely proud of the wall, and share two materials so they batch.
+    let line = 1.5;
+    let z = -DEPTH / 2.0 + 0.5;
+    let mut grid = Vec::new();
+    let mut x = -inner + GRID;
+    while x < inner - 1.0 {
+        grid.push((Vec3::new(line, h, line), Vec3::new(x, floor + h / 2.0, z), &kit.grid));
+        grid.push((Vec3::new(line, top - rim, line), Vec3::new(x, (rim + top) / 2.0, z), &kit.grid_faint));
+        x += GRID;
+    }
+    let mut y = floor + GRID;
+    while y < top {
+        let faint = y > rim;
+        grid.push((
+            Vec3::new(2.0 * inner, line, line),
+            Vec3::new(0.0, y, z),
+            if faint { &kit.grid_faint } else { &kit.grid },
+        ));
+        y += GRID;
+    }
+    for (size, pos, mat) in slabs.into_iter().chain(grid) {
         commands.spawn((
             FramePiece,
             Mesh3d(meshes.add(flat(Cuboid::from_size(size)))),
@@ -275,13 +348,18 @@ fn rotate_scheme(
         m.emissive = scheme.accents[0].to_linear() * 4.0;
     }
     if let Some(mut m) = mats.get_mut(&kit.debris) {
-        m.base_color = scheme.accents[2].darker(0.45);
-        m.emissive = scheme.accents[2].to_linear() * 0.6;
+        m.base_color = debris_tone(scheme.accents[2]);
+        m.emissive = scheme.accents[2].to_linear() * DEBRIS_GLOW;
+    }
+    for (handle, glow) in [(&kit.grid, GRID_GLOW), (&kit.grid_faint, GRID_GLOW * 0.25), (&kit.ember, EMBER_GLOW)] {
+        if let Some(mut m) = mats.get_mut(handle) {
+            m.emissive = scheme.accents[0].to_linear() * glow;
+        }
     }
     // The player keeps the primary accent of whatever scheme is up (enemies are dressed fresh in each box).
     for (mut tint, parent) in &mut tints {
         if players.contains(parent.parent()) {
-            tint.base = scheme.accents[0].darker(0.55);
+            tint.base = body_tone(scheme.accents[0]);
             tint.glow_base = scheme.accents[0].to_linear() * 6.0;
             if let Some(mut m) = mats.get_mut(&tint.glow) {
                 m.base_color = scheme.accents[0];
@@ -297,10 +375,11 @@ fn dress_walls(
     walls: Query<(Entity, &Wall), Added<Wall>>,
 ) {
     for (e, wall) in &walls {
-        commands.entity(e).insert((
-            Mesh3d(meshes.add(flat(Cuboid::new(wall.0.x, wall.0.y, DEPTH)))),
-            MeshMaterial3d(kit.wall.clone()),
-        ));
+        // The floor is the one slab wider than it is tall.
+        let mat = if wall.0.x > wall.0.y { &kit.floor } else { &kit.wall };
+        commands
+            .entity(e)
+            .insert((Mesh3d(meshes.add(flat(Cuboid::new(wall.0.x, wall.0.y, DEPTH)))), MeshMaterial3d(mat.clone())));
     }
 }
 
@@ -361,7 +440,7 @@ fn dress_fighters(
             (_, Some(Kind::Ninja)) => scheme.accents[3],
             _ => scheme.accents[2],
         };
-        let base = accent.darker(0.55);
+        let base = body_tone(accent);
         let glow_base = accent.to_linear() * 6.0;
         let body = mats.add(StandardMaterial { base_color: base, perceptual_roughness: 0.85, ..default() });
         let glow = mats.add(StandardMaterial {
@@ -380,6 +459,16 @@ fn dress_fighters(
             _ => Vec3::ONE,
         };
         commands.entity(e).insert(Visibility::default()).with_children(|p| {
+            // Under the feet, just above whatever the fighter stands on; it doesn't turn with the rig.
+            p.spawn((
+                Mesh3d(kit.blob.clone()),
+                MeshMaterial3d(kit.blob_shade.clone()),
+                Transform::from_xyz(0.0, -fighter.half.y + 0.5, 0.0).with_scale(Vec3::new(
+                    fighter.half.x * 1.6 * build.x,
+                    1.0,
+                    16.0,
+                )),
+            ));
             p.spawn((
                 Rig::default(),
                 Tint { body: body.clone(), glow: glow.clone(), base, glow_base },
@@ -433,9 +522,10 @@ fn dress_fighters(
                         Transform::from_xyz(0.0, 1.8, 0.0).with_scale(Vec3::new(0.4, 0.35, 0.4)),
                     ));
                 } else {
+                    // A helmet in the body's tone; the visor below is the face.
                     r.spawn((
                         Mesh3d(kit.head.clone()),
-                        MeshMaterial3d(kit.skin.clone()),
+                        MeshMaterial3d(body.clone()),
                         Transform::from_xyz(0.0, 1.35, 0.0),
                     ));
                 }
@@ -677,6 +767,56 @@ fn fly_sparks(mut commands: Commands, time: Res<Time>, mut sparks: Query<(Entity
         spark.velocity.y -= crate::GRAVITY * 0.6 * dt;
         tf.translation += spark.velocity * dt;
         tf.scale = Vec3::splat((spark.life / SPARK_LIFE).clamp(0.2, 1.0));
+    }
+}
+
+/// A background ember, drifting down behind the fight like the homepage's welding sparks.
+#[derive(Component)]
+struct Ember {
+    velocity: Vec2,
+    /// Sway phase, so embers don't drift in lockstep.
+    phase: f32,
+}
+
+const EMBERS: usize = 48;
+
+fn spawn_embers(mut commands: Commands, kit: Res<Kit>, comfort: Res<Comfort>) {
+    // Reduced motion keeps a few, slower ones: ambience, not movement.
+    let (count, speed) = if comfort.reduced_motion { (EMBERS / 3, 0.4) } else { (EMBERS, 1.0) };
+    let mut seed = 0x2545_F491u32;
+    let mut next = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        (seed & 0xFFFF) as f32 / 65535.0
+    };
+    for _ in 0..count {
+        let (x, y, z) = (next() - 0.5, next() - 0.5, next());
+        let velocity = Vec2::new((next() - 0.5) * 12.0, -(18.0 + 40.0 * next())) * speed;
+        commands.spawn((
+            Ember { velocity, phase: next() * std::f32::consts::TAU },
+            Mesh3d(kit.spark_mesh.clone()),
+            MeshMaterial3d(kit.ember.clone()),
+            // Between the back wall and the play plane, so fighters pass in front of them.
+            Transform::from_xyz(x * ARENA.x, y * ARENA.y, -DEPTH / 2.0 + 8.0 + z * (DEPTH / 2.0 - 30.0))
+                .with_rotation(Quat::from_rotation_z(FRAC_PI_2))
+                .with_scale(Vec3::splat(0.35 + 0.35 * z)),
+        ));
+    }
+}
+
+fn drift_embers(time: Res<Time>, mut embers: Query<(&Ember, &mut Transform)>) {
+    let (dt, t) = (time.delta_secs(), time.elapsed_secs());
+    let half = ARENA / 2.0;
+    for (ember, mut tf) in &mut embers {
+        let sway = (t * 0.7 + ember.phase).sin() * 10.0;
+        tf.translation.x += (ember.velocity.x + sway) * dt;
+        tf.translation.y += ember.velocity.y * dt;
+        // Wrap: an ember that falls past the floor reappears at the top.
+        if tf.translation.y < -half.y {
+            tf.translation.y += ARENA.y;
+        }
+        tf.translation.x = (tf.translation.x + half.x).rem_euclid(ARENA.x) - half.x;
     }
 }
 
