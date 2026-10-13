@@ -8,7 +8,12 @@ default-members = ["crates/sim", "crates/hero-wasm", "crates/game-core"]
 edition = "2024"
 publish = false
 
-# Bevy is unusably slow unoptimised; optimise dependencies even in dev builds.
+# Dev profile = the fast iteration loop (`trunk serve`, native runs): no debug info (it would bloat the wasm to
+# hundreds of MB), light optimisation for our crates, dependencies optimised because Bevy is unusably slow at -O0.
+[profile.dev]
+debug = false
+opt-level = 1
+
 [profile.dev.package."*"]
 opt-level = 2
 

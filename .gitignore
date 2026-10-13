@@ -4,3 +4,6 @@
 spikes/hero/motion/
 # Design spikes live on the spike/hero branch; never commit them to main.
 /spikes/
+
+# Agent worktrees and local session state
+/.claude/
