@@ -9,6 +9,7 @@ use bevy::time::TimeUpdateStrategy;
 use game::arena::WALL;
 use game::player::{Player, SIZE, SPAWN};
 use game::ARENA;
+use game_core::movement::{DASH_SPEED, DASH_TIME};
 
 const FPS: f32 = 60.0;
 
@@ -87,33 +88,33 @@ fn holding_run_moves_the_player_and_releasing_stops_it() {
 }
 
 #[test]
-fn a_grounded_jump_rises_and_lands_again() {
+fn a_dash_covers_its_distance_along_the_floor_and_the_player_stays_grounded() {
     let mut app = standing();
+    let (start, _, _) = player(&mut app);
     keys(&mut app).press(KeyCode::Space);
-    let mut peak = f32::MIN;
     for _ in 0..30 {
         step(&mut app, 1.0 / FPS);
         keys(&mut app).release(KeyCode::Space);
-        peak = peak.max(player(&mut app).0.y);
+        let (pos, _, grounded) = player(&mut app);
+        assert!(grounded && (pos.y - STANDING_Y).abs() < 2.0, "stays on the floor while dashing: y {}", pos.y);
     }
-    // Apex is JUMP_SPEED² / 2g ≈ 200 units above the floor.
-    assert!(peak > STANDING_Y + 150.0, "jumped: peak {peak} vs standing {STANDING_Y}");
-
-    step(&mut app, 1.0);
-    let (pos, _, grounded) = player(&mut app);
-    assert!((pos.y - STANDING_Y).abs() < 2.0 && grounded, "landed again: y {}", pos.y);
+    let (end, vel, _) = player(&mut app);
+    let expected = DASH_SPEED * DASH_TIME;
+    assert!((end.x - start.x - expected).abs() < 25.0, "dashed {} to the right, expected ~{expected}", end.x - start.x);
+    assert_eq!(vel.x, 0.0, "stops after the dash when no direction is held");
 }
 
 #[test]
-fn jumping_in_mid_air_does_nothing() {
+fn there_is_no_jump() {
     let mut app = standing();
-    keys(&mut app).press(KeyCode::Space);
-    step(&mut app, 0.2);
-    let (_, rising, grounded) = player(&mut app);
-    assert!(!grounded, "airborne after the first jump");
-
-    keys(&mut app).press(KeyCode::KeyW);
-    step(&mut app, 1.0 / FPS);
-    let (_, vel, _) = player(&mut app);
-    assert!(vel.y < rising.y, "no second boost in the air: vy {} after {}", vel.y, rising.y);
+    for key in [KeyCode::KeyW, KeyCode::ArrowUp, KeyCode::Space] {
+        keys(&mut app).press(key);
+        for _ in 0..20 {
+            step(&mut app, 1.0 / FPS);
+            keys(&mut app).release(key);
+            let y = player(&mut app).0.y;
+            assert!(y < STANDING_Y + 2.0, "{key:?} lifted the player to {y}");
+        }
+        step(&mut app, 0.6);   // past the dash cooldown
+    }
 }
