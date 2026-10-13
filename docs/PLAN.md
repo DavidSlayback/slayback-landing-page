@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 15:35 CDT
-In flight: nothing running.
-Next: David reviews the game's look on rc-1 (camera #55 + look pass #56, after "the game looks kinda shit"); more look work if he redirects. Then E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
+As of: Tue Oct 13 2026 16:40 CDT
+In flight: 3D feasibility spike (background agent, branch spike/3d, not to merge): avian3d top-down box, fps at 200-1000 cubes on the integrated GPU, wasm size; results land in its final report, then research §7.
+Next: present the 3D decision to David with the spike's numbers ("Look and impact" section below). Meanwhile he reviews rc-1: camera #55, look #56, hit impact #57. Then E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
 Waiting on: David: playtesters (#29), gamepad check (#26), C2 content; optionally an Actions spending limit or a self-hosted runner to bring CI back before Nov 1. Q43: no permission asks.
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: main 886d685 on rc-1 (10 e2e passed): camera frames the fight (fighters ~2x larger); key light now reaches the scene (WebGL2 allows one directional light; shadow map off, blob shadows). Earlier, main 21653b1: deploy.sh gates on tests/e2e. Production deployed (5 passed, 7 game-only skipped); rc-1 redeployed with the game (10 passed, /play/game_bg.wasm 200, 6.4 MB gzipped). C3 closed: the beacon loads and posts a page view, 0 cookies (headless Chrome, live site).
+Verified: main eec7bf7 on rc-1 (10 e2e passed, 6.44 MB gz): shake, star bursts, squash, finisher freeze, score popups. Before that, main 886d685: camera frames the fight (fighters ~2x larger); key light now reaches the scene (WebGL2 allows one directional light; shadow map off, blob shadows). Earlier, main 21653b1: deploy.sh gates on tests/e2e. Production deployed (5 passed, 7 game-only skipped); rc-1 redeployed with the game (10 passed, /play/game_bg.wasm 200, 6.4 MB gzipped). C3 closed: the beacon loads and posts a page view, 0 cookies (headless Chrome, live site).
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
