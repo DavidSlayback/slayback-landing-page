@@ -346,6 +346,36 @@ remaining time is GPU work.
     figures), which leaves ~5 ms of a 16.7 ms frame for physics, particles and game logic.
   - Rendering-related main-schedule CPU ≤ 1 ms with 30–60 figures.
 
+## 7. Full 3D, like Rumble Box (box3d spike, 2026-10-13)
+
+The question: can Bevy 0.19.1 with avian3d 0.7.0 (which targets Bevy ^0.19) run a Rumble Box-style 3D arena in the browser?
+- **The spike:** a top-down 3/4 camera, the player moving across the floor, cube-built enemies that burst into tumbling cubes, and piles of N cubes.
+- **Setup:** the B2 harness: headless Chrome on the Intel UHD, `--use-angle=d3d11 --disable-gpu-vsync`, 1280×720, opt-3 build.
+- **Timing:** in the app, from `Instant` marks at `First` and at avian's `PhysicsSystems`.
+- **Where it lives:** branch `spike/3d` (do not merge), `spikes/box3d/README.md`, raw data in `results/*.jsonl`.
+
+| cubes | settled avg / p95 ms | bursting avg / p95 ms | physics ms/step (settled, burst) |
+|---|---|---|---|
+| 0 | 4.3 / 5.3 | 4.6 / 5.4 | 0.3 |
+| 200 | 5.6 / 6.7 | 5.5 / 6.8 | 0.6, 0.85 |
+| **500** | **5.4–6.9 / 8.0–12.1** | **6.8 / 8.5–10.0** | 1.3–1.9, 2.0–2.2 |
+| 1000 | 7.9 / 10.1 | 7.8 / 13.9–14.9 | 2.8–3.0, 6.3–7.1 |
+| 2000 | never settles: 304 / 363 | | 18.7 (exceeds the 15.6 ms step; the fixed loop spirals) |
+| 500, bloom on | 9.4 / 17.7 | 9.3 / 17.3 | |
+| 500 + 8 enemies, auto-play | 7.7 / 10.2 (play) | | 2.8 |
+
+- **Verdict: 60 fps at 500 resting cubes passes**, with bloom off. With HDR plus `Bloom::NATURAL`, p95 is about 17.5 ms.
+- **Size:** the shipping profile (opt-z, fat LTO, `wasm-opt -Oz`) adds about +1 ms per frame. The spike's wasm is 6.15 MB gzipped against the 2.5D game's 6.59 MB, so the 3D engine side adds no size (the full port's size is an inference).
+- **Piles are the risk.** Touching cubes form one sleep island, so a local burst at 1000 cubes woke 400–700 cubes, and re-settling took 14–30 s. In 2 of 4 runs a fully asleep pile woke up again on its own. Sleeping bodies still cost about 2.5 µs each per step. Freezing settled debris to static and capping dynamic bodies near 500 is therefore required in 3D (the 2.5D game already freezes).
+- **Outlines:** inverted-hull outlines cost about 1.4 ms at 1000 cubes and read as 1–2 px or as an uneven offset. Bold Rumble Box lines need an edge-detection pass or hand-made outline meshes.
+- **What a port takes (riskiest first):**
+  1. Debris freezing and the cap.
+  2. A character controller that climbs piles (move-and-slide, step-up), and an escape test that measures pile height under the player.
+  3. 3D hitboxes with yaw facing.
+  4. Grab and throw arcs in depth.
+  5. AI steering around piles.
+  6. Movement and camera: easy, already working in the spike.
+
 ## Implications for the design (inference, not sourced fact)
 
 - **Pile and debris budget:** with islands, one big connected pile wakes as a unit whenever anything touches it, and

@@ -1,9 +1,9 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 16:40 CDT
-In flight: 3D feasibility spike (background agent, branch spike/3d, not to merge): avian3d top-down box, fps at 200-1000 cubes on the integrated GPU, wasm size; results land in its final report, then research §7.
-Next: present the 3D decision to David with the spike's numbers ("Look and impact" section below). Meanwhile he reviews rc-1: camera #55, look #56, hit impact #57. Then E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
+As of: Tue Oct 13 2026 17:05 CDT
+In flight: nothing running. The 3D spike finished (branch spike/3d bb2b997, do not merge; results in research §7).
+Next: David's 3D decision ("Look and impact" below; default B: stay 2.5D). If A: re-plan the port as tickets and build it on rc-2. Meanwhile he reviews rc-1: camera #55, look #56, hit impact #57. Then E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
 Waiting on: David: playtesters (#29), gamepad check (#26), C2 content; optionally an Actions spending limit or a self-hosted runner to bring CI back before Nov 1. Q43: no permission asks.
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
 Verified: main eec7bf7 on rc-1 (10 e2e passed, 6.44 MB gz): shake, star bursts, squash, finisher freeze, score popups. Before that, main 886d685: camera frames the fight (fighters ~2x larger); key light now reaches the scene (WebGL2 allows one directional light; shadow map off, blob shadows). Earlier, main 21653b1: deploy.sh gates on tests/e2e. Production deployed (5 passed, 7 game-only skipped); rc-1 redeployed with the game (10 passed, /play/game_bg.wasm 200, 6.4 MB gzipped). C3 closed: the beacon loads and posts a page view, 0 cookies (headless Chrome, live site).
@@ -25,7 +25,15 @@ David, after the camera and look pass: **"Make the hits have more impact. Take i
 - **Two tracks:**
   1. **Impact pass, in the current 2.5D game.** Screen shake (off with reduced motion), a burst at the point of impact, squash and stretch on the victim, longer hit-stop on finishing blows, floating score numbers, harder-flying debris. Each carries over to 3D.
   2. **3D feasibility spike** on branch `spike/3d` (do not merge). An avian3d box under a 3/4 camera, the player moving across the floor, cube-built enemies that burst into tumbling cubes, and a pile of 200 to 1,000 cubes. It measures fps on the integrated GPU and the wasm size against avian2d.
-- **Decision for David after the spike:** go 3D (rewrite movement, combat geometry, AI and the shells; 26 scenarios to port), or stay 2.5D and adopt Rumble Box's visual language. Default until he decides: stay 2.5D.
+- **Done:** impact pass #57 (on rc-1). The 3D spike passed: 60 fps at 500 resting cubes on the integrated GPU with bloom off, and no wasm size cost (research §7).
+- **Decision for David** (asked 2026-10-13; holds the 3D port):
+  - **A. Go 3D (recommended).**
+    - Port to a Rumble Box-style top-down box: avian3d, movement across the floor, 3D hitboxes, a pile-climbing controller, AI steering, and the 26 scenarios.
+    - Rules that don't depend on dimensions stay: health, score, run, kinds, doors, bombs, quality.
+    - Roughly the size of the original game build (D1–D12). Built on `rc-2`, while `rc-1` keeps the 2.5D game.
+    - Neon bloom gives way to Rumble Box's flat colours; bloom costs too much next to the physics.
+  - **B. Stay 2.5D:** playtest the current game now and treat 3D as v2.
+  - **Default if unanswered:** B (no port starts). The E2 playtest can run on rc-1 either way.
 
 ## Settled
 
