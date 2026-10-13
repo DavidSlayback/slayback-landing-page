@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 02:26 CDT (AFK backlog run)
-In flight: nothing running. Open PRs, held because CI cannot start (GitHub Actions billing/spending limit): #48 D10 sound (branch d10-sound), #49 D11 gamepad (stacked on #48). Local checks green on both.
-Next: when CI runs again, merge #48 then retarget/merge #49; then D12 #27 (reduced motion, quality scaling, greyscale check), then E1 #28 prep (clip from ?demo=1&slow=, scripted run to box 2).
-Waiting on: David: (1) CI billing: raise the Actions spending limit, fix the payment, make the repo public, or approve a self-hosted runner (default: hold merges, keep building locally); (2) E1's preview deploy with the release switch on (puts the unreleased game on a public preview URL; default: wait); (3) D11 manual gamepad check; (4) C3 analytics, C2 content, E2 playtest.
-Re-arm: nothing scheduled. GitHub's ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (CI may need apt package fixes).
-Verified: merged through D9 (main 33cff19, CI green). D10+D11 local: 55 rules + 26 scenarios + 3 input tests, native/wasm clippy clean, browser smoke 3/3; game_bg.wasm 6.57 MB gz.
+As of: Tue Oct 13 2026 03:01 CDT (AFK backlog run paused: everything left needs David)
+In flight: nothing running. Stacked open PRs, all held because CI cannot start (GitHub Actions billing): #48 D10 sound -> #49 D11 gamepad -> #50 D12 comfort -> #51 E1 prep. Local checks green on each (60 rules, 26 scenarios, 3 input tests, browser smoke 5/5).
+Next: once CI runs: merge #48, retarget #49 to main and merge, then #50, then #51 (each after green CI). Then E1's preview: push an rc/ branch from main (needs David's go-ahead) and run the harness against that preview.
+Waiting on: David: (1) CI: fix the Actions billing/spending limit, make the repo public, or approve a self-hosted runner; (2) go-ahead for the rc/ preview deploy (the unreleased game at a public preview URL); (3) a 1-minute gamepad check (#26); (4) C3 #14 analytics, C2 #13 content, E2 #29 playtest. Defaults: hold.
+Re-arm: nothing scheduled. ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (CI apt packages may need checking).
+Verified: main 33cff19 (through D9) CI green. Branch e1-rc 332dd7d: native tests/clippy clean; dist build 6.42 MB gz; harness 5/5 incl. scripted run to box 2.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
