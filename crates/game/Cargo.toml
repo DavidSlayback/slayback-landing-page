@@ -14,5 +14,11 @@ bevy = { version = "=0.19.1", default-features = false, features = [
     "std", "async_executor", "bevy_asset", "bevy_log", "bevy_state",
     "bevy_winit", "web", "webgl2",
     "2d_api", "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_sprite_render", "default_font",
+    # B2 spike: the 2.5D look. bevy_pbr pulls bevy_light + bevy_material; bloom/HDR are already in bevy_post_process.
+    "bevy_pbr",
 ] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
+
+# B2 spike: the look example reads its variant from the URL query.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location", "console"] }

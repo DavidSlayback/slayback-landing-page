@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>look spike</title>
+<!-- B2 spike host page: wasm-bindgen output of examples/look.rs goes next to this file as look.js + look_bg.wasm. -->
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{position:fixed;inset:0;width:100vw;height:100vh;display:block}</style>
+</head><body><canvas id="game" tabindex="0"></canvas>
+<script type="module">import init from './look.js'; init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) console.error(e); });</script>
+</body></html>
