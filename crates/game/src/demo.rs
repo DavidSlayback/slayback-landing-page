@@ -9,6 +9,9 @@ use bevy::prelude::*;
 use crate::ARENA;
 use crate::arena::WALL;
 use crate::debris::part;
+use crate::run::BoxStarted;
+use avian2d::prelude::RigidBody;
+use game_core::debris::Shape;
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
 use crate::run::RunState;
@@ -50,12 +53,16 @@ pub fn plugin(app: &mut App) {
         _ => Kind::Fodder,
     };
     let bombs = setting("bombs").as_deref() == Some("1");
+    // `stairs=1`: no fights; each box gets a staircase of debris up past its rim, and the player walks out of box
+    // after box (the harness's scripted run to box 2).
+    let stairs = setting("stairs").as_deref() == Some("1");
     // `timer` (seconds on the box clock) and `hp` (the player's starting health) make a run end on cue, e.g. to check
     // the game-over screen and the best score: `?demo=1&timer=6&hp=20`.
     let timer = setting("timer").and_then(|s| s.parse::<f32>().ok());
     let hp = setting("hp").and_then(|s| s.parse::<f32>().ok());
     app.insert_resource(Waves { enabled: false, ..default() })
-        .insert_resource(Foe { kind: foe, bombs })
+        .insert_resource(Foe { kind: foe, bombs, stairs })
+        .add_systems(Update, build_stairs.run_if(|f: Res<Foe>| f.stairs))
         .add_systems(Startup, move |mut time: ResMut<Time<Virtual>>| time.set_relative_speed(speed))
         // Straight into play: no start overlay.
         .add_systems(PostStartup, move |mut next: ResMut<NextState<Phase>>, mut run: ResMut<RunState>, mut player: Query<&mut Hp, With<Player>>| {
@@ -87,11 +94,24 @@ fn drop_debris(commands: &mut Commands, n: usize) {
 
 const DEMO_FODDER_HP: f32 = 8.0;
 
-/// Who steps up each beat.
+/// A staircase of frozen debris to the right of the spawn, up past the rim: 14-unit steps, 30 wide.
+fn build_stairs(mut commands: Commands, mut started: MessageReader<BoxStarted>) {
+    let Some(BoxStarted(spec)) = started.read().last() else { return };
+    let floor = -ARENA.y / 2.0 + WALL;
+    let steps = (spec.rim / 14.0).ceil() as usize + 1;
+    for i in 0..steps {
+        let h = 14.0 * (i + 1) as f32;
+        let at = Vec2::new(50.0 + 30.0 * i as f32, floor + h / 2.0);
+        commands.spawn(part(Shape::Box { w: 30.0, h }, at, 0.0)).insert(RigidBody::Static);
+    }
+}
+
+/// Who steps up each beat, or (with `stairs`) no fights: the demo climbs out of box after box.
 #[derive(Resource)]
 struct Foe {
     kind: Kind,
     bombs: bool,
+    stairs: bool,
 }
 
 /// One beat of the loop: what to press, and how far away the next fodder stands.
@@ -110,6 +130,10 @@ fn script(
 ) {
     let (t, beat, spawned) = &mut *clock;
     keys.release_all();
+    if foe.stairs {
+        keys.press(KeyCode::KeyD); // just walk right, up the stairs and out
+        return;
+    }
     let Ok((at, ground)) = player.single() else { return };
     // Beats start once the player has landed, so the first fodder isn't placed in mid-air.
     if *t == 0.0 && *beat == 0 && ground.is_empty() {

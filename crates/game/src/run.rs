@@ -122,6 +122,8 @@ fn restart(mut run: ResMut<RunState>, mut player: Query<(&mut Transform, &mut Li
 
 fn apply_box_to_waves(mut started: MessageReader<BoxStarted>, mut waves: ResMut<Waves>) {
     for BoxStarted(spec) in started.read() {
+        // Logged for the browser harness's scripted run (it waits for "box 2 started").
+        info!("box {} started (rim {}, {} s, crowd {})", spec.number, spec.rim, spec.timer, spec.crowd);
         waves.crowd = spec.crowd;
         waves.timer.reset();
     }
