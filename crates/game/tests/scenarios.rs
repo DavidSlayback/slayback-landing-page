@@ -7,6 +7,7 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use game::arena::{WALL, Wall};
+use game::bomb::{BombHead, LitBomb, lit_bomb};
 use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
 use game::flow::Phase;
 use game::run::RunState;
@@ -501,4 +502,66 @@ fn a_ninja_runs_through_rather_than_standing_in_front() {
         got_behind |= x_of(&app, ninja) < player(&mut app).0.x;
     }
     assert!(got_behind, "it darted through to the player's back");
+}
+
+fn lit_bombs(app: &mut App) -> Vec<Entity> {
+    let mut q = app.world_mut().query_filtered::<Entity, With<LitBomb>>();
+    q.iter(app.world()).collect()
+}
+
+#[test]
+fn a_blast_knocks_debris_loose_without_deleting_any() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    // A frozen pile around x = 300, plus one part far away.
+    let near: Vec<Entity> = (0..8)
+        .map(|i| app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(260.0 + 12.0 * i as f32, floor + 5.0), 0.0)).insert(RigidBody::Static).id())
+        .collect();
+    let far = app.world_mut().spawn(part(Shape::Box { w: 18.0, h: 10.0 }, Vec2::new(-500.0, floor + 5.0), 0.0)).insert(RigidBody::Static).id();
+    let before = debris_parts(&mut app).len();
+    let bomb = app.world_mut().spawn(lit_bomb(Vec2::new(300.0, floor + 30.0), Vec2::ZERO)).id();
+    app.world_mut().get_mut::<LitBomb>(bomb).unwrap().fuse.left = 0.05;
+    step(&mut app, 0.1);
+    assert!(app.world().get_entity(bomb).is_err(), "the bomb went off");
+    assert_eq!(debris_parts(&mut app).len(), before, "no debris was deleted");
+    assert!(near.iter().all(|e| body_of(&app, *e) == RigidBody::Dynamic), "the pile in range was knocked loose");
+    assert_eq!(body_of(&app, far), RigidBody::Static, "debris out of range stayed put");
+}
+
+#[test]
+fn a_defeated_bomb_head_drops_a_lit_bomb_instead_of_its_head() {
+    let mut app = standing();
+    let target = fodder_at(&mut app, 50.0);
+    app.world_mut().entity_mut(target).insert(BombHead);
+    app.world_mut().get_mut::<Hp>(target).unwrap().0.hp = 1.0;
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.3);
+    assert_eq!(debris_parts(&mut app).len(), MAX_PARTS_PER_ENEMY - 1, "five parts join the pile");
+    assert_eq!(lit_bombs(&mut app).len(), 1, "and the head is a lit bomb");
+}
+
+#[test]
+fn a_lit_bomb_can_be_grabbed_and_thrown() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    let bomb = app.world_mut().spawn(lit_bomb(Vec2::new(start + 28.0, floor + 10.0), Vec2::ZERO)).id();
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyL);
+    step(&mut app, 1.0 / FPS);
+    keys(&mut app).release(KeyCode::KeyL);
+    assert!(app.world().get::<Carried>(bomb).is_some(), "grabbed the lit bomb");
+    keys(&mut app).press(KeyCode::KeyJ);
+    let mut farthest = f32::MIN;
+    for _ in 0..(0.8 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        keys(&mut app).release(KeyCode::KeyJ);
+        if let Some(t) = app.world().get::<Transform>(bomb) {
+            farthest = farthest.max(t.translation.x);
+        }
+    }
+    assert!(farthest > start + 150.0, "thrown: {farthest} from {start}");
+    step(&mut app, 1.0);
+    assert!(lit_bombs(&mut app).is_empty(), "and it went off");
 }

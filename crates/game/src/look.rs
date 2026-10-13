@@ -22,6 +22,7 @@ use game_core::movement::RUN_SPEED;
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
 use crate::enemy::{Brain, HALF, WallDoor, door_spot};
+use crate::bomb::{BOMB_RADIUS, BombHead, Exploded, LitBomb};
 use crate::debris::{DebrisPart, Shattered};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
 use crate::run::BoxStarted;
@@ -88,7 +89,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(PreUpdate, (rotate_scheme, build_frame))
         .add_systems(
             Update,
-            (dress_walls, dress_fighters, dress_doors, dress_debris, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
+            (dress_walls, dress_fighters, dress_doors, dress_debris, dress_bombs, blink_bombs, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
         );
 }
 
@@ -103,6 +104,8 @@ struct Kit {
     spark_mesh: Handle<Mesh>,
     door_mesh: Handle<Mesh>,
     plate: Handle<Mesh>,
+    bomb: Handle<Mesh>,
+    shell: Handle<StandardMaterial>,
     torso: Handle<Mesh>,
     head: Handle<Mesh>,
     limb: Handle<Mesh>,
@@ -130,6 +133,9 @@ fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Asse
         door_mesh: meshes.add(flat(Cuboid::new(4.0, 64.0, 72.0))),
         // A thug's shoulder plate (rig units).
         plate: meshes.add(flat(Cuboid::new(0.45, 0.18, 0.5))),
+        // A bomb: a dark, slightly glossy ball (world units for lit bombs; heads scale it to rig units).
+        bomb: meshes.add(flat(Sphere::new(BOMB_RADIUS).mesh().ico(1).expect("ico subdivision 1 is valid"))),
+        shell: mats.add(StandardMaterial { base_color: Color::srgb(0.06, 0.06, 0.07), perceptual_roughness: 0.4, metallic: 0.3, ..default() }),
         // A figure in "rig units" (about 2.45 tall), scaled to each fighter's collider by its `Rig`.
         torso: meshes.add(flat(Cuboid::new(0.7, 1.0, 0.4))),
         head: meshes.add(flat(Sphere::new(0.32).mesh().ico(1).expect("ico subdivision 1 is valid"))),
@@ -272,14 +278,15 @@ impl Limb {
 const RIG_HEIGHT: f32 = 2.45;
 const RIG_FEET: f32 = 0.775;
 
+#[allow(clippy::type_complexity)]
 fn dress_fighters(
     mut commands: Commands,
     kit: Res<Kit>,
     scheme: Res<Scheme>,
     mut mats: ResMut<Assets<StandardMaterial>>,
-    fighters: Query<(Entity, &Fighter, &Team, Option<&Brain>), Added<Fighter>>,
+    fighters: Query<(Entity, &Fighter, &Team, Option<&Brain>, Has<BombHead>), Added<Fighter>>,
 ) {
-    for (e, fighter, team, brain) in &fighters {
+    for (e, fighter, team, brain, bomb_head) in &fighters {
         let kind = brain.map(|b| b.0.style().kind);
         // The player wears the primary accent, fodder a contrasting one, thugs a third. Colour is a bonus: the
         // silhouettes differ too (decision Q35, colour-blind safe), so a thug reads as one in any scheme.
@@ -321,7 +328,13 @@ fn dress_fighters(
                     r.spawn((Mesh3d(kit.limb.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.35, -0.55).with_rotation(Quat::from_rotation_x(1.2)).with_scale(Vec3::new(0.5, 0.8, 0.5))));
                 }
                 r.spawn((Mesh3d(kit.torso.clone()), MeshMaterial3d(body.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
-                r.spawn((Mesh3d(kit.head.clone()), MeshMaterial3d(kit.skin.clone()), Transform::from_xyz(0.0, 1.35, 0.0)));
+                if bomb_head {
+                    // A bomb for a head (a shape cue, not just a colour): dark ball, fuse spike glowing on top.
+                    r.spawn((Mesh3d(kit.bomb.clone()), MeshMaterial3d(kit.shell.clone()), Transform::from_xyz(0.0, 1.35, 0.0).with_scale(Vec3::splat(0.045))));
+                    r.spawn((Mesh3d(kit.limb.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.8, 0.0).with_scale(Vec3::new(0.4, 0.35, 0.4))));
+                } else {
+                    r.spawn((Mesh3d(kit.head.clone()), MeshMaterial3d(kit.skin.clone()), Transform::from_xyz(0.0, 1.35, 0.0)));
+                }
                 r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.4, 0.3)));
                 for (dx, dy, limb, mat) in [
                     (-0.48, 0.45, Limb::BackArm, &body),
@@ -443,7 +456,14 @@ struct Spark {
 const SPARKS_PER_HIT: usize = 14;
 const SPARK_LIFE: f32 = 0.28;
 
-fn spawn_sparks(mut commands: Commands, kit: Res<Kit>, mut hits: MessageReader<Hit>, mut shattered: MessageReader<Shattered>, mut seed: Local<u32>) {
+fn spawn_sparks(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    mut hits: MessageReader<Hit>,
+    mut shattered: MessageReader<Shattered>,
+    mut blasts: MessageReader<Exploded>,
+    mut seed: Local<u32>,
+) {
     for hit in hits.read() {
         // Along the blow, fanned up and down; heavier blows throw more.
         let heavy = matches!(hit.mv, Move::Kick | Move::DropKick);
@@ -452,6 +472,12 @@ fn spawn_sparks(mut commands: Commands, kit: Res<Kit>, mut hits: MessageReader<H
     for s in shattered.read() {
         // A figure breaking apart: a full ring, twice as many.
         spray(&mut commands, &kit, &mut seed, s.at, SPARKS_PER_HIT * 2, 1.0, std::f32::consts::PI);
+    }
+    for b in blasts.read() {
+        // A blast: three full rings.
+        for _ in 0..3 {
+            spray(&mut commands, &kit, &mut seed, b.at, SPARKS_PER_HIT * 2, 1.0, std::f32::consts::PI);
+        }
     }
 }
 
@@ -516,3 +542,25 @@ fn fly_sparks(mut commands: Commands, time: Res<Time>, mut sparks: Query<(Entity
         tf.scale = Vec3::splat((spark.life / SPARK_LIFE).clamp(0.2, 1.0));
     }
 }
+
+/// A lit bomb's own fuse-light material.
+#[derive(Component)]
+struct BombLight(Handle<StandardMaterial>);
+
+fn dress_bombs(mut commands: Commands, kit: Res<Kit>, mut mats: ResMut<Assets<StandardMaterial>>, bombs: Query<Entity, Added<LitBomb>>) {
+    for e in &bombs {
+        let light = mats.add(StandardMaterial { base_color: Color::srgb(0.06, 0.06, 0.07), perceptual_roughness: 0.4, ..default() });
+        commands.entity(e).insert((Mesh3d(kit.bomb.clone()), MeshMaterial3d(light.clone()), BombLight(light), Visibility::default()));
+    }
+}
+
+/// Lit bombs blink, faster as the fuse runs out.
+fn blink_bombs(scheme: Res<Scheme>, bombs: Query<(&LitBomb, &BombLight)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    let hot = scheme.accents[3].to_linear() * 10.0;
+    for (lit, light) in &bombs {
+        if let Some(mut m) = mats.get_mut(&light.0) {
+            m.emissive = if lit.fuse.blink() { hot } else { LinearRgba::BLACK };
+        }
+    }
+}
+

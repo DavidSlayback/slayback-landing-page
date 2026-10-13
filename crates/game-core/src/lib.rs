@@ -3,6 +3,7 @@
 //! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game`
 //! wires it into ECS systems.
 
+pub mod bomb;
 pub mod combat;
 pub mod debris;
 pub mod doors;

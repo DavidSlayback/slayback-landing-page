@@ -5,6 +5,7 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 use game_core::debris::{Shape, humanoid_parts, over_cap, should_freeze};
 
+use crate::bomb::{BombHead, lit_bomb};
 use crate::fighter::{Defeated, Fighter, Layer, Team};
 
 /// One part of a broken enemy.
@@ -47,11 +48,11 @@ fn break_apart(
     mut commands: Commands,
     time: Res<Time>,
     mut defeated: MessageReader<Defeated>,
-    enemies: Query<(&Transform, &Fighter, &LinearVelocity)>,
+    enemies: Query<(&Transform, &Fighter, &LinearVelocity, Has<BombHead>)>,
     mut shattered: MessageWriter<Shattered>,
 ) {
     for d in defeated.read().filter(|d| d.team == Team::Enemy) {
-        let Ok((transform, fighter, velocity)) = enemies.get(d.entity) else { continue };
+        let Ok((transform, fighter, velocity, bomb_head)) = enemies.get(d.entity) else { continue };
         let centre = transform.translation.truncate();
         commands.entity(d.entity).despawn();
         shattered.write(Shattered { at: centre });
@@ -59,8 +60,14 @@ fn break_apart(
             let offset = Vec2::new(p.offset.0 * fighter.facing, p.offset.1);
             // The parts keep the blow's momentum and burst a little outward from the body's centre.
             let burst = offset.normalize_or_zero() * 140.0 + Vec2::Y * 120.0;
+            let fling = velocity.0 * 0.6 + burst;
+            // A bomb-head's head doesn't join the pile: it drops free as a lit bomb.
+            if bomb_head && matches!(p.shape, Shape::Ball { .. }) {
+                commands.spawn(lit_bomb(centre + offset, fling));
+                continue;
+            }
             let spin = if i % 2 == 0 { 6.0 } else { -6.0 };
-            commands.spawn((part(p.shape, centre + offset, time.elapsed_secs()), LinearVelocity(velocity.0 * 0.6 + burst), AngularVelocity(spin)));
+            commands.spawn((part(p.shape, centre + offset, time.elapsed_secs()), LinearVelocity(fling), AngularVelocity(spin)));
         }
     }
 }

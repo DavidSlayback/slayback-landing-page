@@ -1,4 +1,4 @@
-//! Grab and spin-throw: the player picks up a live enemy or a debris part (frozen debris thaws) and whirls it into
+//! Grab and spin-throw: the player picks up a live enemy, a debris part (frozen debris thaws) or a lit bomb, and whirls it into
 //! the crowd. A thrown thing is a projectile for a moment: it hurts every enemy it passes through, then lands as
 //! whatever it was (a stunned enemy, or loose debris that freezes again).
 
@@ -7,6 +7,8 @@
 pub enum Held {
     Enemy,
     Debris,
+    /// A lit bomb-head: its fuse keeps burning in your hands.
+    Bomb,
 }
 
 /// How far past the player's edge a grab reaches, world units.
@@ -39,6 +41,8 @@ pub fn impact(held: Held) -> Impact {
         // A whole body: the heaviest thing the player can swing.
         Held::Enemy => Impact { damage: 16.0, knockback: (700.0, 380.0), self_damage: 10.0 },
         Held::Debris => Impact { damage: 9.0, knockback: (450.0, 260.0), self_damage: 0.0 },
+        // The bomb's real damage is its blast; the throw itself only clips.
+        Held::Bomb => Impact { damage: 4.0, knockback: (250.0, 150.0), self_damage: 0.0 },
     }
 }
 

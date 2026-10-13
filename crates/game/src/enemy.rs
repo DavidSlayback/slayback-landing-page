@@ -11,6 +11,7 @@ use game_core::movement::run_velocity;
 
 use crate::ARENA;
 use crate::arena::WALL;
+use crate::bomb::BombHead;
 use crate::fighter::{Attack, Fighter, Hp, Team, body};
 use crate::grab::Carried;
 use crate::player::Player;
@@ -29,6 +30,8 @@ pub struct WallDoor {
     pub side: f32,
     pub door: Door,
     pub next: Kind,
+    /// Whether that enemy carries a bomb for a head.
+    pub bomb: bool,
 }
 
 /// Fodder collider half-size and health (the common enemy; tests use these).
@@ -63,7 +66,7 @@ pub fn door_spot(side: f32, half: Vec2) -> Vec2 {
 
 fn spawn_doors(mut commands: Commands) {
     for side in [-1.0, 1.0] {
-        commands.spawn((Name::new("door"), WallDoor { side, door: Door::Closed, next: Kind::Fodder }, Transform::from_translation(door_spot(side, HALF).extend(0.0))));
+        commands.spawn((Name::new("door"), WallDoor { side, door: Door::Closed, next: Kind::Fodder, bomb: false }, Transform::from_translation(door_spot(side, HALF).extend(0.0))));
     }
 }
 
@@ -110,6 +113,7 @@ fn request_entries(
         s ^= s >> 17;
         s ^= s << 5;
         d.next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
+        d.bomb = ((s >> 16) as f32 / 65536.0) < run.0.spec.bombs;
         d.door.request();
     }
 }
@@ -118,7 +122,10 @@ fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut Wal
     for mut d in &mut doors {
         if d.door.tick(time.delta_secs()) {
             let s = d.next.style();
-            commands.spawn(enemy(d.next, door_spot(d.side, Vec2::new(s.half.0, s.half.1))));
+            let mut e = commands.spawn(enemy(d.next, door_spot(d.side, Vec2::new(s.half.0, s.half.1))));
+            if d.bomb {
+                e.insert(BombHead);
+            }
         }
     }
 }

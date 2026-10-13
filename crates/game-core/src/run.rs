@@ -30,6 +30,8 @@ pub struct BoxSpec {
     /// Shares of entering enemies that are thugs and ninjas (the rest are fodder).
     pub thugs: f32,
     pub ninjas: f32,
+    /// Share of entering enemies (of any kind) that carry a bomb for a head.
+    pub bombs: f32,
 }
 
 /// Box `number` (1-based) of a run.
@@ -45,6 +47,8 @@ pub fn box_spec(number: usize) -> BoxSpec {
         thugs: if n == 0 { 0.0 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
         // Ninjas from box 3.
         ninjas: if n < 2 { 0.0 } else { (0.2 + 0.05 * (n - 2) as f32).min(0.3) },
+        // Bomb-heads from box 2, on any kind of enemy.
+        bombs: if n == 0 { 0.0 } else { (0.15 + 0.05 * (n - 1) as f32).min(0.3) },
     }
 }
 
@@ -135,6 +139,12 @@ mod tests {
         assert_eq!(pick_kind(&box_spec(2), 0.1), Kind::Thug);
         assert_eq!(pick_kind(&box_spec(2), 0.9), Kind::Fodder);
         assert!(box_spec(40).thugs <= 0.4);
+    }
+
+    #[test]
+    fn bomb_heads_appear_from_box_two() {
+        assert_eq!(box_spec(1).bombs, 0.0);
+        assert!(box_spec(2).bombs > 0.0 && box_spec(40).bombs <= 0.3);
     }
 
     #[test]
