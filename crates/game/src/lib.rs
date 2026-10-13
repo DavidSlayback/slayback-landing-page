@@ -15,6 +15,8 @@ pub mod enemy;
 pub mod fighter;
 pub mod flow;
 pub mod grab;
+#[cfg(feature = "render")]
+pub mod impact;
 pub mod input;
 #[cfg(feature = "render")]
 pub mod look;

@@ -29,6 +29,7 @@ use crate::comfort::Comfort;
 use crate::debris::{DebrisPart, Shattered};
 use crate::enemy::{Brain, HALF, WallDoor, door_spot};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
+use crate::impact::{Squash, squash};
 use crate::player::Player;
 use crate::run::BoxStarted;
 
@@ -121,7 +122,7 @@ struct BaseScheme(usize);
 pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 350.0, ..default() })
-        .add_plugins((crate::comfort::plugin, camera::plugin))
+        .add_plugins((crate::comfort::plugin, camera::plugin, crate::impact::plugin))
         .insert_resource(BaseScheme(Scheme::page_index()))
         .insert_resource(SCHEMES[Scheme::page_index()])
         .add_systems(Startup, (load_kit, (spawn_stage, spawn_embers)).chain())
@@ -384,10 +385,12 @@ fn dress_walls(
 }
 
 /// A fighter's visual root: a primitive figure in rig units, scaled to the collider and turned toward its facing.
-#[derive(Component, Default)]
+#[derive(Component)]
 struct Rig {
     /// Walk-cycle phase, advanced by distance travelled.
     stride: f32,
+    /// The figure's own scale (build times collider size), which a hit's squash multiplies.
+    size: Vec3,
 }
 
 /// A fighter's own materials (so its flash and telegraph touch no one else) and their resting colours.
@@ -470,7 +473,7 @@ fn dress_fighters(
                 )),
             ));
             p.spawn((
-                Rig::default(),
+                Rig { stride: 0.0, size: build * scale },
                 Tint { body: body.clone(), glow: glow.clone(), base, glow_base },
                 Transform::from_xyz(0.0, -fighter.half.y + RIG_FEET * scale, 0.0).with_scale(build * scale),
                 Visibility::default(),
@@ -551,11 +554,11 @@ fn dress_fighters(
 #[allow(clippy::type_complexity)]
 fn animate_fighters(
     time: Res<Time>,
-    fighters: Query<(&Fighter, &Attack, &LinearVelocity, Option<&Player>, Option<&Brain>, &Children)>,
+    fighters: Query<(&Fighter, &Attack, &LinearVelocity, Option<&Player>, Option<&Brain>, Option<&Squash>, &Children)>,
     mut rigs: Query<(&mut Rig, &mut Transform, &Children), Without<Limb>>,
     mut limbs: Query<(&Limb, &mut Transform), Without<Rig>>,
 ) {
-    for (fighter, attack, velocity, player, brain, children) in &fighters {
+    for (fighter, attack, velocity, player, brain, squashed, children) in &fighters {
         // A thug raises both arms as its telegraph builds (the smash then brings them down).
         let raise = brain.filter(|b| b.0.style().attack == Move::Smash).map_or(0.0, |b| b.0.telegraph());
         for &child in children {
@@ -564,6 +567,7 @@ fn animate_fighters(
             let dashing = player.is_some_and(|p| p.0.dashing());
             let lean = if dashing { -0.3 * fighter.facing } else { 0.0 };
             tf.rotation = Quat::from_rotation_z(lean) * Quat::from_rotation_y(1.15 * fighter.facing);
+            tf.scale = rig.size * squashed.map_or(Vec3::ONE, |s| squash(s.0));
             let speed = (velocity.x.abs() / RUN_SPEED).min(1.0);
             rig.stride += velocity.x.abs() * time.delta_secs() * 0.045;
             // Attack pose: wind back during startup, extend while active, ease back in recovery.

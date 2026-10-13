@@ -24,9 +24,18 @@ pub struct LastRun {
     pub new_best: bool,
 }
 
+/// A kill scored `points` at `at`, as the `streak`th of a streak (for floating score numbers).
+#[derive(Message, Clone, Copy, Debug)]
+pub struct Scored {
+    pub at: Vec2,
+    pub points: u64,
+    pub streak: u32,
+}
+
 pub fn plugin(app: &mut App) {
     app.init_resource::<RunScore>()
         .init_resource::<LastRun>()
+        .add_message::<Scored>()
         .insert_resource(BestScore(load()))
         .add_systems(Update, count.run_if(in_state(Phase::Playing)))
         // In every phase: a death's message arrives as the game switches to the game-over screen.
@@ -34,10 +43,16 @@ pub fn plugin(app: &mut App) {
         .add_systems(OnExit(Phase::Over), |mut score: ResMut<RunScore>| score.0 = Score::default());
 }
 
-fn count(time: Res<Time>, mut score: ResMut<RunScore>, mut defeats: MessageReader<Defeated>) {
+fn count(
+    time: Res<Time>,
+    mut score: ResMut<RunScore>,
+    mut defeats: MessageReader<Defeated>,
+    mut scored: MessageWriter<Scored>,
+) {
     score.0.tick(time.delta_secs());
-    for _ in defeats.read().filter(|d| d.team == Team::Enemy) {
-        score.0.kill();
+    for d in defeats.read().filter(|d| d.team == Team::Enemy) {
+        let points = score.0.kill();
+        scored.write(Scored { at: d.at, points, streak: score.0.streak });
     }
 }
 
