@@ -1,0 +1,41 @@
+# Throwaway spike (spike/3d branch, never main): can the game go full 3D like Rumble Box in the browser?
+# Its own workspace, so it stays out of the root workspace, its lockfile and its pre-commit checks.
+[package]
+name = "box3d"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+# crates/game's Bevy features (base set + render set) minus audio and gamepads, which the spike doesn't use.
+bevy = { version = "=0.19.1", default-features = false, features = [
+    "std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse",
+    "bevy_winit", "web", "webgl2", "x11",
+    "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_pbr", "default_font",
+    "bevy_ui", "bevy_ui_render", "bevy_text",
+] }
+# crates/game's avian2d feature set, in 3D.
+avian3d = { version = "=0.7.0", default-features = false, features = ["3d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location", "console"] }
+wasm-bindgen = "=0.2.129"
+
+# Perf build: opt-level 3, no LTO (build speed).
+[profile.release]
+opt-level = 3
+codegen-units = 16
+lto = false
+panic = "abort"
+strip = true
+
+# Size build: the root workspace's `game` profile, for a like-for-like wasm size against the 2.5D game.
+[profile.game]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+debug = false
+strip = true

@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>box3d spike</title>
+<!-- 3D spike host page: bench/ship.sh puts the wasm-bindgen output (box3d.js + box3d_bg.wasm) next to this file. -->
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{position:fixed;inset:0;width:100vw;height:100vh;display:block;outline:none}</style>
+</head><body><canvas id="game" tabindex="0"></canvas>
+<script type="module">import init from './box3d.js'; document.getElementById('game').focus(); init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) console.error(e); });</script>
+</body></html>
