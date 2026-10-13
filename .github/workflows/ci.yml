@@ -1,12 +1,14 @@
 name: CI
-# CI runs when work is ready to merge, not on every push while it's in progress:
-# - PRs build only when they target main and aren't drafts. Open PRs as drafts while iterating; marking one ready
-#   for review runs CI (and later pushes to a ready PR re-run it, cancelling any older run).
-# - Stacked PRs (based on another branch) don't build until they're retargeted to main.
-# - Docs-only PRs never need a build. Pushes to main always run (they deploy). `workflow_dispatch` runs it by hand.
+
+# Feature branches get one cheap job; the expensive work (the wasm game build, the browser harness, deploys) runs
+# only on main and release candidates (decisions Q41, Q42).
+# - Pull requests into main build only when not drafts: open PRs as drafts while iterating, mark ready to check.
+#   A newer push cancels an older run. Docs-only PRs skip. Stacked PRs wait until retargeted to main.
+# - main deploys production (the hero; the game stays behind its release switch). A branch named rc/... deploys a
+#   preview of the full build with the game's release switch on.
 on:
   push:
-    branches: [main]
+    branches: [main, 'rc/**']
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -17,32 +19,15 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-jobs:
-  build:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Default members only: sim, hero-wasm, game-core (the Bevy shell is checked in the game job).
-      - run: cargo test --release
-      - run: cargo clippy --all-targets --release -- -D warnings
-      - run: SKIP_GAME=1 bash scripts/build.sh
-      - name: hero.wasm size budget (80 KB)
-        run: test "$(wc -c < dist/hero.wasm)" -le 81920
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
+env:
+  # CI compiles each crate once: incremental artifacts only bloat the cache.
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: never
 
-  game:
+jobs:
+  # Everything a PR needs, in one job (one toolchain setup, one cache): unit and headless game tests, clippy, and the
+  # hero build with its size budget. The headless game builds without the `render` feature (no Bevy renderer).
+  check:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
@@ -53,15 +38,42 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
+          shared-key: check
+          # Only main saves; PRs restore main's cache instead of storing their own copies (repo limit 10 GB).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --release
+      - run: cargo test -p game --no-default-features
+      - run: cargo clippy --all-targets --release -- -D warnings
+      - run: cargo clippy -p game --no-default-features --all-targets -- -D warnings
+      - run: SKIP_GAME=1 bash scripts/build.sh
+      - name: hero.wasm size budget (80 KB)
+        run: test "$(wc -c < dist/hero.wasm)" -le 81920
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  # The shipping wasm game (fat LTO, ~5 min even when cached): main and release candidates only. The artifact has
+  # the release switch on; it's deployed only from rc/ branches.
+  game:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: game
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # wasm-bindgen-cli must match the wasm-bindgen crate in Cargo.lock.
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.129
       - run: cargo clippy -p game --target wasm32-unknown-unknown --profile game -- -D warnings
-      # The release switch is ON here so the browser job can test the game's entry points. This artifact is
-      # test-only: deploys ship the build job's switch-off `dist`, never this.
       - run: bash scripts/build.sh
         env:
           GAME_RELEASE: 1
@@ -70,28 +82,10 @@ jobs:
           name: dist-with-game
           path: dist
 
-  # Headless game scenarios (ticket A4, crates/game/tests): real game systems, no window or GPU, native Linux.
-  game-tests:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Only main saves: PRs restore main's cache instead of each storing a ~1-2 GB copy (the repo limit is 10 GB).
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Headless: without the `render` feature, so changes to the renderer, UI or audio features don't rebuild Bevy's
-      # rendering crates here (that cost ~13 min a run). The wasm build in the `game` job still covers `render`.
-      - run: cargo test -p game --no-default-features
-      - run: cargo clippy -p game --no-default-features --all-targets -- -D warnings
-
-  # Browser smoke harness (tickets A3, C4; tests/e2e) against both builds: the full switch-on build (/play and the
-  # game's entry points) and the deployable switch-off build (no way into the game).
+  # Browser harness (tests/e2e) against both builds: the full switch-on build (/play and the game's entry points)
+  # and the hero-only dist that main deploys.
   browser:
-    needs: [build, game]
+    needs: [check, game]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -112,7 +106,15 @@ jobs:
           cache: npm
           cache-dependency-path: tests/e2e/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Playwright's Chromium, cached by the Playwright version in the lockfile.
+      - uses: actions/cache@v4
+        id: browsers
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('tests/e2e/package-lock.json') }}
+      - if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+      - run: npx playwright install-deps chromium
       # REQUIRE_GAME turns a missing game build into a failure instead of a skip.
       - name: Test the switch-on build (with the game)
         run: npx playwright test --output test-results/switch-on
@@ -121,7 +123,7 @@ jobs:
           GAME_RELEASE: 1
           REQUIRE_GAME: 1
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/switch-on
-      - name: Test the switch-off build (what deploys)
+      - name: Test the switch-off build (what main deploys)
         if: ${{ !cancelled() }}
         run: npx playwright test --output test-results/switch-off
         env:
@@ -135,12 +137,14 @@ jobs:
             tests/e2e/playwright-report
             tests/e2e/test-results
 
-  # Homepage deploys (ticket C1): main → production, same-repo PRs → preview. Hero only: the game stays out of
-  # deploys until its release switch flips (tickets C4 / E1). Direct Upload, so the project can't move to
-  # Cloudflare's Git integration later; that is intended (our CI does the build).
+  # Deploys (ticket C1): main -> production (hero only); rc/... -> a preview with the game. Direct Upload, so the
+  # project can't move to Cloudflare's Git integration later; that is intended (our CI does the build).
   deploy:
-    needs: build
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [check, game]
+    # main ships the hero even if the game build failed; an rc/ preview needs the game.
+    if: >-
+      always() && github.event_name == 'push' && needs.check.result == 'success' &&
+      (github.ref_name == 'main' || needs.game.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -151,7 +155,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: ${{ startsWith(github.ref_name, 'rc/') && 'dist-with-game' || 'dist' }}
           path: dist
       # Fail fast with a readable message (never echoes the value): account IDs are 32 lowercase hex characters.
       - name: Check the account ID format
@@ -171,8 +175,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=slayback --branch=${{ github.head_ref || github.ref_name }}
+          command: pages deploy dist --project-name=slayback --branch=${{ github.ref_name }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
       - name: Report the URL
         run: echo "Deployed to ${{ steps.deploy.outputs.deployment-url }}" | tee -a "$GITHUB_STEP_SUMMARY"
-

@@ -9,10 +9,14 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 | `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield). Native tests. |
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
 | `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
-| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay (physics stays 2D); `look::plugin` dresses it as 2.5D lit primitives with bloom in the page's colour scheme; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input. The window, renderer and UI sit behind the default `render` feature, so the scenarios build without them: `cargo test -p game --no-default-features` (Linux CI job `game-tests`). |
+| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay (physics stays 2D); `look::plugin` dresses it as 2.5D lit primitives with bloom in the page's colour scheme; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input. The window, renderer and UI sit behind the default `render` feature, so the scenarios build without them: `cargo test -p game --no-default-features` (CI's `check` job). |
 | `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game and `site/play/watch/` its touch-device clip page. |
 | `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests), plus the clip recorder. |
 | `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME_RELEASE=1` for the release switch). |
+
+## CI
+
+Pull requests get one cheap `check` job: tests (including the headless game), clippy, and the hero build with its size budget. It runs only for non-draft PRs into `main`, so open PRs as drafts while iterating. The wasm game build, browser harness and deploys run on `main` (production, hero only) and on `rc/…` branches (a preview with the game). See decisions Q41 and Q42.
 
 ## Develop
 
@@ -116,4 +120,4 @@ SKIP_GAME=1 bash scripts/build.sh       # or a full build to cover /play
 cd tests/e2e && npm ci && npx playwright test
 ```
 
-Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. CI's `browser` job tests both: the `game` job's full switch-on build (test-only, never deployed) and the `build` job's switch-off `dist`, which is what deploys.
+Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. CI's `browser` job runs on `main` and `rc/` branches (not on PRs): it tests the full switch-on build and the hero-only `dist` that main deploys.
