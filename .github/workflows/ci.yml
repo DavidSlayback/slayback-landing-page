@@ -63,8 +63,18 @@ jobs:
         with:
           name: dist
           path: dist
+      # Fail fast with a readable message (never echoes the value): account IDs are 32 lowercase hex characters.
+      - name: Check the account ID format
+        run: |
+          id="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"
+          if [[ "$id" =~ ^[0-9a-f]{32}$ ]]; then echo "account ID format ok"; else
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not a 32-character hex account ID (got ${#id} characters). Copy 'Account ID' from the Cloudflare dashboard overview, not a zone ID, name or email."; exit 1; fi
       - name: Ensure the Pages project exists
-        run: npx --yes wrangler@4 pages project create slayback --production-branch=main || echo "project already exists"
+        run: |
+          out="$(npx --yes wrangler@4 pages project create slayback --production-branch=main 2>&1)" && { echo "$out"; exit 0; }
+          echo "$out"
+          # Only "already exists" is fine; anything else (bad ID, missing permission) must fail here, not later.
+          grep -qiE "already exists|8000002" <<<"$out"
       - name: Deploy
         id: deploy
         uses: cloudflare/wrangler-action@v4
