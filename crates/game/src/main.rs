@@ -4,19 +4,22 @@ use bevy::prelude::*;
 use bevy::window::WindowResolution;
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Escape the box".into(),
-                canvas: Some("#game".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                // Ignore the display's pixel ratio: the host page caps the canvas at 1280x720 and scales it up.
-                resolution: WindowResolution::default().with_scale_factor_override(1.0),
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Escape the box".into(),
+            canvas: Some("#game".into()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
+            // Ignore the display's pixel ratio: the host page caps the canvas at 1280x720 and scales it up.
+            resolution: WindowResolution::default().with_scale_factor_override(1.0),
             ..default()
-        }))
-        .add_plugins((game::plugin, game::look::plugin))
-        .run();
+        }),
+        ..default()
+    }))
+    .add_plugins((game::plugin, game::look::plugin));
+    if game::demo::requested() {
+        app.add_plugins(game::demo::plugin);
+    }
+    app.run();
 }

@@ -5,6 +5,7 @@
 //! tests build a headless app from the real game systems (see `tests/scenarios.rs`).
 
 pub mod arena;
+pub mod demo;
 pub mod enemy;
 pub mod fighter;
 pub mod look;
