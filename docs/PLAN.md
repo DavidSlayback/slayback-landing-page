@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 11:34 CDT
+As of: Tue Oct 13 2026 13:00 CDT
 In flight: nothing running.
-Next: E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Deploy from this machine with `bash scripts/deploy.sh` (prod) / `bash scripts/deploy.sh rc <n>` (preview) until CI can deploy again.
-Waiting on: David: playtesters (#29), gamepad check (#26), C3 analytics, C2 content; Actions billing only if CI deploys are wanted back. Q43: no permission asks.
+Next: E2 #29 playtest on https://rc-1.slayback.pages.dev (3-5 cohort-mates; notes become tuning tickets); then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
+Waiting on: David: playtesters (#29), gamepad check (#26), C3 analytics, C2 content; optionally an Actions spending limit or a self-hosted runner to bring CI back before Nov 1. Q43: no permission asks.
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: main b0d243b+ deployed: production 200, no Play links, 0 errors; rc-1 Play -> /play 0 errors, scripted run reaches box 2, phones get the clip page with no game fetch. D10-D12/E1 merged without CI (David's call); verified locally first.
+Verified: main d8fabd3 deployed locally (https://28481e3b.slayback.pages.dev): production / and hero.wasm 200, no Play links. Hooks (Q45) pass both stages on main.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
