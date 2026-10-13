@@ -16,3 +16,8 @@ bevy = { version = "=0.19.1", default-features = false, features = [
     "2d_api", "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_sprite_render", "default_font",
 ] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
+
+# winit needs a windowing backend to compile on Linux (CI runs the headless scenarios there). X11 loads its libraries
+# at runtime, so this adds no build-time system packages; wasm and Windows builds are unaffected.
+[target.'cfg(target_os = "linux")'.dependencies]
+bevy = { version = "=0.19.1", default-features = false, features = ["x11"] }
