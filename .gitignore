@@ -11,3 +11,7 @@ node_modules/
 
 # Agent worktrees and local session state
 /.claude/
+
+# Local secrets (wrangler reads CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID from these); never commit.
+.env
+.env.local
