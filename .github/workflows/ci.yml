@@ -1,13 +1,25 @@
 name: CI
+# CI runs when work is ready to merge, not on every push while it's in progress:
+# - PRs build only when they target main and aren't drafts. Open PRs as drafts while iterating; marking one ready
+#   for review runs CI (and later pushes to a ready PR re-run it, cancelling any older run).
+# - Stacked PRs (based on another branch) don't build until they're retargeted to main.
+# - Docs-only PRs never need a build. Pushes to main always run (they deploy). `workflow_dispatch` runs it by hand.
 on:
   push:
     branches: [main]
   pull_request:
-    # Docs-only PRs need no build. Pushes to main always run (they deploy).
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +43,7 @@ jobs:
           path: dist
 
   game:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +72,7 @@ jobs:
 
   # Headless game scenarios (ticket A4, crates/game/tests): real game systems, no window or GPU, native Linux.
   game-tests:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

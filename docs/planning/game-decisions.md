@@ -61,6 +61,7 @@ Informed by `docs/research/game-research.md`.
 | Q37 | Performance target | **60 fps on an integrated-GPU laptop**, with automatic quality scaling | Physics budget comes from a browser stress spike. |
 | Q38 | Playtest gate | **v1 is done only after a cohort playtest** (3–5 people on the deployed build) | Their notes become the final tuning tickets. |
 | Q39 | Merge authority | **Claude merges a ticket's PR once CI is green and the acceptance check passes**, then reports | Deploys need David's go-ahead. |
+| Q41 | When CI runs (David, 2026-10-13) | **"I don't really want feature branches to have to build until complete and ready to merge."** PRs open as drafts while in progress; CI runs only for non-draft PRs into main (marking ready triggers it), on main pushes, or by hand | Stacked PRs don't build until retargeted to main; docs-only PRs skip CI; newer runs cancel older ones. |
 
 ## Round 4 (2026-10-12)
 
