@@ -16,7 +16,9 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 
 ## CI
 
-Pull requests get one cheap `check` job: tests (including the headless game), clippy, and the hero build with its size budget. It runs only for non-draft PRs into `main`, so open PRs as drafts while iterating. The wasm game build, browser harness and deploys run on `main` (production, hero only) and on `rc/…` branches (a preview with the game). See decisions Q41 and Q42.
+Pull requests get one cheap `check` job: tests (including the headless game), clippy, and the hero build with its size budget. It runs only for non-draft PRs into `main`. PRs, stacked ones included, stay drafts while iterating; mark one ready only to merge it. The wasm game build, browser harness and deploys run on `main` (production, hero only) and on `rc/…` branches (a preview with the game). A newer run cancels an older one, so merging a stack builds once. See decisions Q41, Q42 and Q44.
+
+Locally, pre-commit hooks are the gate (Q45). Install them once per clone: `uv tool install pre-commit && pre-commit install -t pre-commit -t pre-push`. Commits run hygiene checks, rustfmt and clippy; pushes add the tests, the wasm lint of the renderer modules and the hero size budget.
 
 Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n>` ships a preview of the full game at `https://rc-<n>.slayback.pages.dev`. Both need wrangler logged in, or credentials in `.env.local`.
 
