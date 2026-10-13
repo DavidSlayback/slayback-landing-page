@@ -45,6 +45,18 @@ jobs:
           name: dist-with-game
           path: dist
 
+  # Headless game scenarios (ticket A4, crates/game/tests): real game systems, no window or GPU, native Linux.
+  game-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p game
+      - run: cargo clippy -p game --all-targets -- -D warnings
+
   # Browser smoke harness (ticket A3, tests/e2e) against the full build, so /play is covered too.
   browser:
     needs: game

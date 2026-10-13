@@ -7,18 +7,22 @@ use game_core::movement::{JUMP_SPEED, run_velocity};
 #[derive(Component)]
 pub struct Player;
 
-const SIZE: Vec2 = Vec2::new(28.0, 56.0);
+/// Player collider size, world units.
+pub const SIZE: Vec2 = Vec2::new(28.0, 56.0);
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn).add_systems(Update, movement);
 }
+
+/// Spawn point, world units.
+pub const SPAWN: Vec2 = Vec2::new(0.0, -200.0);
 
 fn spawn(mut commands: Commands) {
     commands.spawn((
         Player,
         Name::new("player"),
         Sprite::from_color(Color::srgb(0.9, 1.0, 0.8), SIZE),
-        Transform::from_xyz(0.0, -200.0, 1.0),
+        Transform::from_translation(SPAWN.extend(1.0)),
         RigidBody::Dynamic,
         Collider::rectangle(SIZE.x, SIZE.y),
         LockedAxes::ROTATION_LOCKED,
