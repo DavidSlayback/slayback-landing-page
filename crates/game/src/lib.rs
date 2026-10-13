@@ -5,6 +5,7 @@
 
 pub mod arena;
 pub mod bomb;
+#[cfg(feature = "render")]
 pub mod comfort;
 pub mod debris;
 pub mod demo;
