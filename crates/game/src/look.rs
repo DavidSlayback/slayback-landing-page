@@ -24,6 +24,7 @@ use crate::arena::{WALL, Wall};
 use crate::enemy::{Brain, WallDoor, door_spot};
 use crate::debris::{DebrisPart, Shattered};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
+use crate::run::BoxStarted;
 use crate::player::Player;
 
 /// Depth of the box, world units (the 2D game lives on the z = 0 plane).
@@ -56,27 +57,35 @@ impl Scheme {
         SCHEMES.iter().copied().find(|s| s.key == key)
     }
 
-    /// The page's scheme: `?palette=` first, then the visitor's saved pick (the hero's `slayback-scheme`), else Netrunner.
-    fn from_page() -> Scheme {
+    /// Index in [`SCHEMES`] of the page's scheme: `?palette=` first, then the visitor's saved pick (the hero's
+    /// `slayback-scheme`), else Netrunner.
+    fn page_index() -> usize {
         #[cfg(target_arch = "wasm32")]
         {
             let window = web_sys::window();
             let query = window.as_ref().and_then(|w| w.location().search().ok()).unwrap_or_default();
             let from_query = query.trim_start_matches('?').split('&').find_map(|kv| kv.strip_prefix("palette=")).map(str::to_owned);
             let saved = || window.as_ref()?.local_storage().ok()??.get_item("slayback-scheme").ok()?;
-            if let Some(s) = from_query.or_else(saved).as_deref().and_then(Scheme::by_key) {
-                return s;
+            if let Some(i) = from_query.or_else(saved).and_then(|k| SCHEMES.iter().position(|s| s.key == k)) {
+                return i;
             }
         }
-        SCHEMES[0]
+        0
     }
 }
+
+/// The page's scheme (index in [`SCHEMES`]); box `n` uses the one `n - 1` steps after it.
+#[derive(Resource)]
+struct BaseScheme(usize);
 
 pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(GlobalAmbientLight { color: Color::WHITE, brightness: 120.0, ..default() })
-        .insert_resource(Scheme::from_page())
+        .insert_resource(BaseScheme(Scheme::page_index()))
+        .insert_resource(SCHEMES[Scheme::page_index()])
         .add_systems(Startup, (load_kit, spawn_stage).chain())
+        // Before anything is dressed for the new box.
+        .add_systems(PreUpdate, (rotate_scheme, build_frame))
         .add_systems(
             Update,
             (dress_walls, dress_fighters, dress_doors, dress_debris, animate_fighters, tint_fighters, light_doors, spawn_sparks, fly_sparks),
@@ -90,6 +99,7 @@ struct Kit {
     rim: Handle<StandardMaterial>,
     skin: Handle<StandardMaterial>,
     spark: Handle<StandardMaterial>,
+    debris: Handle<StandardMaterial>,
     spark_mesh: Handle<Mesh>,
     door_mesh: Handle<Mesh>,
     torso: Handle<Mesh>,
@@ -113,6 +123,8 @@ fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Asse
         skin: mat(Color::srgb(0.85, 0.9, 0.8), LinearRgba::BLACK),
         // White-hot, like the hero's welding sparks; bloom does the rest.
         spark: mat(Color::WHITE, LinearRgba::rgb(14.0, 12.0, 8.0)),
+        // Debris keeps the fallen enemy's colours (recoloured with the scheme each box).
+        debris: mat(scheme.accents[2].darker(0.45), scheme.accents[2].to_linear() * 0.6),
         spark_mesh: meshes.add(Cuboid::new(7.0, 1.6, 1.6)),
         door_mesh: meshes.add(flat(Cuboid::new(4.0, 64.0, 72.0))),
         // A figure in "rig units" (about 2.45 tall), scaled to each fighter's collider by its `Rig`.
@@ -124,8 +136,8 @@ fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Asse
     commands.insert_resource(kit);
 }
 
-/// Camera, light, the back wall and the glowing rim of the box.
-fn spawn_stage(mut commands: Commands, kit: Res<Kit>, mut meshes: ResMut<Assets<Mesh>>) {
+/// Camera and light; the box's own back wall and neon come from `build_frame`.
+fn spawn_stage(mut commands: Commands) {
     let half = ARENA / 2.0;
     // A slightly tilted view of the whole box (from the B2 spike, scaled to world units).
     commands.spawn((
@@ -143,21 +155,72 @@ fn spawn_stage(mut commands: Commands, kit: Res<Kit>, mut meshes: ResMut<Assets<
         Transform::from_xyz(-320.0, 960.0, 800.0).looking_at(Vec3::ZERO, Vec3::Y),
         CascadeShadowConfigBuilder { num_cascades: 1, maximum_distance: 4_000.0, ..default() }.build(),
     ));
-    let strip = 5.0;
+}
+
+/// The back wall and neon frame of the current box, rebuilt at each box's rim height.
+#[derive(Component)]
+struct FramePiece;
+
+fn build_frame(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut started: MessageReader<BoxStarted>,
+    old: Query<Entity, With<FramePiece>>,
+) {
+    let Some(BoxStarted(spec)) = started.read().last() else { return };
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    let half = ARENA / 2.0;
+    let (floor, rim) = (-half.y + WALL, -half.y + WALL + spec.rim);
+    let (inner, strip, h) = (half.x - WALL, 5.0, spec.rim);
     let slabs = [
-        // The back wall, behind the play plane.
-        (Vec3::new(ARENA.x, ARENA.y, WALL), Vec3::new(0.0, 0.0, -DEPTH / 2.0 - WALL / 2.0), &kit.wall),
-        // Neon rims: a frame around the inside of the back wall, the tops of the side walls, the front edge of the floor.
-        (Vec3::new(ARENA.x - 2.0 * WALL, strip, strip), Vec3::new(0.0, half.y - WALL, -DEPTH / 2.0), &kit.rim),
-        (Vec3::new(ARENA.x - 2.0 * WALL, strip, strip), Vec3::new(0.0, -half.y + WALL, -DEPTH / 2.0), &kit.rim),
-        (Vec3::new(strip, ARENA.y - 2.0 * WALL, strip), Vec3::new(-half.x + WALL, 0.0, -DEPTH / 2.0), &kit.rim),
-        (Vec3::new(strip, ARENA.y - 2.0 * WALL, strip), Vec3::new(half.x - WALL, 0.0, -DEPTH / 2.0), &kit.rim),
-        (Vec3::new(strip, strip, DEPTH), Vec3::new(-half.x, half.y, 0.0), &kit.rim),
-        (Vec3::new(strip, strip, DEPTH), Vec3::new(half.x, half.y, 0.0), &kit.rim),
-        (Vec3::new(ARENA.x - 2.0 * WALL, strip, strip), Vec3::new(0.0, -half.y + WALL, DEPTH / 2.0), &kit.rim),
+        // The back wall, from under the floor to the rim, behind the play plane.
+        (Vec3::new(ARENA.x, h + WALL, WALL), Vec3::new(0.0, floor + h / 2.0 - WALL / 2.0, -DEPTH / 2.0 - WALL / 2.0), &kit.wall),
+        // Neon: a frame on the back wall, along the tops of the side walls (the rim), and the floor's front edge.
+        (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, rim, -DEPTH / 2.0), &kit.rim),
+        (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, floor, -DEPTH / 2.0), &kit.rim),
+        (Vec3::new(strip, h, strip), Vec3::new(-inner, floor + h / 2.0, -DEPTH / 2.0), &kit.rim),
+        (Vec3::new(strip, h, strip), Vec3::new(inner, floor + h / 2.0, -DEPTH / 2.0), &kit.rim),
+        (Vec3::new(strip, strip, DEPTH), Vec3::new(-half.x + WALL / 2.0, rim, 0.0), &kit.rim),
+        (Vec3::new(strip, strip, DEPTH), Vec3::new(half.x - WALL / 2.0, rim, 0.0), &kit.rim),
+        (Vec3::new(2.0 * inner, strip, strip), Vec3::new(0.0, floor, DEPTH / 2.0), &kit.rim),
     ];
     for (size, pos, mat) in slabs {
-        commands.spawn((Mesh3d(meshes.add(flat(Cuboid::from_size(size)))), MeshMaterial3d(mat.clone()), Transform::from_translation(pos)));
+        commands.spawn((FramePiece, Mesh3d(meshes.add(flat(Cuboid::from_size(size)))), MeshMaterial3d(mat.clone()), Transform::from_translation(pos)));
+    }
+}
+
+/// Box by box the colours rotate through the schemes, starting from the page's (decision Q31).
+fn rotate_scheme(
+    mut started: MessageReader<BoxStarted>,
+    base: Res<BaseScheme>,
+    mut scheme: ResMut<Scheme>,
+    kit: Res<Kit>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut tints: Query<(&mut Tint, &ChildOf)>,
+    players: Query<(), With<Player>>,
+) {
+    let Some(BoxStarted(spec)) = started.read().last() else { return };
+    *scheme = SCHEMES[(base.0 + spec.scheme) % SCHEMES.len()];
+    if let Some(mut m) = mats.get_mut(&kit.rim) {
+        m.base_color = scheme.accents[0];
+        m.emissive = scheme.accents[0].to_linear() * 4.0;
+    }
+    if let Some(mut m) = mats.get_mut(&kit.debris) {
+        m.base_color = scheme.accents[2].darker(0.45);
+        m.emissive = scheme.accents[2].to_linear() * 0.6;
+    }
+    // The player keeps the primary accent of whatever scheme is up (enemies are dressed fresh in each box).
+    for (mut tint, parent) in &mut tints {
+        if players.contains(parent.parent()) {
+            tint.base = scheme.accents[0].darker(0.55);
+            tint.glow_base = scheme.accents[0].to_linear() * 6.0;
+            if let Some(mut m) = mats.get_mut(&tint.glow) {
+                m.base_color = scheme.accents[0];
+            }
+        }
     }
 }
 
@@ -388,20 +451,12 @@ fn spray(commands: &mut Commands, kit: &Kit, seed: &mut u32, at: Vec2, count: us
 /// Debris keeps its enemy's colours: the body tone for every part, so a pile reads as the fallen.
 fn dress_debris(
     mut commands: Commands,
-    scheme: Res<Scheme>,
+    kit: Res<Kit>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
     parts: Query<(Entity, &DebrisPart), Added<DebrisPart>>,
-    mut material: Local<Option<Handle<StandardMaterial>>>,
     // One mesh per distinct shape (an enemy type breaks into a few repeated ones), so a whole pile batches.
     mut shapes: Local<Vec<(Shape, Handle<Mesh>)>>,
 ) {
-    let mat = material
-        .get_or_insert_with(|| {
-            let accent = scheme.accents[2];
-            mats.add(StandardMaterial { base_color: accent.darker(0.45), emissive: accent.to_linear() * 0.6, perceptual_roughness: 0.85, ..default() })
-        })
-        .clone();
     for (e, part) in &parts {
         let mesh = match shapes.iter().find(|(s, _)| *s == part.shape) {
             Some((_, mesh)) => mesh.clone(),
@@ -414,7 +469,7 @@ fn dress_debris(
                 mesh
             }
         };
-        commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(mat.clone())));
+        commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(kit.debris.clone())));
     }
 }
 

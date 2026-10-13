@@ -165,6 +165,12 @@ impl Health {
         if self.defeated() { HitOutcome::Defeated } else { HitOutcome::Hurt }
     }
 
+    /// Damage that isn't a blow (a timeout penalty): no stun.
+    pub fn hurt(&mut self, amount: f32) -> HitOutcome {
+        self.hp -= amount;
+        if self.defeated() { HitOutcome::Defeated } else { HitOutcome::Hurt }
+    }
+
     pub fn tick(&mut self, dt: f32) {
         self.stun = (self.stun - dt).max(0.0);
     }
