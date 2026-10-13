@@ -1,5 +1,5 @@
-//! A scripted demo (`/play/?demo=1`, or `DEMO=1` natively): fodder stepping up to the player, who punches, kicks and
-//! drop-kicks them in a loop. It drives the real game through synthetic key presses, so what it shows is what
+//! A scripted demo (`/play/?demo=1`, or `DEMO=1` natively): fodder stepping up to the player, who punches, kicks,
+//! drop-kicks and spin-throws them in a loop. It drives the real game through synthetic key presses, so what it shows is what
 //! playing looks like. Uses: checking the look of a fight without a person at the keyboard, recording the
 //! touch-device gameplay clip, and loading the box with debris (`debris=1000`) to measure frame time.
 
@@ -11,6 +11,7 @@ use crate::arena::WALL;
 use crate::debris::part;
 use crate::enemy::{Brain, HALF, Waves, fodder};
 use game_core::debris::humanoid_parts;
+use crate::grab::GRAB_KEY;
 use crate::player::{KICK_KEY, PUNCH_KEY, Player};
 
 /// A demo setting from the page query (`demo=1&slow=0.25`) or, natively, the environment (`DEMO=1 SLOW=0.25`).
@@ -55,7 +56,8 @@ fn drop_debris(commands: &mut Commands, n: usize) {
 }
 
 /// One beat of the loop: what to press, and how far away the next fodder stands.
-const BEATS: [(&[KeyCode], f32); 3] = [(&[PUNCH_KEY], 48.0), (&[KICK_KEY], 58.0), (&[KeyCode::Space, PUNCH_KEY], 150.0)];
+const BEATS: [(&[KeyCode], f32); 4] =
+    [(&[PUNCH_KEY], 48.0), (&[KICK_KEY], 58.0), (&[KeyCode::Space, PUNCH_KEY], 150.0), (&[GRAB_KEY, PUNCH_KEY], 45.0)];
 const BEAT: f32 = 1.4;
 
 fn script(
@@ -63,7 +65,7 @@ fn script(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut commands: Commands,
     player: Query<&Transform, With<Player>>,
-    fodder_left: Query<(), With<Brain>>,
+    fodder_left: Query<Entity, With<Brain>>,
     mut clock: Local<(f32, usize, bool)>,
 ) {
     let (t, beat, spawned) = &mut *clock;
@@ -71,18 +73,20 @@ fn script(
     *t += time.delta_secs();
     let Ok(at) = player.single() else { return };
     let (presses, gap) = BEATS[*beat % BEATS.len()];
-    // Set up the beat: a fresh fodder at the right distance in front of the player (it faces right).
+    // Set up the beat: clear whoever is left and place a fresh fodder at the beat's distance in front of the player
+    // (it faces right), so every beat plays out the same way.
     if !*spawned && *t > 0.2 {
-        if fodder_left.is_empty() {
-            // Repeated dashes walk the player right; keep the fodder inside the box.
-            let x = (at.translation.x + gap).min(ARENA.x / 2.0 - WALL - HALF.x - 4.0);
-            commands.spawn(fodder(Vec2::new(x, at.translation.y + 2.0)));
+        for e in &fodder_left {
+            commands.entity(e).despawn();
         }
+        // Repeated dashes walk the player right; keep the fodder inside the box.
+        let x = (at.translation.x + gap).min(ARENA.x / 2.0 - WALL - HALF.x - 4.0);
+        commands.spawn(fodder(Vec2::new(x, at.translation.y + 2.0)));
         *spawned = true;
     }
     // Strike just before the fodder's own punch would come out, then move on.
     if *t > 0.5 && *t - time.delta_secs() <= 0.5 {
-        keys.press(presses[0]); // for a drop-kick, the dash; the attack follows mid-dash
+        keys.press(presses[0]); // a dash or grab first; the attack follows (drop-kick / spin-throw)
     }
     if presses.len() == 2 && *t > 0.55 && *t - time.delta_secs() <= 0.55 {
         keys.press(presses[1]);

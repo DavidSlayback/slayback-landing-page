@@ -45,17 +45,39 @@ The first game build takes about 10 minutes (fat LTO for size); the web build is
 
 `scripts/build.sh` honours `CARGO_TARGET_DIR`, so worktrees can share one target directory.
 
-### The game's look and controls
+### Playing the game
 
-Run with A/D or the arrow keys and dash with Space or Shift. Punch with J or left click, kick with K or right click; any attack during a dash is a drop-kick. There is no jump: you climb by walking up debris. Fodder come in through the side-wall doors, which glow for 0.5 s first. A defeated enemy breaks into its six parts, which freeze 3 s later (or on sleep) and become solid terrain: fighters step up ledges of up to 24 units, so piles are climbable (B1's budget: ≤1000 parts; oldest go first). The run is endless (`game-core::run`):
+**Controls.**
+
+| Action | Keys |
+|---|---|
+| Run | A / D or the arrow keys |
+| Dash | Space or Shift |
+| Punch | J or left click |
+| Kick | K or right click |
+| Drop-kick | any attack during a dash |
+| Grab | L or middle click: a live enemy or a debris part (frozen debris thaws) |
+| Spin-throw | attack while holding; it hurts every enemy it passes through |
+| Set down | L again |
+
+There is no jump: you climb by walking up debris.
+
+**The box.**
+- **Enemies:** fodder come in through the side-wall doors, which glow for 0.5 s first.
+- **Debris:** a defeated enemy breaks into its six parts, which freeze 3 s later (or on sleep) and become solid terrain. Fighters step up ledges of up to 24 units, so piles are climbable. The budget (B1) is at most 1000 parts; the oldest go first.
+
+**The run** (`game-core::run`) is endless. These numbers are first guesses for the playtest (Q29).
 - **Escape:** pile debris under yourself until you stand at the rim, which loads the next box.
 - **Each new box:** about 45 units taller, a shorter timer, one more enemy at a time, and the next colour scheme.
 - **Timer:** running out costs 25 health and restarts the clock.
 - **Health:** escaping refills 30%; dying restarts at box 1.
-- **Tuning:** these numbers are first guesses for the playtest (Q29). `/play/?demo=1` plays a scripted fight (add `&slow=0.25` for slow motion, e.g. to record a clip, or `&debris=1000` to load the box with debris; natively `DEMO=1 SLOW=0.25 bash scripts/native.sh`). The look follows the B2 spike's budget (`docs/research/game-research.md`, section 6): `bevy_pbr`, one directional light with a single shadow cascade, emissive neon plus bloom, and ACES tonemapping.
+
+**Demo mode.** `/play/?demo=1` plays a scripted fight by synthetic key presses: punch, kick, drop-kick and spin-throw. Add `&slow=0.25` for slow motion (for recording a clip) or `&debris=1000` to load the box with debris. Natively, run `DEMO=1 SLOW=0.25 bash scripts/native.sh`.
+
+**The look** follows the B2 spike's budget (`docs/research/game-research.md`, section 6): `bevy_pbr`, one directional light with a single shadow cascade, emissive neon plus bloom, and ACES tonemapping.
 - **Resolution:** `site/play/` caps the canvas at a 16:9 stage of 1280×720 CSS px and scales it up with a CSS transform; the game ignores the display's pixel ratio. The backbuffer therefore never exceeds 1280×720.
-- **Measured** (headless Chrome, Intel UHD, vsync off, 1920×1080 viewport): about 8 ms per frame, and `game_bg.wasm` is 5.96 MB gzipped (budget 6.0).
-- **Colour scheme:** the game uses the visitor's hero colour scheme (`slayback-scheme` in localStorage), and `?palette=` overrides it.
+- **Measured** (headless Chrome, Intel UHD, vsync off): about 8 ms per frame, or 10 ms with a full 1000-part pile. `game_bg.wasm` is about 6.0 MB gzipped.
+- **Colour scheme:** the game starts in the visitor's hero colour scheme (`slayback-scheme` in localStorage), and `?palette=` overrides it. It then rotates the scheme box by box.
 
 ## Game release switch
 
