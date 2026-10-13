@@ -9,6 +9,8 @@ pub enum Move {
     Kick,
     /// Attacking during a dash: the dash becomes a flying kick.
     DropKick,
+    /// The thug's overhead blow. Its telegraph is the thug's long wind-up (see `enemy::THUG`).
+    Smash,
 }
 
 /// Timing (seconds), reach and effect of a move.
@@ -49,6 +51,11 @@ impl Move {
                 startup: 0.0, active: 0.14, recovery: 0.22, reach: 30.0, height: 30.0, offset_y: -6.0,
                 damage: 12.0, knockback: (1000.0, 360.0), hitstun: 0.45, hitstop: 0.08,
             },
+            // Comes down from overhead in front of the thug: wide, heavy, and slow to recover from.
+            Move::Smash => MoveSpec {
+                startup: 0.1, active: 0.12, recovery: 0.4, reach: 44.0, height: 44.0, offset_y: 16.0,
+                damage: 22.0, knockback: (750.0, 480.0), hitstun: 0.5, hitstop: 0.1,
+            },
         }
     }
 
@@ -57,7 +64,8 @@ impl Move {
         if dashing { Move::DropKick } else { button }
     }
 
-    pub const ALL: [Move; 3] = [Move::Punch, Move::Kick, Move::DropKick];
+    /// The player's moves (enemy moves are tuned for readability, not crispness).
+    pub const PLAYER: [Move; 3] = [Move::Punch, Move::Kick, Move::DropKick];
 }
 
 /// Where a swing is in its life.
@@ -255,7 +263,7 @@ mod tests {
     /// Crisp-feel targets: fast to come out, short freezes that still read as impact, stun outlasting the freeze.
     #[test]
     fn every_move_meets_the_crisp_feel_targets() {
-        for mv in Move::ALL {
+        for mv in Move::PLAYER {
             let s = mv.spec();
             assert!(s.startup <= 0.12, "{mv:?} startup {}", s.startup);
             assert!((0.03..=0.10).contains(&s.hitstop), "{mv:?} hit-stop {}", s.hitstop);

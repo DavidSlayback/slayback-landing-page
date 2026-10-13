@@ -6,7 +6,10 @@
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use game_core::combat::{Aabb, Health, HitOutcome, HitStop, Move, Swing, hitbox, knockback};
+use game_core::enemy::staggers;
 use game_core::movement::{MAX_STEP, step_hop};
+
+use crate::enemy::Armoured;
 
 /// Collision layers. Fighters pass through each other (a crowd can't pin the player) but stand on walls and debris.
 #[derive(PhysicsLayer, Clone, Copy, Debug, Default)]
@@ -159,7 +162,7 @@ fn finish_swings(mut attacks: Query<&mut Attack>) {
 fn resolve_hits(
     mut attackers: Query<(&Team, &Fighter, &Transform, &mut Attack)>,
     targets: Query<(Entity, &Team, &Fighter, &Transform)>,
-    mut hurt: Query<(&mut Hp, &mut LinearVelocity, &mut Flash)>,
+    mut hurt: Query<(&mut Hp, &mut LinearVelocity, &mut Flash, Option<&Armoured>)>,
     mut stop: ResMut<HitStopClock>,
     mut hits_out: MessageWriter<Hit>,
     mut defeated: MessageWriter<Defeated>,
@@ -182,16 +185,22 @@ fn resolve_hits(
         }
     }
     for (target, mv, facing, at) in hits {
-        let Ok((mut hp, mut velocity, mut flash)) = hurt.get_mut(target) else { continue };
+        let Ok((mut hp, mut velocity, mut flash, armour)) = hurt.get_mut(target) else { continue };
         if hp.0.defeated() {
             continue;
         }
-        let (kx, ky) = knockback(mv, facing);
-        velocity.0 = Vec2::new(kx, ky);
         flash.0 = FLASH;
         stop.0.trigger(mv.spec().hitstop);
         hits_out.write(Hit { at, mv, facing });
-        if hp.0.take(mv) == HitOutcome::Defeated
+        // Armour shrugs off some blows: the damage lands, but no knockback or stun, so a telegraph keeps going.
+        let outcome = if armour.is_none_or(|a| staggers(mv, a.0)) {
+            let (kx, ky) = knockback(mv, facing);
+            velocity.0 = Vec2::new(kx, ky);
+            hp.0.take(mv)
+        } else {
+            hp.0.hurt(mv.spec().damage)
+        };
+        if outcome == HitOutcome::Defeated
             && let Ok((_, team, _, _)) = targets.get(target)
         {
             defeated.write(Defeated { entity: target, team: *team });

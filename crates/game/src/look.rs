@@ -16,12 +16,12 @@ use bevy::render::view::Msaa;
 use game_core::combat::{Move, Phase};
 use game_core::debris::Shape;
 use game_core::doors::Door;
-use game_core::enemy::FodderBrain;
+use game_core::enemy::Kind;
 use game_core::movement::RUN_SPEED;
 
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
-use crate::enemy::{Brain, WallDoor, door_spot};
+use crate::enemy::{Brain, HALF, WallDoor, door_spot};
 use crate::debris::{DebrisPart, Shattered};
 use crate::fighter::{Attack, Fighter, Flash, Hit, Team};
 use crate::run::BoxStarted;
@@ -102,6 +102,7 @@ struct Kit {
     debris: Handle<StandardMaterial>,
     spark_mesh: Handle<Mesh>,
     door_mesh: Handle<Mesh>,
+    plate: Handle<Mesh>,
     torso: Handle<Mesh>,
     head: Handle<Mesh>,
     limb: Handle<Mesh>,
@@ -127,6 +128,8 @@ fn load_kit(mut commands: Commands, scheme: Res<Scheme>, mut meshes: ResMut<Asse
         debris: mat(scheme.accents[2].darker(0.45), scheme.accents[2].to_linear() * 0.6),
         spark_mesh: meshes.add(Cuboid::new(7.0, 1.6, 1.6)),
         door_mesh: meshes.add(flat(Cuboid::new(4.0, 64.0, 72.0))),
+        // A thug's shoulder plate (rig units).
+        plate: meshes.add(flat(Cuboid::new(0.45, 0.18, 0.5))),
         // A figure in "rig units" (about 2.45 tall), scaled to each fighter's collider by its `Rig`.
         torso: meshes.add(flat(Cuboid::new(0.7, 1.0, 0.4))),
         head: meshes.add(flat(Sphere::new(0.32).mesh().ico(1).expect("ico subdivision 1 is valid"))),
@@ -274,27 +277,38 @@ fn dress_fighters(
     kit: Res<Kit>,
     scheme: Res<Scheme>,
     mut mats: ResMut<Assets<StandardMaterial>>,
-    fighters: Query<(Entity, &Fighter, &Team), Added<Fighter>>,
+    fighters: Query<(Entity, &Fighter, &Team, Option<&Brain>), Added<Fighter>>,
 ) {
-    for (e, fighter, team) in &fighters {
-        // The player wears the primary accent; fodder a contrasting one.
-        let accent = match team {
-            Team::Player => scheme.accents[0],
-            Team::Enemy => scheme.accents[2],
+    for (e, fighter, team, brain) in &fighters {
+        let kind = brain.map(|b| b.0.style.kind);
+        // The player wears the primary accent, fodder a contrasting one, thugs a third. Colour is a bonus: the
+        // silhouettes differ too (decision Q35, colour-blind safe), so a thug reads as one in any scheme.
+        let accent = match (team, kind) {
+            (Team::Player, _) => scheme.accents[0],
+            (_, Some(Kind::Thug)) => scheme.accents[1],
+            _ => scheme.accents[2],
         };
         let base = accent.darker(0.55);
         let glow_base = accent.to_linear() * 6.0;
         let body = mats.add(StandardMaterial { base_color: base, perceptual_roughness: 0.85, ..default() });
         let glow = mats.add(StandardMaterial { base_color: accent, emissive: glow_base, perceptual_roughness: 0.85, ..default() });
         let scale = fighter.half.y * 2.0 / RIG_HEIGHT;
+        // Thugs are built broad and deep, with shoulder plates.
+        let thug = kind == Some(Kind::Thug);
+        let build = if thug { Vec3::new(1.5, 1.0, 1.25) } else { Vec3::ONE };
         commands.entity(e).insert(Visibility::default()).with_children(|p| {
             p.spawn((
                 Rig::default(),
                 Tint { body: body.clone(), glow: glow.clone(), base, glow_base },
-                Transform::from_xyz(0.0, -fighter.half.y + RIG_FEET * scale, 0.0).with_scale(Vec3::splat(scale)),
+                Transform::from_xyz(0.0, -fighter.half.y + RIG_FEET * scale, 0.0).with_scale(build * scale),
                 Visibility::default(),
             ))
             .with_children(|r| {
+                if thug {
+                    for dx in [-0.5, 0.5] {
+                        r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(dx, 1.05, 0.0)));
+                    }
+                }
                 r.spawn((Mesh3d(kit.torso.clone()), MeshMaterial3d(body.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
                 r.spawn((Mesh3d(kit.head.clone()), MeshMaterial3d(kit.skin.clone()), Transform::from_xyz(0.0, 1.35, 0.0)));
                 r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.4, 0.3)));
@@ -316,13 +330,16 @@ fn dress_fighters(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn animate_fighters(
     time: Res<Time>,
-    fighters: Query<(&Fighter, &Attack, &LinearVelocity, Option<&Player>, &Children)>,
+    fighters: Query<(&Fighter, &Attack, &LinearVelocity, Option<&Player>, Option<&Brain>, &Children)>,
     mut rigs: Query<(&mut Rig, &mut Transform, &Children), Without<Limb>>,
     mut limbs: Query<(&Limb, &mut Transform), Without<Rig>>,
 ) {
-    for (fighter, attack, velocity, player, children) in &fighters {
+    for (fighter, attack, velocity, player, brain, children) in &fighters {
+        // A thug raises both arms as its telegraph builds (the smash then brings them down).
+        let raise = brain.filter(|b| b.0.style.attack == Move::Smash).map_or(0.0, |b| b.0.telegraph());
         for &child in children {
             let Ok((mut rig, mut tf, rig_children)) = rigs.get_mut(child) else { continue };
             // Mostly side-on toward the facing side, so blows read as aimed at the opponent; a dash leans in.
@@ -344,6 +361,8 @@ fn animate_fighters(
                 let Ok((limb, mut lt)) = limbs.get_mut(c) else { continue };
                 let walk = rig.stride.sin() * 0.7 * speed * limb.swing();
                 let angle = match (pose, *limb) {
+                    (Some((Move::Smash, r)), Limb::FrontArm | Limb::BackArm) => if r < 0.0 { -2.7 } else { -2.7 + 2.0 * r },
+                    (None, Limb::FrontArm | Limb::BackArm) if raise > 0.0 => -2.7 * raise,
                     (Some((Move::Punch, r)), Limb::FrontArm) => -1.55 * r,
                     (Some((Move::Kick | Move::DropKick, r)), Limb::FrontLeg) => -1.4 * r,
                     (Some((Move::DropKick, _)), Limb::BackLeg) => 0.5,
@@ -365,7 +384,7 @@ fn tint_fighters(fighters: Query<(&Flash, Option<&Brain>, &Children)>, rigs: Que
                 m.base_color = if lit { Color::WHITE } else { tint.base };
                 m.emissive = if lit { LinearRgba::rgb(3.0, 3.0, 3.0) } else { LinearRgba::BLACK };
             }
-            let windup = brain.map_or(0.0, |b| (b.0.windup / FodderBrain::WINDUP).clamp(0.0, 1.0));
+            let windup = brain.map_or(0.0, |b| b.0.telegraph());
             if let Some(mut m) = mats.get_mut(&tint.glow) {
                 m.emissive = if lit { LinearRgba::rgb(8.0, 8.0, 8.0) } else { tint.glow_base * (1.0 + 3.0 * windup) };
             }
@@ -381,7 +400,7 @@ fn dress_doors(mut commands: Commands, kit: Res<Kit>, mut mats: ResMut<Assets<St
     for (e, door) in &doors {
         let mat = mats.add(StandardMaterial { base_color: Color::srgb(0.05, 0.07, 0.05), perceptual_roughness: 0.85, ..default() });
         // On the inside face of the wall, standing on the floor.
-        let x = door.side * (ARENA.x / 2.0 - WALL - 1.0) - door_spot(door.side).x;
+        let x = door.side * (ARENA.x / 2.0 - WALL - 1.0) - door_spot(door.side, HALF).x;
         commands.entity(e).insert((DoorPanel(mat.clone()), Visibility::default())).with_child((
             Mesh3d(kit.door_mesh.clone()),
             MeshMaterial3d(mat),

@@ -5,6 +5,8 @@
 //! The numbers are first guesses aimed at "a first-timer dies around box 3-4 (3-5 min)" (decision Q29) and are meant
 //! to be tuned at the playtest; everything that varies by box is in [`box_spec`].
 
+use crate::enemy::Kind;
+
 /// Health lost when a box's timer runs out (the timer then restarts).
 pub const TIMEOUT_PENALTY: f32 = 25.0;
 /// Fraction of max health restored on escaping a box.
@@ -25,6 +27,8 @@ pub struct BoxSpec {
     pub crowd: usize,
     /// Offset from the starting colour scheme.
     pub scheme: usize,
+    /// Share of entering enemies that are thugs (the rest are fodder).
+    pub thugs: f32,
 }
 
 /// Box `number` (1-based) of a run.
@@ -36,7 +40,14 @@ pub fn box_spec(number: usize) -> BoxSpec {
         timer: (90.0 - 10.0 * n as f32).max(45.0),
         crowd: (3 + n).min(8),
         scheme: n % SCHEMES,
+        // Thugs from box 2 (decision Q26 roster; "thugs from box 2" in the difficulty notes).
+        thugs: if n == 0 { 0.0 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
     }
+}
+
+/// Which kind of enemy enters next, from a uniform `roll` in 0..1.
+pub fn pick_kind(spec: &BoxSpec, roll: f32) -> Kind {
+    if roll < spec.thugs { Kind::Thug } else { Kind::Fodder }
 }
 
 /// The escape test: the pile under the player (how high the player stands above the floor) has reached the rim.
@@ -107,6 +118,14 @@ mod tests {
             assert_eq!(b.scheme, (a.scheme + 1) % SCHEMES);
         }
         assert_eq!(box_spec(1).scheme, 0, "the first box uses the site's scheme");
+    }
+
+    #[test]
+    fn thugs_join_from_box_two_and_never_crowd_out_fodder() {
+        assert_eq!(pick_kind(&box_spec(1), 0.0), Kind::Fodder, "box 1 is all fodder");
+        assert_eq!(pick_kind(&box_spec(2), 0.1), Kind::Thug);
+        assert_eq!(pick_kind(&box_spec(2), 0.9), Kind::Fodder);
+        assert!(box_spec(40).thugs <= 0.4);
     }
 
     #[test]

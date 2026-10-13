@@ -12,11 +12,12 @@ use game::flow::Phase;
 use game::run::RunState;
 use game::score::{LastRun, RunScore};
 use game::ARENA;
-use game::enemy::{Brain, MAX_HP, Waves, fodder};
+use game::enemy::{Brain, MAX_HP, Waves, enemy, fodder};
 use game::debris::{DebrisPart, part};
 use game::fighter::Hp;
 use game::grab::{Carried, Thrown};
 use game_core::debris::{FREEZE_AFTER, MAX_PARTS_PER_ENEMY, Shape};
+use game_core::enemy::{Kind, THUG};
 use game_core::movement::{DASH_SPEED, DASH_TIME};
 use game_core::run::{Run, TIMEOUT_PENALTY, box_spec};
 
@@ -416,4 +417,47 @@ fn a_punch_lands_even_when_a_slow_frame_skips_its_active_window() {
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     step(&mut app, 0.1);
     assert!(fodder_state(&app, target).0 < MAX_HP, "the punch still landed");
+/// A thug standing just in front of the player, already winding up.
+fn winding_thug(app: &mut App) -> Entity {
+    let x = player(app).0.x + 60.0;
+    let thug = app.world_mut().spawn(enemy(Kind::Thug, Vec2::new(x, -ARENA.y / 2.0 + WALL + 31.0))).id();
+    step(app, 0.2);
+    assert!(thug_telegraph(app, thug) > 0.0, "the thug is winding up");
+    thug
+}
+
+fn thug_telegraph(app: &App, thug: Entity) -> f32 {
+    app.world().get::<Brain>(thug).unwrap().0.telegraph()
+}
+
+#[test]
+fn punches_hurt_a_thug_but_dont_interrupt_its_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.15);
+    let hp = app.world().get::<Hp>(thug).unwrap().0;
+    assert!(hp.hp < THUG.max_hp, "the punch hurt");
+    assert!(!hp.stunned() && thug_telegraph(&app, thug) > 0.4, "but the wind-up carried on");
+}
+
+#[test]
+fn a_kick_interrupts_a_thugs_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    keys(&mut app).press(KeyCode::KeyK);
+    step(&mut app, 0.25);
+    assert!(app.world().get::<Hp>(thug).unwrap().0.stunned(), "a kick staggers it");
+    assert_eq!(thug_telegraph(&app, thug), 0.0, "and resets its wind-up");
+}
+
+#[test]
+fn doors_deliver_thugs_when_the_box_calls_for_them() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.spec.thugs = 1.0;
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    step(&mut app, 3.0);
+    let mut q = app.world_mut().query::<&Brain>();
+    let kinds: Vec<Kind> = q.iter(app.world()).map(|b| b.0.style.kind).collect();
+    assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Kind::Thug), "entered: {kinds:?}");
 }
