@@ -63,7 +63,11 @@ The first game build takes about 10 minutes (fat LTO for size); the web build is
 There is no jump: you climb by walking up debris.
 
 **The box.**
-- **Enemies:** fodder come in through the side-wall doors, which glow for 0.5 s first.
+- **Enemies** come in through the side-wall doors, which glow for 0.5 s first:
+  - **Fodder** walk up and punch.
+  - **Thugs** (from box 2) are slow, wide and tough. Punches hurt them but don't interrupt their overhead smash; kicks, drop-kicks and throws do.
+  - **Ninjas** (from box 3) are fast and fragile. They strike, retreat, and won't stand in front of you; they dart through to your back.
+  - **Bomb-heads** (from box 2, any kind): when defeated, the head drops as a lit bomb. It blinks for 1.5 s, then blows, hurting everyone nearby and knocking debris loose (never deleting it). You can grab and throw it.
 - **Debris:** a defeated enemy breaks into its six parts, which freeze 3 s later (or on sleep) and become solid terrain. Fighters step up ledges of up to 24 units, so piles are climbable. The budget (B1) is at most 1000 parts; the oldest go first.
 
 **The run** (`game-core::run`) is endless. These numbers are first guesses for the playtest (Q29).
@@ -72,7 +76,7 @@ There is no jump: you climb by walking up debris.
 - **Timer:** running out costs 25 health and restarts the clock.
 - **Health:** escaping refills 30%; dying restarts at box 1.
 
-**Demo mode.** `/play/?demo=1` plays a scripted fight by synthetic key presses: punch, kick, drop-kick and spin-throw. Add `&slow=0.25` for slow motion (for recording a clip) or `&debris=1000` to load the box with debris. Natively, run `DEMO=1 SLOW=0.25 bash scripts/native.sh`.
+**Demo mode.** `/play/?demo=1` plays a scripted fight by synthetic key presses: punch, kick, drop-kick and spin-throw. Add `&slow=0.25` for slow motion (for recording a clip), `&debris=1000` to load the box with debris, or `&enemy=thug|ninja` and `&bombs=1` to change who steps up. Natively, run `DEMO=1 SLOW=0.25 bash scripts/native.sh`.
 
 **The look** follows the B2 spike's budget (`docs/research/game-research.md`, section 6): `bevy_pbr`, one directional light with a single shadow cascade, emissive neon plus bloom, and ACES tonemapping.
 - **Resolution:** `site/play/` caps the canvas at a 16:9 stage of 1280×720 CSS px and scales it up with a CSS transform; the game ignores the display's pixel ratio. The backbuffer therefore never exceeds 1280×720.
