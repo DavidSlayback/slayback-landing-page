@@ -418,6 +418,8 @@ fn a_punch_lands_even_when_a_slow_frame_skips_its_active_window() {
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     step(&mut app, 0.1);
     assert!(fodder_state(&app, target).0 < MAX_HP, "the punch still landed");
+}
+
 /// A thug standing just in front of the player, already winding up.
 fn winding_thug(app: &mut App) -> Entity {
     let x = player(app).0.x + 60.0;
