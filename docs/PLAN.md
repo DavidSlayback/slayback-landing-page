@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 03:01 CDT (AFK backlog run paused: everything left needs David)
-In flight: nothing running. Stacked open PRs, all held because CI cannot start (GitHub Actions billing): #48 D10 sound -> #49 D11 gamepad -> #50 D12 comfort -> #51 E1 prep. Local checks green on each (60 rules, 26 scenarios, 3 input tests, browser smoke 5/5).
-Next: once CI runs: merge #48, retarget #49 to main and merge, then #50, then #51 (each after green CI). Then E1's preview: push an rc/ branch from main (needs David's go-ahead) and run the harness against that preview.
-Waiting on: David: (1) CI: fix the Actions billing/spending limit, make the repo public, or approve a self-hosted runner; (2) go-ahead for the rc/ preview deploy (the unreleased game at a public preview URL); (3) a 1-minute gamepad check (#26); (4) C3 #14 analytics, C2 #13 content, E2 #29 playtest. Defaults: hold.
-Re-arm: nothing scheduled. ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (CI apt packages may need checking).
-Verified: main 33cff19 (through D9) CI green. Branch e1-rc 332dd7d: native tests/clippy clean; dist build 6.42 MB gz; harness 5/5 incl. scripted run to box 2.
+As of: Tue Oct 13 2026 09:57 CDT (paused: everything left needs David)
+In flight: nothing running. Stack, each PR based on the one before: #52 ci-cheaper (CI fixes) -> #48 D10 sound -> #49 D11 gamepad -> #50 D12 comfort -> #51 E1 prep. Each branch verified locally: headless tests, wasm clippy, clean tree; top of stack: full build + browser 5/5.
+Next: once Actions billing is fixed, merge #52, then retarget each next PR to main (that's what triggers its CI, Q41) and merge after green. Then the rc/ preview (needs David's go-ahead).
+Waiting on: David: (1) Actions billing (fix payment or limit, or make the repo public); (2) go-ahead for the rc/ preview; (3) gamepad check (#26); (4) C3 analytics, C2 content, E2 playtest. Defaults: hold.
+Re-arm: nothing scheduled. CI rule (Q41): drafts and stacked PRs don't build; only ready PRs into main, main pushes, or a manual run. ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
+Verified: main 33cff19 green. Headless cold build 127 s locally (no renderer crates); caches pruned to main's 4 (~1.9 GB); game_bg.wasm 6.42 MB gz unchanged by the feature split.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
