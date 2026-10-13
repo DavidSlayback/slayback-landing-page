@@ -458,6 +458,47 @@ fn doors_deliver_thugs_when_the_box_calls_for_them() {
     app.world_mut().resource_mut::<Waves>().enabled = true;
     step(&mut app, 3.0);
     let mut q = app.world_mut().query::<&Brain>();
-    let kinds: Vec<Kind> = q.iter(app.world()).map(|b| b.0.style.kind).collect();
+    let kinds: Vec<Kind> = q.iter(app.world()).map(|b| b.0.style().kind).collect();
     assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Kind::Thug), "entered: {kinds:?}");
+}
+
+fn x_of(app: &App, e: Entity) -> f32 {
+    app.world().get::<Transform>(e).unwrap().translation.x
+}
+
+#[test]
+fn a_ninja_strikes_from_behind_and_backs_off() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    // Behind the player (who faces right).
+    let ninja = app.world_mut().spawn(enemy(Kind::Ninja, Vec2::new(start - 150.0, floor + 25.0))).id();
+    let mut closest = f32::MAX;
+    let mut hurt_at = None;
+    for frame in 0..(2.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        closest = closest.min((x_of(&app, ninja) - player(&mut app).0.x).abs());
+        if hurt_at.is_none() && player_hp(&mut app) < PLAYER_MAX_HP {
+            hurt_at = Some(frame);
+        }
+    }
+    assert!(hurt_at.is_some_and(|f| f < 60), "it closed in and struck within a second: {hurt_at:?}");
+    assert!(closest < 60.0);
+    let gap = (x_of(&app, ninja) - player(&mut app).0.x).abs();
+    assert!(gap > closest + 30.0, "then backed off: {gap} vs closest {closest}");
+}
+
+#[test]
+fn a_ninja_runs_through_rather_than_standing_in_front() {
+    let mut app = standing();
+    let floor = -ARENA.y / 2.0 + WALL;
+    let start = player(&mut app).0.x;
+    // In front of the player (who faces right), inside its avoid range.
+    let ninja = app.world_mut().spawn(enemy(Kind::Ninja, Vec2::new(start + 120.0, floor + 25.0))).id();
+    let mut got_behind = false;
+    for _ in 0..FPS as usize {
+        step(&mut app, 1.0 / FPS);
+        got_behind |= x_of(&app, ninja) < player(&mut app).0.x;
+    }
+    assert!(got_behind, "it darted through to the player's back");
 }

@@ -1,11 +1,11 @@
-//! Enemies (fodder, thugs) enter through doors in the side walls, which warn first; then they walk at the player,
-//! telegraph and strike. Decisions come from `game_core::enemy::MeleeBrain`, door timing from `game_core::doors`, and
+//! Enemies (fodder, thugs, ninjas) enter through doors in the side walls, which warn first; then they walk at the player,
+//! telegraph and strike. Decisions come from `game_core::enemy::Mind`, door timing from `game_core::doors`, and
 //! the mix from the box (`game_core::run`); this module turns them into entities, velocity, facing and swings.
 
 use avian2d::prelude::*;
 use bevy::prelude::*;
 use game_core::doors::Door;
-use game_core::enemy::{Armour, FODDER, Intent, Kind, MeleeBrain};
+use game_core::enemy::{Armour, FODDER, Intent, Kind, Mind};
 use game_core::run::pick_kind;
 use game_core::movement::run_velocity;
 
@@ -17,7 +17,7 @@ use crate::player::Player;
 use crate::run::RunState;
 
 #[derive(Component)]
-pub struct Brain(pub MeleeBrain);
+pub struct Brain(pub Mind);
 
 /// Blows this enemy shrugs off (see `game_core::enemy::staggers`).
 #[derive(Component, Clone, Copy)]
@@ -74,8 +74,9 @@ pub fn enemy(kind: Kind, at: Vec2) -> impl Bundle {
     let name = match kind {
         Kind::Fodder => "fodder",
         Kind::Thug => "thug",
+        Kind::Ninja => "ninja",
     };
-    (Brain(MeleeBrain::new(s)), Armoured(s.armour), Name::new(name), body(Team::Enemy, half, s.max_hp), Transform::from_translation(at.extend(0.0)))
+    (Brain(Mind::new(kind)), Armoured(s.armour), Name::new(name), body(Team::Enemy, half, s.max_hp), Transform::from_translation(at.extend(0.0)))
 }
 
 /// A fodder standing at `at`.
@@ -125,15 +126,17 @@ fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut Wal
 #[allow(clippy::type_complexity)]
 fn think(
     time: Res<Time>,
-    player: Query<&Transform, (With<Player>, Without<Brain>)>,
+    player: Query<(&Transform, &Fighter), (With<Player>, Without<Brain>)>,
     mut enemies: Query<(&Transform, &mut Brain, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity), Without<Carried>>,
 ) {
-    let Ok(target) = player.single() else { return };
+    let Ok((target, them)) = player.single() else { return };
     let dt = time.delta_secs();
     for (transform, mut brain, mut fighter, mut attack, hp, mut velocity) in &mut enemies {
         let dx = target.translation.x - transform.translation.x;
         let stunned = hp.0.stunned();
-        match brain.0.decide(dx, dt, stunned, attack.busy()) {
+        // The player is facing this enemy (ninjas won't stand there).
+        let in_front = (-dx).signum() == them.facing;
+        match brain.0.decide(dx, in_front, dt, stunned, attack.busy()) {
             _ if stunned => {} // knockback plays out
             Intent::Walk(axis) => {
                 fighter.facing = axis.signum();

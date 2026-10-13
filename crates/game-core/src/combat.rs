@@ -11,6 +11,8 @@ pub enum Move {
     DropKick,
     /// The thug's overhead blow. Its telegraph is the thug's long wind-up (see `enemy::THUG`).
     Smash,
+    /// The ninja's quick cut.
+    Slash,
 }
 
 /// Timing (seconds), reach and effect of a move.
@@ -55,6 +57,10 @@ impl Move {
             Move::Smash => MoveSpec {
                 startup: 0.1, active: 0.12, recovery: 0.4, reach: 44.0, height: 44.0, offset_y: 16.0,
                 damage: 22.0, knockback: (750.0, 480.0), hitstun: 0.5, hitstop: 0.1,
+            },
+            Move::Slash => MoveSpec {
+                startup: 0.05, active: 0.08, recovery: 0.2, reach: 30.0, height: 26.0, offset_y: 6.0,
+                damage: 7.0, knockback: (450.0, 200.0), hitstun: 0.25, hitstop: 0.05,
             },
         }
     }

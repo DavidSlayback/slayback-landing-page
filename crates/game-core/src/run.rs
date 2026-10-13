@@ -27,8 +27,9 @@ pub struct BoxSpec {
     pub crowd: usize,
     /// Offset from the starting colour scheme.
     pub scheme: usize,
-    /// Share of entering enemies that are thugs (the rest are fodder).
+    /// Shares of entering enemies that are thugs and ninjas (the rest are fodder).
     pub thugs: f32,
+    pub ninjas: f32,
 }
 
 /// Box `number` (1-based) of a run.
@@ -42,12 +43,20 @@ pub fn box_spec(number: usize) -> BoxSpec {
         scheme: n % SCHEMES,
         // Thugs from box 2 (decision Q26 roster; "thugs from box 2" in the difficulty notes).
         thugs: if n == 0 { 0.0 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
+        // Ninjas from box 3.
+        ninjas: if n < 2 { 0.0 } else { (0.2 + 0.05 * (n - 2) as f32).min(0.3) },
     }
 }
 
 /// Which kind of enemy enters next, from a uniform `roll` in 0..1.
 pub fn pick_kind(spec: &BoxSpec, roll: f32) -> Kind {
-    if roll < spec.thugs { Kind::Thug } else { Kind::Fodder }
+    if roll < spec.thugs {
+        Kind::Thug
+    } else if roll < spec.thugs + spec.ninjas {
+        Kind::Ninja
+    } else {
+        Kind::Fodder
+    }
 }
 
 /// The escape test: the pile under the player (how high the player stands above the floor) has reached the rim.
@@ -126,6 +135,14 @@ mod tests {
         assert_eq!(pick_kind(&box_spec(2), 0.1), Kind::Thug);
         assert_eq!(pick_kind(&box_spec(2), 0.9), Kind::Fodder);
         assert!(box_spec(40).thugs <= 0.4);
+    }
+
+    #[test]
+    fn ninjas_join_from_box_three_and_fodder_always_remain() {
+        assert_eq!(box_spec(2).ninjas, 0.0);
+        assert_eq!(pick_kind(&box_spec(3), box_spec(3).thugs + 0.01), Kind::Ninja);
+        let late = box_spec(40);
+        assert!(late.thugs + late.ninjas < 0.8, "fodder remain part of every crowd");
     }
 
     #[test]

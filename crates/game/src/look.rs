@@ -280,12 +280,13 @@ fn dress_fighters(
     fighters: Query<(Entity, &Fighter, &Team, Option<&Brain>), Added<Fighter>>,
 ) {
     for (e, fighter, team, brain) in &fighters {
-        let kind = brain.map(|b| b.0.style.kind);
+        let kind = brain.map(|b| b.0.style().kind);
         // The player wears the primary accent, fodder a contrasting one, thugs a third. Colour is a bonus: the
         // silhouettes differ too (decision Q35, colour-blind safe), so a thug reads as one in any scheme.
         let accent = match (team, kind) {
             (Team::Player, _) => scheme.accents[0],
             (_, Some(Kind::Thug)) => scheme.accents[1],
+            (_, Some(Kind::Ninja)) => scheme.accents[3],
             _ => scheme.accents[2],
         };
         let base = accent.darker(0.55);
@@ -293,9 +294,14 @@ fn dress_fighters(
         let body = mats.add(StandardMaterial { base_color: base, perceptual_roughness: 0.85, ..default() });
         let glow = mats.add(StandardMaterial { base_color: accent, emissive: glow_base, perceptual_roughness: 0.85, ..default() });
         let scale = fighter.half.y * 2.0 / RIG_HEIGHT;
-        // Thugs are built broad and deep, with shoulder plates.
+        // Thugs are built broad and deep, with shoulder plates; ninjas slim, with a headband trailing behind.
         let thug = kind == Some(Kind::Thug);
-        let build = if thug { Vec3::new(1.5, 1.0, 1.25) } else { Vec3::ONE };
+        let ninja = kind == Some(Kind::Ninja);
+        let build = match kind {
+            Some(Kind::Thug) => Vec3::new(1.5, 1.0, 1.25),
+            Some(Kind::Ninja) => Vec3::new(0.8, 1.0, 0.8),
+            _ => Vec3::ONE,
+        };
         commands.entity(e).insert(Visibility::default()).with_children(|p| {
             p.spawn((
                 Rig::default(),
@@ -308,6 +314,11 @@ fn dress_fighters(
                     for dx in [-0.5, 0.5] {
                         r.spawn((Mesh3d(kit.plate.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(dx, 1.05, 0.0)));
                     }
+                }
+                if ninja {
+                    // Band round the head, tails streaming back.
+                    r.spawn((Mesh3d(kit.visor.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.5, -0.32).with_scale(Vec3::new(1.2, 1.0, 1.0))));
+                    r.spawn((Mesh3d(kit.limb.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 1.35, -0.55).with_rotation(Quat::from_rotation_x(1.2)).with_scale(Vec3::new(0.5, 0.8, 0.5))));
                 }
                 r.spawn((Mesh3d(kit.torso.clone()), MeshMaterial3d(body.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
                 r.spawn((Mesh3d(kit.head.clone()), MeshMaterial3d(kit.skin.clone()), Transform::from_xyz(0.0, 1.35, 0.0)));
@@ -339,7 +350,7 @@ fn animate_fighters(
 ) {
     for (fighter, attack, velocity, player, brain, children) in &fighters {
         // A thug raises both arms as its telegraph builds (the smash then brings them down).
-        let raise = brain.filter(|b| b.0.style.attack == Move::Smash).map_or(0.0, |b| b.0.telegraph());
+        let raise = brain.filter(|b| b.0.style().attack == Move::Smash).map_or(0.0, |b| b.0.telegraph());
         for &child in children {
             let Ok((mut rig, mut tf, rig_children)) = rigs.get_mut(child) else { continue };
             // Mostly side-on toward the facing side, so blows read as aimed at the opponent; a dash leans in.
