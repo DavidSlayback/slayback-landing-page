@@ -55,7 +55,7 @@ Informed by `docs/research/game-research.md`.
 | Q31 | Color scheme in game | **Rotate through the three schemes box by box**, starting from the site's scheme | |
 | Q32 | Bomb-heads vs. the pile | **Hurt nearby enemies and the player; scatter debris but never delete it** | The pile never loses progress outright. |
 | Q33 | What can be grabbed | **Live enemies, loose debris parts, and stunned or lit bomb-heads** | Frozen debris thaws when grabbed. |
-| Q34 | Screens / UI | **Minimal**: start overlay, Esc pause with sound toggle, HUD (health, timer, score, box), game-over screen with score and best | Built with `bevy_ui` (+0.38 MB gz). |
+| Q34 | Screens / UI | **Minimal**: start overlay, Esc pause with sound toggle, HUD (health, timer, score, box), game-over screen with score and best | Built with `bevy_ui` (+0.38 MB gz; measured +0.41 MB in D5, total 6.42 MB gz). |
 | Q35 | Accessibility | **Reduced-motion support** (no shake, softer flashes), pause on tab blur, controls on the start overlay, **plus colorblind-safe enemy shapes** | Key remapping deferred. |
 | Q36 | Analytics | **Cloudflare Web Analytics** (cookieless, page views only) | |
 | Q37 | Performance target | **60 fps on an integrated-GPU laptop**, with automatic quality scaling | Physics budget comes from a browser stress spike. |

@@ -8,7 +8,9 @@ use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use game::arena::{WALL, Wall};
 use game::player::{MAX_HP as PLAYER_MAX_HP, Player, SIZE, SPAWN};
+use game::flow::Phase;
 use game::run::RunState;
+use game::score::{LastRun, RunScore};
 use game::ARENA;
 use game::enemy::{Brain, MAX_HP, Waves, fodder};
 use game::debris::{DebrisPart, part};
@@ -301,13 +303,20 @@ fn running_out_of_time_costs_health_but_a_healthy_player_carries_on() {
 }
 
 #[test]
-fn death_restarts_the_run_at_box_one_with_full_health() {
+fn death_shows_the_game_over_screen_and_enter_starts_a_fresh_run() {
     let mut app = standing();
     app.world_mut().resource_mut::<RunState>().0.escape(PLAYER_MAX_HP, PLAYER_MAX_HP);
     let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
     q.single_mut(app.world_mut()).unwrap().0.hp = 5.0;
     app.world_mut().resource_mut::<RunState>().0.time_left = 0.01;
     step(&mut app, 0.1);
+    assert_eq!(*app.world().resource::<State<Phase>>().get(), Phase::Over, "game over");
+    let last = *app.world().resource::<LastRun>();
+    assert_eq!(last.reached, 2, "the screen knows how far the run got");
+
+    keys(&mut app).press(KeyCode::Enter);
+    step(&mut app, 0.1);
+    assert_eq!(*app.world().resource::<State<Phase>>().get(), Phase::Playing);
     assert_eq!(run_state(&app).spec.number, 1, "back to box 1");
     assert_eq!(player_hp(&mut app), PLAYER_MAX_HP);
 }
@@ -365,4 +374,46 @@ fn a_thrown_enemy_damages_the_enemies_it_hits() {
     let (hp, _) = fodder_state(&app, target);
     assert!(hp < MAX_HP, "the thrown fodder hurt the other one: {hp}");
     assert!(fodder_state(&app, held).0 < MAX_HP, "and was hurt by the impact itself");
+}
+
+#[test]
+fn escape_pauses_the_clock_and_resumes_it() {
+    let mut app = standing();
+    let before = run_state(&app).time_left;
+    keys(&mut app).press(KeyCode::Escape);
+    step(&mut app, 1.0);
+    assert_eq!(*app.world().resource::<State<Phase>>().get(), Phase::Paused);
+    assert!((run_state(&app).time_left - before).abs() < 0.05, "the box timer stood still while paused");
+    keys(&mut app).release(KeyCode::Escape);
+    step(&mut app, 1.0 / FPS);
+    keys(&mut app).press(KeyCode::Escape);
+    step(&mut app, 1.0);
+    assert!(run_state(&app).time_left < before - 0.5, "and runs again after Esc");
+}
+
+#[test]
+fn kills_score_points_and_a_new_run_starts_from_zero() {
+    let mut app = standing();
+    defeat_fodder(&mut app);
+    assert_eq!(app.world().resource::<RunScore>().0.points, game_core::score::KILL);
+    app.world_mut().resource_mut::<NextState<Phase>>().set(Phase::Over);
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::Enter);
+    step(&mut app, 0.05);
+    assert_eq!(app.world().resource::<RunScore>().0.points, 0);
+}
+
+#[test]
+fn a_punch_lands_even_when_a_slow_frame_skips_its_active_window() {
+    let mut app = standing();
+    let target = fodder_at(&mut app, 50.0);
+    step(&mut app, 0.05);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 1.0 / FPS); // the punch starts
+    // One frame of 250 ms (Bevy's longest step): past the whole active window.
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(0.25)));
+    app.update();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
+    step(&mut app, 0.1);
+    assert!(fodder_state(&app, target).0 < MAX_HP, "the punch still landed");
 }
