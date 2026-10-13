@@ -20,7 +20,7 @@ Pull requests get one cheap `check` job: tests (including the headless game), cl
 
 Locally, pre-commit hooks are the gate (Q45). Install them once per clone: `uv tool install pre-commit && pre-commit install -t pre-commit -t pre-push`. Commits run hygiene checks, rustfmt and clippy; pushes add the tests, the wasm lint of the renderer modules and the hero size budget.
 
-Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n>` ships a preview of the full game at `https://rc-<n>.slayback.pages.dev`. Both need wrangler logged in, or credentials in `.env.local`.
+Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n>` ships a preview of the full game at `https://rc-<n>.slayback.pages.dev`. Each one runs the browser harness on exactly the build it ships and refuses to deploy on a failure. Production takes about 20 s; a preview takes as long as the game build. Both need wrangler logged in, or credentials in `.env.local`. While CI is unavailable, merge once the local hooks pass and deploy right after.
 
 ## Develop
 
