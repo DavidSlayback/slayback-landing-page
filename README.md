@@ -11,6 +11,7 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 | `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
 | `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. Web-only build. |
 | `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game. |
+| `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests). |
 | `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build). |
 
 ## Develop
@@ -33,3 +34,14 @@ Uses the fast `dev` profile: no LTO, no debug info, our crates at `-O1`, depende
 Requires Rust stable with the `wasm32-unknown-unknown` target, plus `wasm-bindgen` 0.2.129 (must match `Cargo.lock`) for the game, and optionally Binaryen's `wasm-opt`. On a Windows GNU-host toolchain, install `wasm-bindgen` from its prebuilt release; building it with `cargo install` needs `dlltool`.
 
 The first game build takes about 10 minutes (fat LTO for size); the web build is about 16 MB, or 5 MB gzipped. Throwaway design spikes live on the `spike/hero` branch.
+
+## Browser tests
+
+Playwright smoke checks in `tests/e2e/` run against the built `dist/`: the homepage renders with no console errors, the no-WebGL fallback keeps readable text, reduced motion shows a still frame, and `/play` loads cleanly (skipped when the build has no game).
+
+```sh
+SKIP_GAME=1 bash scripts/build.sh       # or a full build to cover /play
+cd tests/e2e && npm ci && npx playwright test
+```
+
+Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. CI's `browser` job runs it on every PR against the `game` job's full build.

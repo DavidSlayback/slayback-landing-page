@@ -4,6 +4,10 @@
 spikes/hero/motion/
 # Design spikes live on the spike/hero branch; never commit them to main.
 /spikes/
+# Browser smoke harness (tests/e2e): dependencies and Playwright output.
+node_modules/
+/tests/e2e/test-results/
+/tests/e2e/playwright-report/
 
 # Agent worktrees and local session state
 /.claude/
