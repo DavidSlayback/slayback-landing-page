@@ -194,6 +194,105 @@ Bevy 0.19, and Bevy 0.20.0 shipped 2026-10-08. [verified]
   | + `bevy_ui_render` | 17,806,910 B (**+1.35 MB, +8%**) | 5,478,639 B (**+0.38 MB, +7%**) | 597 s |
   No upstream size figure exists beyond `default_font`'s 20 kB.
 
+## 6. 2.5D rendering cost (B2 spike)
+
+Measured locally 2026-10-12 (#11). The spike code lives on branch
+[`spike/2.5d`](https://github.com/DavidSlayback/slayback-landing-page/tree/spike/2.5d) (`crates/game/examples/look.rs`,
+raw results in `examples/look/results/`) and is not merged. The scene is the 1280×720 box as 3D walls and floor
+(40 × 22.5 × 6 units), a 30° perspective camera tilted down at the whole box, and N figures. Each figure is 7 shared,
+flat-shaded meshes: a box torso, a sphere head, box limbs and an emissive visor. It also has one directional light,
+point lights, HDR, `Bloom::NATURAL`, `Tonemapping::AcesFitted` and emissive rim strips in the Netrunner palette.
+The figures walk and bob. [verified locally]
+
+**Size.** Method as in section 5: `--profile game`, wasm-bindgen 0.2.129, then `wasm-opt -Oz` with the flags in
+`scripts/build.sh`. The game binary was rebuilt with no code changes, only the features.
+
+| Build | wasm raw | gzip -9 |
+|---|---|---|
+| today's game (section 5 figure, not rebuilt) | 16,457,120 B | 5,099,001 B |
+| + `bevy_pbr` | 19,281,790 B (**+2.82 MB, +17%**) | 5,933,668 B (**+0.83 MB, +16%**) |
+| + `bevy_pbr` + `tonemapping_luts` + `zstd_rust` | 20,052,031 B (+0.77 MB more) | 6,501,216 B (**+0.57 MB more**) |
+| `look` example alone (`bevy_pbr`, no Avian) | 16,779,860 B | 5,261,663 B |
+
+- `bevy_pbr` is the only feature 3D needs. It pulls in `bevy_light` and `bevy_material`. HDR (`Hdr` on the camera),
+  bloom and tonemapping are already in `bevy_core_pipeline` and `bevy_post_process`. The cost lands even with no
+  3D code, because `DefaultPlugins` registers the PBR plugins.
+- `tonemapping_luts` is needed only for TonyMcMapface, AgX and Blender Filmic. Without it, those modes log an error.
+  ACES fitted and the Reinhard modes need no LUT.
+- The building and linking were shared with the example, which added a wasm-only `web-sys` dev-dependency
+  (`Window`, `Location`, `console`). Those are bindings, and anything unused is stripped. [inference]
+
+**Frame time.** Headless Chrome 154 (`channel: 'chrome'`, Playwright 1.63), ANGLE D3D11 on this laptop (i7-13650HX).
+Renderers (`UNMASKED_RENDERER_WEBGL`):
+- **Intel UHD Graphics (0xA78B)**, the default adapter. This is the integrated-GPU target.
+- **NVIDIA GeForce RTX 4060 Laptop GPU**, with `--force_high_performance_gpu`.
+
+The vsync and frame-rate limits are off (`--disable-gpu-vsync --disable-frame-rate-limit`), so the frame interval is
+the throughput. The first 180 frames are a warmup, then each run is 600 frames, and a run is recorded after a second
+600-frame window. "Main" is the CPU time of the main schedule, measured from `First` to `Last` with
+`bevy::platform::time::Instant`. CPU time to the end of the render world was within 0.5 ms of the interval: WebGL
+blocks on the GPU inside the frame. No cargo build was running.
+Defaults: shadows on (1 cascade), bloom on, MSAA 4×, 2 point lights, lit `StandardMaterial`.
+
+| Variant (Intel UHD, 1280×720) | interval avg / p95 (ms) | main avg (ms) |
+|---|---|---|
+| empty box (no figures, point lights, shadows or bloom; MSAA off) | 5.0 / 5.5 | 0.37 |
+| 20 figures, defaults | 10.5 / 11.9 | 0.51 |
+| **30 figures, defaults** | **10.6 / 12.5** | 0.51 |
+| 60 figures, defaults | 11.2 / 12.9 | 0.62 |
+| 120 figures, defaults | 11.9 / 23.6 | 0.81 |
+| 30, shadows off | 10.0 / 11.4 | 0.47 |
+| 30, bloom off | 8.7 / 9.7 | 0.53 |
+| 30, MSAA off | 10.0 / 11.3 | 0.53 |
+| 30, unlit materials, shadows off | 9.9 / 10.9 | 0.50 |
+| 30, no point lights | 8.6 / 9.9 | 0.50 |
+| 30, 6 point lights | 14.7 / 16.6 | 0.59 |
+
+| Variant (Intel UHD, **1920×1080**) | interval avg / p95 (ms) |
+|---|---|
+| empty box (as above) | 11.3 / 12.1 |
+| 30, defaults | 22.4 / 24.5 |
+| 30, no point lights | 17.6 / 19.3 |
+| 30, no point lights, MSAA off | 16.4 / 18.3 |
+| 30, no point lights, MSAA off, bloom off | 12.4 / 16.8 |
+| 120, no point lights | 18.9 / 37.2 |
+
+| Variant (RTX 4060, 1280×720) | interval avg / p95 (ms) |
+|---|---|
+| empty box | 1.5 / 1.9 |
+| 30, defaults | 2.5 / 3.5 |
+| 120, defaults | 3.6 / 4.5 |
+| 30, 6 point lights | 3.1 / 3.7 |
+
+With Chrome's default frame pacing (vsync flags left on; headless has no display), CPU per frame on the Intel GPU was
+3.2 ms avg (p95 4.8) for 30 figures and 3.9 ms (p95 5.0) for 120. The interval stayed at 10.5 and 11.5 ms, so the
+remaining time is GPU work.
+
+**Reading.** [inference from the tables]
+- On the integrated GPU the look is bound by fill and post-processing, not by figure count. Going from 20 to 120
+  figures (840 meshes, batched through shared meshes and materials) adds ~1.4 ms. Pixels cost far more: at 1080p
+  the empty HDR box alone takes 11.3 ms.
+- Each point light costs ~1 ms at 720p. Bloom costs ~2 ms at 720p and ~4 ms at 1080p. MSAA 4× and the
+  one-cascade directional shadow cost ~0.6 ms each. Unlit materials saved nothing measurable.
+- The 120-figure p95 spikes (23.6 ms, and 37.2 ms at 1080p) suggest occasional stalls. 30–60 figures stayed smooth.
+
+**Decision for D1 (the look).**
+- **Features:** today's set + `bevy_pbr` only. No `tonemapping_luts`/`ktx2`/`zstd` (+0.57 MB gz), no
+  `bevy_anti_alias`, no `bevy_gltf`/`scene`. Tonemap with `Tonemapping::AcesFitted`.
+- **Lighting:** one directional key light with a single-cascade shadow map, low global ambient, and neon from
+  emissive materials plus bloom. No point lights by default. At most one short-lived point light for explosions.
+  Materials are lit `StandardMaterial` on flat-normal meshes (`with_duplicated_vertices().with_computed_flat_normals()`).
+- **Quality:** bloom and MSAA 4× on at full quality. Automatic scaling drops bloom first, then MSAA, then shadows.
+- **Resolution:** cap the backbuffer at about 1280×720 physical pixels and let CSS upscale the canvas. At 1080p the
+  full look misses 60 fps on the integrated GPU (22 ms). D1 must verify how to cap it in Bevy (window resolution and
+  scale factor vs `fit_canvas_to_parent`). [unverified]
+- **Budget D1 must stay within:**
+  - `game_bg.wasm` ≤ **6.0 MB gzipped** (5.93 MB measured with `bevy_pbr` and no new code). With `bevy_ui_render`
+    added later, ≤ ~6.4 MB.
+  - Render cost ≤ **11 ms per frame on the Intel UHD at the capped resolution** (measured 10.6 ms with 30
+    figures), which leaves ~5 ms of a 16.7 ms frame for physics, particles and game logic.
+  - Rendering-related main-schedule CPU ≤ 1 ms with 30–60 figures.
+
 ## Implications for the design (inference, not sourced fact)
 
 - **Pile and debris budget:** with islands, one big connected pile wakes as a unit whenever anything touches it, and
