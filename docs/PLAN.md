@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Mon Oct 12 2026 21:36 CDT (AFK backlog run)
-In flight: B2 #11 helper worker (spike/2.5d branch + docs PR `b2-findings`). D1 #16 branch `d1-move-look`: dash replaces jump (pushed, 2257f44); the 2.5D look waits on B2's feature-set decision.
-Next: merge B1 findings (#38); review + merge B2 findings; finish D1 look (tilted perspective, lit primitives, bloom within B2's budget), PR, merge; then D2 #17 (combat; supersedes parked PR #4), D3 #18 (debris per B1 decision).
-Waiting on: David: Cloudflare Web Analytics for C3 #14 (token lacks scope; default: wait); landing content C2 #13; playtest + release E2 #29; optional 10 s keyboard check of `bash scripts/native.sh`. Defaults: those wait; dash tuning/keys (Space/Shift, 176 units, 0.5 s cooldown) are agent defaults, easy to change.
-Re-arm: nothing scheduled. Disk is tight (~29 GB free after pruning stale native artifacts; shared target/ ~19 GB). Stale edge-cached /play/ on slayback.pages.dev expires by ~2026-10-20.
-Verified: merged A1 6ef9537, A3 67a2cda, A2 184279a, C4 80c1d39, A4 a84357e (CI game-tests 4/4 on Linux). B1: 24 Chrome configs + 72-config native soak, 0 panics (see research notes).
+As of: Mon Oct 12 2026 23:23 CDT (AFK backlog run)
+In flight: D3 #18 PR #42 (debris pile; CI running). Next branch: D4 #19 (escape + run loop) from main after #42.
+Next: merge #42 after CI; D4 (rules in game-core: escape test, per-box timer, timeout penalty, health carry-over, difficulty data; open-top boxes whose rim rises per box); then D5 HUD/screens (bevy_ui, +0.38 MB), D6 grab/throw, D7 thug, D8 ninja.
+Waiting on: David: C3 #14 analytics (enable Cloudflare Web Analytics; token lacks scope), C2 #13 content, E2 #29 playtest/release. Size budget: game_bg.wasm is 6.0 MB gz at D3 (B2's line, set for D1); D5's UI adds ~0.4 MB, so default is to accept ~6.5 MB unless David wants size work. Agent-chosen tuning (playtest-adjustable): dash Space/Shift 176 u; J/K + mouse attacks; step-up 24 u; figure size unchanged (small, ~8% of arena height).
+Re-arm: nothing scheduled. Disk ~29 GB free (shared target/). Stale edge-cached /play/ on slayback.pages.dev expires ~2026-10-20.
+Verified: merged A1-A4, C4, B1 a14cf1d, B2 c5a115b, D1 88739e2, D2 e9720b2 (all CI green). D3 local: 26 rules + 10 headless scenarios; Chrome iGPU 1000-part frozen pile 10.0 ms/frame.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
