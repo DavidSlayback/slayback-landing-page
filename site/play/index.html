@@ -19,10 +19,18 @@
 <canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas>
 <a class="back" href="../">← Back</a>
 <script type="module">
-  import init from './game.js';
-  document.getElementById('game').focus();
-  // winit drives Bevy's loop by throwing out of the first call on the web; that throw is expected.
-  init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) throw e; });
+  // A dynamic import, so a visitor sent elsewhere below never downloads the game's JS or wasm.
+  async function start() {
+    document.getElementById('game').focus();
+    const { default: init } = await import('./game.js');
+    // winit drives Bevy's loop by throwing out of the first call on the web; that throw is expected.
+    init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) throw e; });
+  }
+  /* GAME_RELEASE */
+  // Phones and tablets get a looping gameplay clip instead: the game needs a keyboard and mouse.
+  if (matchMedia('(hover: none) and (pointer: coarse)').matches) location.replace('watch/'); else
+  /* /GAME_RELEASE */
+  start();
 </script>
 </body>
 </html>
