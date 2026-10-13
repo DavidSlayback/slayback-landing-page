@@ -8,6 +8,7 @@ use game_core::movement::{Input, Mover, run_velocity};
 
 use crate::fighter::{Attack, Fighter, Hp, Team, body};
 use crate::grab::Holding;
+use crate::input::Actions;
 
 /// The player, with its engine-free movement state.
 #[derive(Component, Default)]
@@ -19,11 +20,6 @@ pub const SIZE: Vec2 = Vec2::new(28.0, 56.0);
 pub const SPAWN: Vec2 = Vec2::new(0.0, -200.0);
 pub const MAX_HP: f32 = 100.0;
 
-/// Dash keys: Space (free since there is no jump) or either Shift.
-pub const DASH_KEYS: [KeyCode; 3] = [KeyCode::Space, KeyCode::ShiftLeft, KeyCode::ShiftRight];
-/// Punch: J or the left mouse button. Kick: K or the right mouse button.
-pub const PUNCH_KEY: KeyCode = KeyCode::KeyJ;
-pub const KICK_KEY: KeyCode = KeyCode::KeyK;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn).add_systems(Update, control);
@@ -38,12 +34,11 @@ fn spawn(mut commands: Commands) {
     ));
 }
 
-/// Reads the keyboard and mouse into movement and attacks. Public so other systems can order themselves after it.
+/// Turns this frame's actions (any device; see `input`) into movement and attacks. Public so other systems can order themselves after it.
 #[allow(clippy::type_complexity)]
 pub fn control(
     time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    actions: Res<Actions>,
     mut players: Query<(&mut Player, &mut Fighter, &mut Attack, &Hp, &mut LinearVelocity, Has<Holding>)>,
 ) {
     let Ok((mut player, mut fighter, mut attack, hp, mut velocity, holding)) = players.single_mut() else { return };
@@ -51,10 +46,9 @@ pub fn control(
     if hp.0.stunned() {
         return; // knockback plays out
     }
-    let clicked = |b: MouseButton| mouse.as_ref().is_some_and(|m| m.just_pressed(b));
-    let button = if keys.just_pressed(PUNCH_KEY) || clicked(MouseButton::Left) {
+    let button = if actions.punch {
         Some(Move::Punch)
-    } else if keys.just_pressed(KICK_KEY) || clicked(MouseButton::Right) {
+    } else if actions.kick {
         Some(Move::Kick)
     } else {
         None
@@ -69,9 +63,7 @@ pub fn control(
         velocity.x = run_velocity(velocity.x, 0.0, dt);
         return;
     }
-    let held = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
-    let axis = held(KeyCode::KeyD, KeyCode::ArrowRight) as i8 - held(KeyCode::KeyA, KeyCode::ArrowLeft) as i8;
-    let input = Input { axis: axis as f32, dash: keys.any_just_pressed(DASH_KEYS) };
+    let input = Input { axis: actions.axis, dash: actions.dash };
     velocity.x = player.0.step(velocity.x, input, dt);
     fighter.facing = player.0.facing;
 }

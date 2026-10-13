@@ -20,6 +20,8 @@ render = [
     "bevy/bevy_ui", "bevy/bevy_ui_render", "bevy/bevy_text",
     # Sound effects (D10): short generated WAVs embedded in the binary; muted until the player turns them on.
     "bevy/bevy_audio", "bevy/wav",
+    # Gamepads (D11): the gilrs backend, which uses the browser's Gamepad API on the web. Input mapping is base.
+    "bevy/bevy_gilrs",
 ]
 
 [[bin]]
@@ -32,7 +34,7 @@ game-core = { path = "../game-core" }
 # Pinned pair: avian2d 0.7 targets Bevy 0.19 (Bevy 0.20 is not yet supported by Avian). Upgrade together.
 # Explicit features instead of the "2d" bundle (no scenes, reflection auto-registration, picking, clipboard or
 # sysinfo: megabytes of wasm the game doesn't use). The base set is what the gameplay needs; `render` adds the rest.
-bevy = { version = "=0.19.1", default-features = false, features = ["std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse"] }
+bevy = { version = "=0.19.1", default-features = false, features = ["std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse", "gamepad"] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
 
 # The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it), the best

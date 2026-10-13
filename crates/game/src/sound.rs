@@ -1,5 +1,5 @@
 //! Sound effects (D10): generated retro sounds (`tools/sfx/generate.py`, embedded here) for hits, shatters and
-//! blasts. Muted by default; M on the pause screen toggles them, and the choice is kept (localStorage
+//! blasts. Muted by default; M (or Select) on the pause screen toggles them, and the choice is kept (localStorage
 //! `slayback-sound`, or natively a file in the temp directory).
 
 use std::sync::Arc;
@@ -12,15 +12,13 @@ use crate::bomb::Exploded;
 use crate::debris::Shattered;
 use crate::fighter::Hit;
 use crate::flow::Phase;
+use crate::input::Actions;
 
 /// Whether sound is on.
 #[derive(Resource)]
 pub struct Sound {
     pub on: bool,
 }
-
-/// The toggle on the pause screen.
-pub const TOGGLE_KEY: KeyCode = KeyCode::KeyM;
 
 #[derive(Resource)]
 struct Effects {
@@ -47,8 +45,8 @@ fn load_effects(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>>
     });
 }
 
-fn toggle(keys: Res<ButtonInput<KeyCode>>, mut sound: ResMut<Sound>) {
-    if keys.just_pressed(TOGGLE_KEY) {
+fn toggle(actions: Res<Actions>, mut sound: ResMut<Sound>) {
+    if actions.sound {
         sound.on = !sound.on;
         save(sound.on);
     }

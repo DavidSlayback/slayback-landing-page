@@ -12,9 +12,9 @@ use crate::bomb::{BOMB_RADIUS, LitBomb};
 use crate::debris::DebrisPart;
 use crate::enemy::Brain;
 use crate::fighter::{Defeated, FLASH, Fighter, Flash, Hit, HitStopClock, Hp, Team};
-use crate::player::{KICK_KEY, PUNCH_KEY, Player};
+use crate::input::Actions;
+use crate::player::Player;
 
-pub const GRAB_KEY: KeyCode = KeyCode::KeyL;
 
 /// The player is holding something; `spin` counts up from 0 once a throw starts.
 #[derive(Component, Debug)]
@@ -52,13 +52,12 @@ struct Grabbable<'w, 's> {
 #[allow(clippy::type_complexity)]
 fn grab(
     mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
-    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    actions: Res<Actions>,
     time: Res<Time>,
     player: Query<(Entity, &Transform, &Fighter, &Hp, Option<&Holding>), With<Player>>,
     mut things: Grabbable,
 ) {
-    let pressed = keys.just_pressed(GRAB_KEY) || mouse.as_ref().is_some_and(|m| m.just_pressed(MouseButton::Middle));
+    let pressed = actions.grab;
     let Ok((me, at, fighter, hp, holding)) = player.single() else { return };
     if !pressed || hp.0.stunned() {
         return;
@@ -109,9 +108,8 @@ fn grab(
     commands.entity(me).insert(Holding { target, kind, spin: None });
 }
 
-fn start_throw(keys: Res<ButtonInput<KeyCode>>, mouse: Option<Res<ButtonInput<MouseButton>>>, mut holding: Query<&mut Holding>) {
-    let clicked = mouse.as_ref().is_some_and(|m| m.any_just_pressed([MouseButton::Left, MouseButton::Right]));
-    if !(keys.any_just_pressed([PUNCH_KEY, KICK_KEY]) || clicked) {
+fn start_throw(actions: Res<Actions>, mut holding: Query<&mut Holding>) {
+    if !(actions.punch || actions.kick) {
         return;
     }
     for mut h in &mut holding {

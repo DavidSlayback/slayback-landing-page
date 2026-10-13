@@ -17,8 +17,8 @@ use crate::bomb::BombHead;
 use crate::enemy::{Brain, HALF, Waves, enemy};
 use game_core::enemy::Kind;
 use game_core::debris::humanoid_parts;
-use crate::grab::GRAB_KEY;
-use crate::player::{KICK_KEY, PUNCH_KEY, Player};
+use crate::input::{GRAB_KEY, KICK_KEY, PUNCH_KEY, ReadActions};
+use crate::player::Player;
 
 /// A demo setting from the page query (`demo=1&slow=0.25`) or, natively, the environment (`DEMO=1 SLOW=0.25`).
 fn setting(key: &str) -> Option<String> {
@@ -70,7 +70,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, move |mut commands: Commands| drop_debris(&mut commands, debris))
         .insert_resource(PauseOnBlur(false))
         // Only while playing: after a death the script must not press "play again" (Space is also the dash).
-        .add_systems(PreUpdate, script.after(InputSystems).run_if(in_state(Phase::Playing)));
+        .add_systems(PreUpdate, script.after(InputSystems).before(ReadActions).run_if(in_state(Phase::Playing)));
 }
 
 /// `n` parts of a broken figure's shapes, in rows across the top of the box.

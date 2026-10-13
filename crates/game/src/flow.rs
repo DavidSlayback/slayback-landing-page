@@ -6,6 +6,8 @@ use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::window::WindowFocused;
 
+use crate::input::Actions;
+
 #[derive(States, Default, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Phase {
     /// The start overlay: controls, and "click to start".
@@ -38,11 +40,8 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, pause_when_page_unfocused);
 }
 
-/// Keys that start a run from the overlay or the game-over screen (a click works too).
-pub const BEGIN_KEYS: [KeyCode; 2] = [KeyCode::Enter, KeyCode::Space];
-
-fn toggle_pause(keys: Res<ButtonInput<KeyCode>>, phase: Res<State<Phase>>, mut next: ResMut<NextState<Phase>>) {
-    if keys.just_pressed(KeyCode::Escape) {
+fn toggle_pause(actions: Res<Actions>, phase: Res<State<Phase>>, mut next: ResMut<NextState<Phase>>) {
+    if actions.pause {
         match phase.get() {
             Phase::Playing => next.set(Phase::Paused),
             Phase::Paused => next.set(Phase::Playing),
@@ -68,9 +67,8 @@ fn pause_when_page_unfocused(on: Res<PauseOnBlur>, phase: Res<State<Phase>>, mut
     }
 }
 
-fn begin(keys: Res<ButtonInput<KeyCode>>, mouse: Option<Res<ButtonInput<MouseButton>>>, phase: Res<State<Phase>>, mut next: ResMut<NextState<Phase>>) {
-    let pressed = keys.any_just_pressed(BEGIN_KEYS) || mouse.as_ref().is_some_and(|m| m.just_pressed(MouseButton::Left));
-    if pressed && matches!(phase.get(), Phase::Start | Phase::Over) {
+fn begin(actions: Res<Actions>, phase: Res<State<Phase>>, mut next: ResMut<NextState<Phase>>) {
+    if actions.begin && matches!(phase.get(), Phase::Start | Phase::Over) {
         next.set(Phase::Playing);
     }
 }
