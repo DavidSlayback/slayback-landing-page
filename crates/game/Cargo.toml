@@ -18,6 +18,8 @@ render = [
     "bevy/bevy_pbr",
     # HUD and screens (D5; decision Q34 accepted ~+0.4 MB gzipped). No scenes, picking or input focus.
     "bevy/bevy_ui", "bevy/bevy_ui_render", "bevy/bevy_text",
+    # Sound effects (D10): short generated WAVs embedded in the binary; muted until the player turns them on.
+    "bevy/bevy_audio", "bevy/wav",
 ]
 
 [[bin]]

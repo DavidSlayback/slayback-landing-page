@@ -17,7 +17,7 @@ fn main() {
         }),
         ..default()
     }))
-    .add_plugins((game::plugin, game::look::plugin, game::ui::plugin));
+    .add_plugins((game::plugin, game::look::plugin, game::ui::plugin, game::sound::plugin));
     if game::demo::requested() {
         app.add_plugins(game::demo::plugin);
     }

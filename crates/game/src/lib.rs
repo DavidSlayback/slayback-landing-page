@@ -17,6 +17,8 @@ pub mod player;
 pub mod run;
 pub mod score;
 #[cfg(feature = "render")]
+pub mod sound;
+#[cfg(feature = "render")]
 pub mod ui;
 
 use avian2d::prelude::*;
