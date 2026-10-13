@@ -5,7 +5,7 @@
 use avian2d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use game_core::combat::{Aabb, HitOutcome, Move};
+use game_core::combat::{Aabb, FINISHER_HITSTOP, HitOutcome, Move};
 use game_core::grab::{FLIGHT, HITSTOP, Held, REACH, SPIN, hold_offset, impact, throw_velocity};
 
 use crate::bomb::{BOMB_RADIUS, LitBomb};
@@ -212,14 +212,17 @@ fn fly(
             v.0 = Vec2::new(spec.knockback.0 * facing, spec.knockback.1);
             flash.0 = FLASH;
             hp.0.stun = hp.0.stun.max(0.35);
-            out.stop.0.trigger(HITSTOP);
+            let finisher = hp.0.hurt(spec.damage) == HitOutcome::Defeated;
+            out.stop.0.trigger(if finisher { HITSTOP.max(FINISHER_HITSTOP) } else { HITSTOP });
             out.hits.write(Hit {
                 at: (tf.translation.truncate() + Vec2::new(aabb.center().x, aabb.center().y)) / 2.0,
                 mv: Move::Kick,
                 facing,
+                victim: target,
+                finisher,
             });
-            if hp.0.hurt(spec.damage) == HitOutcome::Defeated {
-                out.defeated.write(Defeated { entity: target, team: Team::Enemy });
+            if finisher {
+                out.defeated.write(Defeated { entity: target, team: Team::Enemy, at: tf.translation.truncate() });
             }
             // The thrown body takes its own knock on the first impact.
             if t.victims.len() == 1
@@ -227,7 +230,11 @@ fn fly(
                 && let Ok(mut own) = self_hurt.get_mut(e)
                 && own.0.hurt(spec.self_damage) == HitOutcome::Defeated
             {
-                out.defeated.write(Defeated { entity: e, team: Team::Enemy });
+                out.defeated.write(Defeated {
+                    entity: e,
+                    team: Team::Enemy,
+                    at: Vec2::new(aabb.center().x, aabb.center().y),
+                });
             }
         }
     }

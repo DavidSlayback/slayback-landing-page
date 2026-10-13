@@ -58,15 +58,17 @@ fn break_apart(
         shattered.write(Shattered { at: centre });
         for (i, p) in humanoid_parts((fighter.half.x, fighter.half.y)).into_iter().enumerate() {
             let offset = Vec2::new(p.offset.0 * fighter.facing, p.offset.1);
-            // The parts keep the blow's momentum and burst a little outward from the body's centre.
-            let burst = offset.normalize_or_zero() * 140.0 + Vec2::Y * 120.0;
+            // The parts keep the blow's momentum and burst outward from the body's centre: a kill should look like
+            // the figure exploding into its blocks, not falling apart.
+            let burst = offset.normalize_or_zero() * 230.0 + Vec2::Y * 190.0;
             let fling = velocity.0 * 0.6 + burst;
             // A bomb-head's head doesn't join the pile: it drops free as a lit bomb.
             if bomb_head && matches!(p.shape, Shape::Ball { .. }) {
                 commands.spawn(lit_bomb(centre + offset, fling));
                 continue;
             }
-            let spin = if i % 2 == 0 { 6.0 } else { -6.0 };
+            // Alternating, uneven spins, so the blocks tumble rather than turn in step.
+            let spin = (7.0 + 2.5 * (i % 3) as f32) * if i % 2 == 0 { 1.0 } else { -1.0 };
             commands.spawn((
                 part(p.shape, centre + offset, time.elapsed_secs()),
                 LinearVelocity(fling),

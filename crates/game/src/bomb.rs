@@ -92,7 +92,7 @@ fn burn(
                 v.0 = Vec2::new(px, py);
             }
             if hp.0.hurt(hurt) == HitOutcome::Defeated {
-                out.defeated.write(Defeated { entity: e, team: *team });
+                out.defeated.write(Defeated { entity: e, team: *team, at: t.translation.truncate() });
             }
         }
         // Debris is knocked loose and flung, never deleted: the pile never loses progress outright.

@@ -5,7 +5,7 @@
 
 use avian2d::prelude::*;
 use bevy::prelude::*;
-use game_core::combat::{Aabb, Health, HitOutcome, HitStop, Move, Swing, hitbox, knockback};
+use game_core::combat::{Aabb, Health, HitOutcome, HitStop, Move, Swing, hitbox, hitstop, knockback};
 use game_core::enemy::staggers;
 use game_core::movement::{MAX_STEP, step_hop};
 
@@ -61,19 +61,22 @@ impl Attack {
 #[derive(Component, Default)]
 pub struct Flash(pub f32);
 
-/// A blow landed: where, and with which move (for sparks and sound).
+/// A blow landed: where, with which move, on whom, and whether it finished them (for impact effects and sound).
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Hit {
     pub at: Vec2,
     pub mv: Move,
     pub facing: f32,
+    pub victim: Entity,
+    pub finisher: bool,
 }
 
-/// A fighter's hit points ran out.
+/// A fighter's hit points ran out, at `at`.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Defeated {
     pub entity: Entity,
     pub team: Team,
+    pub at: Vec2,
 }
 
 #[derive(Resource, Default)]
@@ -197,8 +200,6 @@ fn resolve_hits(
             continue;
         }
         flash.0 = FLASH;
-        stop.0.trigger(mv.spec().hitstop);
-        hits_out.write(Hit { at, mv, facing });
         // Armour shrugs off some blows: the damage lands, but no knockback or stun, so a telegraph keeps going.
         let outcome = if armour.is_none_or(|a| staggers(mv, a.0)) {
             let (kx, ky) = knockback(mv, facing);
@@ -207,10 +208,11 @@ fn resolve_hits(
         } else {
             hp.0.hurt(mv.spec().damage)
         };
-        if outcome == HitOutcome::Defeated
-            && let Ok((_, team, _, _)) = targets.get(target)
-        {
-            defeated.write(Defeated { entity: target, team: *team });
+        let finisher = outcome == HitOutcome::Defeated;
+        stop.0.trigger(hitstop(mv, finisher));
+        hits_out.write(Hit { at, mv, facing, victim: target, finisher });
+        if finisher && let Ok((_, team, _, tf)) = targets.get(target) {
+            defeated.write(Defeated { entity: target, team: *team, at: tf.translation.truncate() });
         }
     }
 }

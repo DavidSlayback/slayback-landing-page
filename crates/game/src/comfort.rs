@@ -1,5 +1,6 @@
-//! Comfort and smoothness (D12): reduced motion (softer flashes, fewer sparks; the game has no screen shake), and
-//! automatic quality scaling (`game_core::quality`) that sheds bloom, then MSAA, then shadows when frames run long.
+//! Comfort and smoothness (D12): reduced motion (softer flashes, fewer sparks, no screen shake or squash; see
+//! `camera` and `impact`), and automatic quality scaling (`game_core::quality`) that sheds bloom, then MSAA, then
+//! shadows when frames run long.
 //! Both log what they do, so the browser harness can check them.
 
 use bevy::core_pipeline::tonemapping::Tonemapping;

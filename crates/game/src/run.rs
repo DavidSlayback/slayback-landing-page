@@ -56,14 +56,14 @@ fn clock(
     mut run: ResMut<RunState>,
     mut players: Query<&mut Hp, With<Player>>,
     mut defeated: MessageWriter<Defeated>,
-    player: Query<Entity, With<Player>>,
+    player: Query<(Entity, &Transform), With<Player>>,
 ) {
     if run.0.tick(time.delta_secs()) == Tick::TimedOut
         && let Ok(mut hp) = players.single_mut()
         && hp.0.hurt(TIMEOUT_PENALTY) == HitOutcome::Defeated
-        && let Ok(entity) = player.single()
+        && let Ok((entity, tf)) = player.single()
     {
-        defeated.write(Defeated { entity, team: Team::Player });
+        defeated.write(Defeated { entity, team: Team::Player, at: tf.translation.truncate() });
     }
 }
 

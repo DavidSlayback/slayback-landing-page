@@ -196,6 +196,15 @@ pub fn hitbox(mv: Move, pos: (f32, f32), half: (f32, f32), facing: f32) -> Aabb 
     Aabb { min: (edge.min(tip), y - s.height / 2.0), max: (edge.max(tip), y + s.height / 2.0) }
 }
 
+/// Freeze for a finishing blow: longer than any move's own, so a kill always lands as a beat.
+pub const FINISHER_HITSTOP: f32 = 0.16;
+
+/// Hit-stop for a blow of `mv` that did (`finished`) or didn't defeat its target.
+pub fn hitstop(mv: Move, finished: bool) -> f32 {
+    let own = mv.spec().hitstop;
+    if finished { own.max(FINISHER_HITSTOP) } else { own }
+}
+
 /// Launch velocity for a target hit by `mv` from an attacker facing `facing`.
 pub fn knockback(mv: Move, facing: f32) -> (f32, f32) {
     let (x, y) = mv.spec().knockback;
@@ -271,6 +280,15 @@ mod tests {
     use super::*;
 
     const HALF: (f32, f32) = (14.0, 28.0);
+
+    #[test]
+    fn a_finishing_blow_freezes_longer_than_any_ordinary_hit() {
+        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash] {
+            assert_eq!(hitstop(mv, false), mv.spec().hitstop);
+            assert!(FINISHER_HITSTOP > mv.spec().hitstop, "{mv:?} must not out-freeze a kill");
+            assert_eq!(hitstop(mv, true), FINISHER_HITSTOP);
+        }
+    }
 
     #[test]
     fn a_swing_runs_startup_then_active_then_recovery_then_ends() {
