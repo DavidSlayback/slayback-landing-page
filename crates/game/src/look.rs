@@ -22,6 +22,7 @@ use game_core::movement::RUN_SPEED;
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
 use crate::bomb::{BOMB_RADIUS, BombHead, Exploded, LitBomb};
+use crate::camera;
 use crate::comfort::Comfort;
 use crate::debris::{DebrisPart, Shattered};
 use crate::enemy::{Brain, HALF, WallDoor, door_spot};
@@ -99,7 +100,7 @@ struct BaseScheme(usize);
 pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::BLACK))
         .insert_resource(GlobalAmbientLight { color: Color::WHITE, brightness: 120.0, ..default() })
-        .add_plugins(crate::comfort::plugin)
+        .add_plugins((crate::comfort::plugin, camera::plugin))
         .insert_resource(BaseScheme(Scheme::page_index()))
         .insert_resource(SCHEMES[Scheme::page_index()])
         .add_systems(Startup, (load_kit, spawn_stage).chain())
@@ -193,13 +194,14 @@ fn load_kit(
 
 /// Camera and light; the box's own back wall and neon come from `build_frame`.
 fn spawn_stage(mut commands: Commands) {
-    let half = ARENA / 2.0;
-    // A slightly tilted view of the whole box (from the B2 spike, scaled to world units).
+    // Starts on the whole box; `camera` then frames the fight.
+    let view = camera::View { centre: Vec2::ZERO, height: ARENA.y };
     commands.spawn((
         Camera3d::default(),
         Hdr,
-        Projection::Perspective(PerspectiveProjection { fov: 30f32.to_radians(), far: 10_000.0, ..default() }),
-        Transform::from_xyz(0.0, half.y * 0.42, 1600.0).looking_at(Vec3::new(0.0, -40.0, 0.0), Vec3::Y),
+        Projection::Perspective(PerspectiveProjection { fov: camera::FOV.to_radians(), far: 10_000.0, ..default() }),
+        camera::placement(view),
+        camera::Eased(view),
         Msaa::Sample4,
         Tonemapping::AcesFitted,
         Bloom::NATURAL,
