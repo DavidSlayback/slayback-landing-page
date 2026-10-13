@@ -112,11 +112,11 @@ Visitors can't find the game until it ships. `GAME_RELEASE=1 bash scripts/build.
 
 The switch is off by default, and deploys never set it. Off, the homepage is byte-for-byte the pre-switch page. In `site/`, switch-only content sits between `<!-- GAME_RELEASE -->` and `<!-- /GAME_RELEASE -->` markers (`/* … */` in CSS and JS), on their own lines or inline. The build deletes the marked content when the switch is off and only the markers when it is on. The switch needs the game, so the build refuses `GAME_RELEASE=1` with `SKIP_GAME=1`.
 
-The clip (`site/play/watch/clip.mp4` plus `poster.jpg`) comes from the frame-exact recorder `tests/e2e/record-clip.mjs`. It loads a page with `?capture=1`, steps its `window.__capture.frame(dt)` hook one fixed timestep per frame, screenshots each frame and encodes them with ffmpeg (640×360 H.264, 5 s, muted). **The committed clip is a placeholder recorded from the hero**, because the game has no capture hook yet. The release ticket re-records it from gameplay with `PAGE=/play/` once the game has that hook.
+The clip (`site/play/watch/clip.mp4` plus `poster.jpg`) is six seconds of the real game: the scripted demo fight, recorded by `tests/e2e/record-clip.mjs` in its slow-motion mode. The page runs at `slow=0.2`; the recorder screenshots as fast as it can and times each frame back to game speed, then encodes 640×360 H.264, muted, at about 26 KB. The recorder's frame-exact mode (`?capture=1`) still serves the hero.
 
 ```sh
 SKIP_GAME=1 bash scripts/build.sh && cd tests/e2e && npm ci
-node record-clip.mjs                    # → site/play/watch/clip.mp4 + poster.jpg (needs ffmpeg; FRAMES=150, PAGE=/?…)
+SLOW=0.2 CROP=480:270:240:262 PAGE='/play/?demo=1&slow=0.2&palette=netrunner' node record-clip.mjs   # → site/play/watch/clip.mp4 + poster.jpg (needs ffmpeg and a game build)
 ```
 
 ## Browser tests

@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Tue Oct 13 2026 02:26 CDT (AFK backlog run)
-In flight: nothing running. Open PRs, held because CI cannot start (GitHub Actions billing/spending limit): #48 D10 sound (branch d10-sound), #49 D11 gamepad (stacked on #48). Local checks green on both.
-Next: when CI runs again, merge #48 then retarget/merge #49; then D12 #27 (reduced motion, quality scaling, greyscale check), then E1 #28 prep (clip from ?demo=1&slow=, scripted run to box 2).
-Waiting on: David: (1) CI billing: raise the Actions spending limit, fix the payment, make the repo public, or approve a self-hosted runner (default: hold merges, keep building locally); (2) E1's preview deploy with the release switch on (puts the unreleased game on a public preview URL; default: wait); (3) D11 manual gamepad check; (4) C3 analytics, C2 content, E2 playtest.
-Re-arm: nothing scheduled. GitHub's ubuntu-latest moves to Ubuntu 26 from 2026-10-19 (CI may need apt package fixes).
-Verified: merged through D9 (main 33cff19, CI green). D10+D11 local: 55 rules + 26 scenarios + 3 input tests, native/wasm clippy clean, browser smoke 3/3; game_bg.wasm 6.57 MB gz.
+As of: Tue Oct 13 2026 11:19 CDT
+In flight: production deploy of main from this machine (wrangler), waiting on David's `wrangler login` (CI can't deploy until Actions billing is fixed).
+Next: after login: SKIP_GAME=1 build, then `npx wrangler pages deploy dist --project-name=slayback --branch=main`, then check https://slayback.pages.dev. Later: an rc/ branch for the game preview (needs David's go-ahead), then E2 playtest.
+Waiting on: David: (1) wrangler login (one browser click); (2) Actions billing, or keep merging without CI; (3) go-ahead for the rc/ preview; (4) gamepad check (#26); (5) C3 analytics, C2 content, E2 playtest.
+Re-arm: nothing scheduled. CI rules: Q41 (drafts and stacked PRs don't build), Q42 (PRs run one `check` job; game build, browser and deploys only on main and rc/). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
+Verified: D10-D12 and the CI rework merged to main WITHOUT CI (David's call, 2026-10-13); each was verified locally before merging (headless tests, wasm clippy, clean tree; full build + browser 5/5 at the top of the stack).
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**

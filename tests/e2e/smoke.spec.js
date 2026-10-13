@@ -64,6 +64,20 @@ test.describe('/play', () => {
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 
+  test('a scripted run climbs out to box 2 with no console errors', async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    const errors = collectErrors(page);
+    const logs = [];
+    page.on('console', m => logs.push(m.text()));
+    // The demo's stairs run: a debris staircase up past each rim, and the player walks out of box after box.
+    await page.goto('/play/?demo=1&stairs=1');
+    await expect.poll(() => logs.some(l => l.includes('box 2 started')), { timeout: 120_000 }).toBe(true);
+    expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
+  });
+
   test.describe('with reduced motion', () => {
     test.use({ reducedMotion: 'reduce' });
 
