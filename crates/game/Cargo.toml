@@ -14,8 +14,15 @@ bevy = { version = "=0.19.1", default-features = false, features = [
     "std", "async_executor", "bevy_asset", "bevy_log", "bevy_state",
     "bevy_winit", "web", "webgl2",
     "2d_api", "bevy_render", "bevy_core_pipeline", "bevy_post_process", "bevy_sprite_render", "default_font",
+    # The 2.5D look (B2 spike, docs/research/game-research.md section 6): +0.83 MB gzipped. HDR, bloom and ACES
+    # tonemapping already come with bevy_core_pipeline / bevy_post_process; no tonemapping LUTs (+0.57 MB).
+    "bevy_pbr",
 ] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
+
+# The page's colour scheme: the hero saves the visitor's pick in localStorage, and ?palette= overrides it.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
 
 # winit needs a windowing backend to compile on Linux (CI runs the headless scenarios there). X11 loads its libraries
 # at runtime, so this adds no build-time system packages; wasm and Windows builds are unaffected.

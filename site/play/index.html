@@ -10,14 +10,29 @@
   html, body { margin: 0; height: 100%; background: #000; color: #a6ff00; font: 600 14px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
   /* The canvas sits above the loading note; Bevy's first frame covers it. */
   .loading { position: fixed; inset: 0; display: grid; place-items: center; margin: 0; letter-spacing: .2em; text-transform: uppercase; }
-  #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+  /* A 16:9 stage of at most 1280x720 CSS px, scaled up to fit by a transform: with the game's scale factor fixed at 1,
+     the backbuffer never exceeds 1280x720, which keeps the 2.5D look within budget on integrated GPUs (B2). */
+  #stage { position: fixed; left: 50%; top: 50%; width: 1280px; height: 720px; transform: translate(-50%, -50%); }
+  #game { width: 100%; height: 100%; display: block; outline: none; }
   .back { position: fixed; top: 34px; left: 40px; z-index: 1; color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
 </style>
 </head>
 <body>
 <p class="loading">Loading the box…</p>
-<canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas>
+<div id="stage"><canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas></div>
 <a class="back" href="../">← Back</a>
+<script>
+  { // Size the stage: 16:9, at most 1280 px wide in layout, then scaled to fill the viewport.
+    const stage = document.getElementById('stage');
+    const fit = () => {
+      const w = Math.floor(Math.min(1280, innerWidth, innerHeight * 16 / 9)), h = Math.floor(w * 9 / 16);
+      const k = Math.min(innerWidth / w, innerHeight / h);
+      Object.assign(stage.style, { width: `${w}px`, height: `${h}px`, transform: `translate(-50%, -50%) scale(${k})` });
+    };
+    addEventListener('resize', fit);
+    fit();
+  }
+</script>
 <script type="module">
   // A dynamic import, so a visitor sent elsewhere below never downloads the game's JS or wasm.
   async function start() {

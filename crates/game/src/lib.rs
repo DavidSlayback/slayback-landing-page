@@ -1,9 +1,11 @@
 //! Escape the box: the portfolio's playable brawler (Bevy + Avian), served lazily at `/play`.
 //!
-//! The library holds the gameplay ([`plugin`]); `main.rs` adds only the window and renderer. Keeping them apart lets
+//! The library holds the gameplay ([`plugin`]) and, separately, its 2.5D look ([`look::plugin`]); `main.rs` adds the
+//! window and renderer. Keeping them apart lets
 //! tests build a headless app from the real game systems (see `tests/scenarios.rs`).
 
 pub mod arena;
+pub mod look;
 pub mod player;
 
 use avian2d::prelude::*;

@@ -9,7 +9,7 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 | `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield). Native tests. |
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
 | `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
-| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input (`cargo test -p game`, Linux CI job `game-tests`). |
+| `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay (physics stays 2D); `look::plugin` dresses it as 2.5D lit primitives with bloom in the page's colour scheme; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input (`cargo test -p game`, Linux CI job `game-tests`). |
 | `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game and `site/play/watch/` its touch-device clip page. |
 | `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests), plus the clip recorder. |
 | `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME_RELEASE=1` for the release switch). |
@@ -44,6 +44,13 @@ Requires Rust stable with the `wasm32-unknown-unknown` target, plus `wasm-bindge
 The first game build takes about 10 minutes (fat LTO for size); the web build is about 16 MB, or 5 MB gzipped. Throwaway design spikes live on the `spike/hero` branch.
 
 `scripts/build.sh` honours `CARGO_TARGET_DIR`, so worktrees can share one target directory.
+
+### The game's look and controls
+
+Run with A/D or the arrow keys, and dash with Space or Shift. There is no jump: you climb by walking up debris. The look follows the B2 spike's budget (`docs/research/game-research.md`, section 6): `bevy_pbr`, one directional light with a single shadow cascade, emissive neon plus bloom, and ACES tonemapping.
+- **Resolution:** `site/play/` caps the canvas at a 16:9 stage of 1280×720 CSS px and scales it up with a CSS transform; the game ignores the display's pixel ratio. The backbuffer therefore never exceeds 1280×720.
+- **Measured** (headless Chrome, Intel UHD, vsync off, 1920×1080 viewport): about 8 ms per frame, and `game_bg.wasm` is 5.96 MB gzipped (budget 6.0).
+- **Colour scheme:** the game uses the visitor's hero colour scheme (`slayback-scheme` in localStorage), and `?palette=` overrides it.
 
 ## Game release switch
 
