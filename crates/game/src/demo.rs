@@ -9,6 +9,10 @@ use bevy::prelude::*;
 use crate::ARENA;
 use crate::arena::WALL;
 use crate::debris::part;
+use crate::fighter::Hp;
+use crate::flow::{PauseOnBlur, Phase};
+use crate::run::RunState;
+use game_core::combat::Health;
 use crate::enemy::{Brain, HALF, Waves, fodder};
 use game_core::debris::humanoid_parts;
 use crate::grab::GRAB_KEY;
@@ -37,10 +41,26 @@ pub fn plugin(app: &mut App) {
     let speed = setting("slow").and_then(|s| s.parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
     // `debris` drops that many loose parts into the box at the start, to check the frame time of a full pile.
     let debris = setting("debris").and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+    // `timer` (seconds on the box clock) and `hp` (the player's starting health) make a run end on cue, e.g. to check
+    // the game-over screen and the best score: `?demo=1&timer=6&hp=20`.
+    let timer = setting("timer").and_then(|s| s.parse::<f32>().ok());
+    let hp = setting("hp").and_then(|s| s.parse::<f32>().ok());
     app.insert_resource(Waves { enabled: false, ..default() })
         .add_systems(Startup, move |mut time: ResMut<Time<Virtual>>| time.set_relative_speed(speed))
+        // Straight into play: no start overlay.
+        .add_systems(PostStartup, move |mut next: ResMut<NextState<Phase>>, mut run: ResMut<RunState>, mut player: Query<&mut Hp, With<Player>>| {
+            next.set(Phase::Playing);
+            if let Some(t) = timer {
+                run.0.time_left = t;
+            }
+            if let (Some(h), Ok(mut p)) = (hp, player.single_mut()) {
+                p.0.hp = h;
+            }
+        })
         .add_systems(Startup, move |mut commands: Commands| drop_debris(&mut commands, debris))
-        .add_systems(PreUpdate, script.after(InputSystems));
+        .insert_resource(PauseOnBlur(false))
+        // Only while playing: after a death the script must not press "play again" (Space is also the dash).
+        .add_systems(PreUpdate, script.after(InputSystems).run_if(in_state(Phase::Playing)));
 }
 
 /// `n` parts of a broken figure's shapes, in rows across the top of the box.
@@ -55,6 +75,8 @@ fn drop_debris(commands: &mut Commands, n: usize) {
     }
 }
 
+const DEMO_FODDER_HP: f32 = 8.0;
+
 /// One beat of the loop: what to press, and how far away the next fodder stands.
 const BEATS: [(&[KeyCode], f32); 4] =
     [(&[PUNCH_KEY], 48.0), (&[KICK_KEY], 58.0), (&[KeyCode::Space, PUNCH_KEY], 150.0), (&[GRAB_KEY, PUNCH_KEY], 45.0)];
@@ -64,14 +86,18 @@ fn script(
     time: Res<Time>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut commands: Commands,
-    player: Query<&Transform, With<Player>>,
+    player: Query<(&Transform, &avian2d::prelude::ShapeHits), With<Player>>,
     fodder_left: Query<Entity, With<Brain>>,
     mut clock: Local<(f32, usize, bool)>,
 ) {
     let (t, beat, spawned) = &mut *clock;
     keys.release_all();
+    let Ok((at, ground)) = player.single() else { return };
+    // Beats start once the player has landed, so the first fodder isn't placed in mid-air.
+    if *t == 0.0 && *beat == 0 && ground.is_empty() {
+        return;
+    }
     *t += time.delta_secs();
-    let Ok(at) = player.single() else { return };
     let (presses, gap) = BEATS[*beat % BEATS.len()];
     // Set up the beat: clear whoever is left and place a fresh fodder at the beat's distance in front of the player
     // (it faces right), so every beat plays out the same way.
@@ -81,7 +107,8 @@ fn script(
         }
         // Repeated dashes walk the player right; keep the fodder inside the box.
         let x = (at.translation.x + gap).min(ARENA.x / 2.0 - WALL - HALF.x - 4.0);
-        commands.spawn(fodder(Vec2::new(x, at.translation.y + 2.0)));
+        // Weak fodder, so every beat ends with a kill (and the box fills with debris).
+        commands.spawn(fodder(Vec2::new(x, at.translation.y + 2.0))).insert(Hp(Health::new(DEMO_FODDER_HP)));
         *spawned = true;
     }
     // Strike just before the fodder's own punch would come out, then move on.

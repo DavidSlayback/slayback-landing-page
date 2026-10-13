@@ -79,6 +79,13 @@ There is no jump: you climb by walking up debris.
 - **Measured** (headless Chrome, Intel UHD, vsync off): about 8 ms per frame, or 10 ms with a full 1000-part pile. `game_bg.wasm` is about 6.0 MB gzipped.
 - **Colour scheme:** the game starts in the visitor's hero colour scheme (`slayback-scheme` in localStorage), and `?palette=` overrides it. It then rotates the scheme box by box.
 
+### Score and screens
+
+A run starts from an overlay that lists the controls. Esc pauses, and so does the page losing focus. The HUD shows health, box, timer and score.
+- **Score** (`game-core::score`): each kill is worth 100 × a streak multiplier. Kills within 2.5 s of each other step it up (×1.5, ×2, up to ×4). Escaping adds 10 points per second left × the box number.
+- **Game over:** shows the score, the box reached, and the best run. The best is stored as `v1;score;box;date` in localStorage (`slayback-best`), or natively in the temp directory.
+- **Size:** the UI (`bevy_ui` + text) added 0.41 MB gzipped. `game_bg.wasm` is 6.42 MB gz (Q34 estimated +0.38 MB).
+
 ## Game release switch
 
 Visitors can't find the game until it ships. `GAME_RELEASE=1 bash scripts/build.sh` turns on its entry points:

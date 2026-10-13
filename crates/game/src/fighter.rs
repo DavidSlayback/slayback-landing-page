@@ -83,8 +83,9 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<HitStopClock>()
         .add_message::<Hit>()
         .add_message::<Defeated>()
-        .add_systems(Update, (advance_swings, resolve_hits, tick_health).chain())
-        .add_systems(Update, hit_stop)
+        .add_systems(Update, (advance_swings, resolve_hits, finish_swings, tick_health).chain())
+        // Only while playing: a freeze ending must not unpause a paused game.
+        .add_systems(Update, hit_stop.run_if(in_state(crate::flow::Phase::Playing)))
         // After the player's and enemies' controls have set this frame's run velocity.
         .add_systems(PostUpdate, step_up.before(PhysicsSystems::First));
 }
@@ -140,9 +141,16 @@ fn step_up(spatial: SpatialQuery, gravity: Res<Gravity>, mut fighters: Query<(&F
 
 fn advance_swings(time: Res<Time>, mut attacks: Query<&mut Attack>) {
     for mut attack in &mut attacks {
-        if let Some(swing) = attack.swing.as_mut()
-            && !swing.advance(time.delta_secs())
-        {
+        if let Some(swing) = attack.swing.as_mut() {
+            swing.advance(time.delta_secs());
+        }
+    }
+}
+
+/// After hits are resolved: a swing that finished this frame still got its chance to land.
+fn finish_swings(mut attacks: Query<&mut Attack>) {
+    for mut attack in &mut attacks {
+        if attack.swing.is_some_and(|s| s.phase().is_none()) {
             attack.swing = None;
         }
     }
@@ -162,7 +170,7 @@ fn resolve_hits(
         .collect();
     let mut hits: Vec<(Entity, Move, f32, Vec2)> = Vec::new();
     for (team, fighter, transform, mut attack) in &mut attackers {
-        let Some(swing) = attack.swing.filter(Swing::is_active) else { continue };
+        let Some(swing) = attack.swing.filter(Swing::struck_this_frame) else { continue };
         let pos = (transform.translation.x, transform.translation.y);
         let reach = hitbox(swing.mv, pos, (fighter.half.x, fighter.half.y), fighter.facing);
         for (target, target_team, body) in &bodies {

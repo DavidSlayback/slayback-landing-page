@@ -73,17 +73,27 @@ pub enum Phase {
 pub struct Swing {
     pub mv: Move,
     pub elapsed: f32,
+    /// `elapsed` before the last `advance`: the frame covered `before..=elapsed`.
+    before: f32,
 }
 
 impl Swing {
     pub fn new(mv: Move) -> Swing {
-        Swing { mv, elapsed: 0.0 }
+        Swing { mv, elapsed: 0.0, before: 0.0 }
     }
 
     /// Advances time; returns false once the swing has fully recovered.
     pub fn advance(&mut self, dt: f32) -> bool {
+        self.before = self.elapsed;
         self.elapsed += dt;
         self.phase().is_some()
+    }
+
+    /// Whether the active window overlapped the last frame, however long that frame was: a slow frame must not let
+    /// a blow skip straight from startup to recovery and whiff.
+    pub fn struck_this_frame(&self) -> bool {
+        let s = self.mv.spec();
+        self.before < s.startup + s.active && self.elapsed >= s.startup
     }
 
     pub fn phase(&self) -> Option<Phase> {
@@ -219,6 +229,21 @@ mod tests {
         assert_eq!(swing.phase(), Some(Phase::Recovery));
         assert!(!swing.advance(s.recovery));
         assert_eq!(swing.phase(), None);
+    }
+
+    #[test]
+    fn a_slow_frame_that_jumps_over_the_active_window_still_strikes() {
+        let p = Move::Punch.spec();
+        let mut swing = Swing::new(Move::Punch);
+        swing.advance(0.02);
+        assert!(!swing.struck_this_frame(), "still in startup");
+        // One 250 ms frame: from startup to past the end of the whole swing.
+        swing.advance(0.25);
+        assert!(swing.phase().is_none() || swing.phase() == Some(Phase::Recovery));
+        assert!(swing.struck_this_frame(), "the blow lands anyway");
+        swing.advance(0.01);
+        assert!(!swing.struck_this_frame(), "but only once");
+        assert!(p.startup + p.active < 0.27);
     }
 
     #[test]

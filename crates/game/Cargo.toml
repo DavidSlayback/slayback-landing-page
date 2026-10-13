@@ -17,12 +17,16 @@ bevy = { version = "=0.19.1", default-features = false, features = [
     # The 2.5D look (B2 spike, docs/research/game-research.md section 6): +0.83 MB gzipped. HDR, bloom and ACES
     # tonemapping already come with bevy_core_pipeline / bevy_post_process; no tonemapping LUTs (+0.57 MB).
     "bevy_pbr",
+    # HUD and screens (D5; decision Q34 accepted ~+0.4 MB gzipped). No scenes, picking or input focus.
+    "bevy_ui", "bevy_ui_render", "bevy_text",
 ] }
 avian2d = { version = "=0.7.0", default-features = false, features = ["2d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
 
-# The page's colour scheme: the hero saves the visitor's pick in localStorage, and ?palette= overrides it.
+# The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it), the best
+# score (localStorage, dated with the browser's clock), and pausing when the page loses focus.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage", "Location"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Storage", "Location"] }
+js-sys = "0.3"
 
 # winit needs a windowing backend to compile on Linux (CI runs the headless scenarios there). X11 loads its libraries
 # at runtime, so this adds no build-time system packages; wasm and Windows builds are unaffected.

@@ -12,6 +12,7 @@ use crate::arena::WALL;
 use crate::debris::DebrisPart;
 use crate::enemy::{Brain, WallDoor, Waves};
 use crate::fighter::{Defeated, Fighter, Hp, Team};
+use crate::flow::Phase;
 use crate::player::{MAX_HP, Player, SPAWN};
 use game_core::doors::Door;
 
@@ -23,11 +24,13 @@ pub struct RunState(pub Run);
 #[derive(Message, Clone, Copy, Debug)]
 pub struct BoxStarted(pub BoxSpec);
 
-/// How the last box ended, for the screens (D5).
+/// How a box ended, for the score and the screens.
 #[derive(Message, Clone, Copy, Debug, PartialEq)]
 pub enum BoxEnded {
-    Escaped,
-    Died,
+    /// Escaped box `number` with `time_left` on the clock.
+    Escaped { number: usize, time_left: f32 },
+    /// Died in box `reached`.
+    Died { reached: usize },
 }
 
 pub fn plugin(app: &mut App) {
@@ -37,7 +40,9 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, |run: Res<RunState>, mut started: MessageWriter<BoxStarted>| {
             started.write(BoxStarted(run.0.spec));
         })
-        .add_systems(Update, (clock, escape, die).chain())
+        .add_systems(Update, (clock, escape, die).chain().run_if(in_state(Phase::Playing)))
+        // Leaving the game-over screen starts a fresh run.
+        .add_systems(OnExit(Phase::Over), restart)
         .add_systems(Update, apply_box_to_waves);
 }
 
@@ -66,11 +71,10 @@ struct BoxReset<'w, 's> {
     clear: Query<'w, 's, Entity, BoxContents>,
     doors: Query<'w, 's, &'static mut WallDoor>,
     started: MessageWriter<'w, BoxStarted>,
-    ended: MessageWriter<'w, BoxEnded>,
 }
 
 impl BoxReset<'_, '_> {
-    fn apply(&mut self, how: BoxEnded, next: BoxSpec, transform: &mut Transform, velocity: &mut LinearVelocity) {
+    fn apply(&mut self, next: BoxSpec, transform: &mut Transform, velocity: &mut LinearVelocity) {
         for e in &self.clear {
             self.commands.entity(e).despawn();
         }
@@ -79,7 +83,6 @@ impl BoxReset<'_, '_> {
         }
         transform.translation = SPAWN.extend(transform.translation.z);
         velocity.0 = Vec2::ZERO;
-        self.ended.write(how);
         self.started.write(BoxStarted(next));
     }
 }
@@ -89,30 +92,32 @@ fn escape(
     mut run: ResMut<RunState>,
     mut player: Query<(&mut Transform, &mut LinearVelocity, &mut Hp, &ShapeHits, &Fighter), With<Player>>,
     mut reset: BoxReset,
+    mut ended: MessageWriter<BoxEnded>,
 ) {
     let Ok((mut transform, mut velocity, mut hp, ground, fighter)) = player.single_mut() else { return };
     let standing = transform.translation.y - fighter.half.y - floor_top();
     if ground.is_empty() || !escaped(standing, run.0.spec.rim) {
         return;
     }
+    ended.write(BoxEnded::Escaped { number: run.0.spec.number, time_left: run.0.time_left });
     hp.0.hp = run.0.escape(hp.0.hp, hp.0.max);
-    reset.apply(BoxEnded::Escaped, run.0.spec, &mut transform, &mut velocity);
+    reset.apply(run.0.spec, &mut transform, &mut velocity);
 }
 
-/// The player's health ran out (a blow or a timeout): back to box 1 at full health.
-fn die(
-    mut defeats: MessageReader<Defeated>,
-    mut run: ResMut<RunState>,
-    mut player: Query<(&mut Transform, &mut LinearVelocity, &mut Hp), With<Player>>,
-    mut reset: BoxReset,
-) {
-    if !defeats.read().any(|d| d.team == Team::Player) {
-        return;
+/// The player's health ran out (a blow or a timeout): the game-over screen.
+fn die(mut defeats: MessageReader<Defeated>, run: Res<RunState>, mut ended: MessageWriter<BoxEnded>, mut next: ResMut<NextState<Phase>>) {
+    if defeats.read().any(|d| d.team == Team::Player) {
+        ended.write(BoxEnded::Died { reached: run.0.spec.number });
+        next.set(Phase::Over);
     }
+}
+
+/// Again: box 1, full health, an empty box.
+fn restart(mut run: ResMut<RunState>, mut player: Query<(&mut Transform, &mut LinearVelocity, &mut Hp), With<Player>>, mut reset: BoxReset) {
     let Ok((mut transform, mut velocity, mut hp)) = player.single_mut() else { return };
     run.0.restart();
     hp.0 = Health::new(MAX_HP);
-    reset.apply(BoxEnded::Died, run.0.spec, &mut transform, &mut velocity);
+    reset.apply(run.0.spec, &mut transform, &mut velocity);
 }
 
 fn apply_box_to_waves(mut started: MessageReader<BoxStarted>, mut waves: ResMut<Waves>) {
