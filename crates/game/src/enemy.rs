@@ -6,8 +6,8 @@ use avian2d::prelude::*;
 use bevy::prelude::*;
 use game_core::doors::Door;
 use game_core::enemy::{Armour, FODDER, Intent, Kind, Mind};
-use game_core::run::pick_kind;
 use game_core::movement::run_velocity;
+use game_core::run::pick_kind;
 
 use crate::ARENA;
 use crate::arena::WALL;
@@ -66,7 +66,11 @@ pub fn door_spot(side: f32, half: Vec2) -> Vec2 {
 
 fn spawn_doors(mut commands: Commands) {
     for side in [-1.0, 1.0] {
-        commands.spawn((Name::new("door"), WallDoor { side, door: Door::Closed, next: Kind::Fodder, bomb: false }, Transform::from_translation(door_spot(side, HALF).extend(0.0))));
+        commands.spawn((
+            Name::new("door"),
+            WallDoor { side, door: Door::Closed, next: Kind::Fodder, bomb: false },
+            Transform::from_translation(door_spot(side, HALF).extend(0.0)),
+        ));
     }
 }
 
@@ -79,7 +83,13 @@ pub fn enemy(kind: Kind, at: Vec2) -> impl Bundle {
         Kind::Thug => "thug",
         Kind::Ninja => "ninja",
     };
-    (Brain(Mind::new(kind)), Armoured(s.armour), Name::new(name), body(Team::Enemy, half, s.max_hp), Transform::from_translation(at.extend(0.0)))
+    (
+        Brain(Mind::new(kind)),
+        Armoured(s.armour),
+        Name::new(name),
+        body(Team::Enemy, half, s.max_hp),
+        Transform::from_translation(at.extend(0.0)),
+    )
 }
 
 /// A fodder standing at `at`.

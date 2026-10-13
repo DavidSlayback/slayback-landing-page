@@ -93,7 +93,10 @@ mod tests {
         let (x, y, z) = hold_offset(1.0, 28.0, Some(0.3));
         assert!(x < -28.0 && y < 28.0 && z.abs() < 1e-3, "behind the shoulders: {x}, {y}");
         let (x, y, z) = hold_offset(1.0, 28.0, Some(0.65));
-        assert!(x.abs() < 1.0 && z > 28.0 && y > 0.0, "passing in front of the body, toward the viewer, never below it");
+        assert!(
+            x.abs() < 1.0 && z > 28.0 && y > 0.0,
+            "passing in front of the body, toward the viewer, never below it"
+        );
         let (x, _, z) = hold_offset(1.0, 28.0, Some(1.0));
         assert!(x > 28.0 && z.abs() < 1.0, "straight ahead at release");
         assert!(hold_offset(-1.0, 28.0, Some(1.0)).0 < -28.0, "ahead when facing left too");

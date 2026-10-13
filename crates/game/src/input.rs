@@ -79,7 +79,13 @@ impl Pad {
 
 /// A gamepad's actions (the table above).
 pub fn pad_actions(p: Pad) -> Actions {
-    let axis = if p.dpad_x != 0.0 { p.dpad_x.signum() } else if p.stick_x.abs() >= DEADZONE { p.stick_x.signum() } else { 0.0 };
+    let axis = if p.dpad_x != 0.0 {
+        p.dpad_x.signum()
+    } else if p.stick_x.abs() >= DEADZONE {
+        p.stick_x.signum()
+    } else {
+        0.0
+    };
     Actions {
         axis,
         dash: p.south || p.right_trigger,
@@ -106,7 +112,12 @@ pub fn merge(a: Actions, b: Actions) -> Actions {
     }
 }
 
-fn read(keys: Res<ButtonInput<KeyCode>>, mouse: Option<Res<ButtonInput<MouseButton>>>, pads: Query<&Gamepad>, mut actions: ResMut<Actions>) {
+fn read(
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Option<Res<ButtonInput<MouseButton>>>,
+    pads: Query<&Gamepad>,
+    mut actions: ResMut<Actions>,
+) {
     let held = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
     let click = |b: MouseButton| mouse.as_ref().is_some_and(|m| m.just_pressed(b));
     let mut all = Actions {

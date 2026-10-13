@@ -4,10 +4,10 @@
 
 use bevy::prelude::*;
 
+use crate::fighter::Hp;
 use crate::flow::Phase;
 use crate::look::Scheme;
 use crate::player::Player;
-use crate::fighter::Hp;
 use crate::run::RunState;
 use crate::score::{BestScore, LastRun, RunScore};
 use crate::sound::Sound;
@@ -60,7 +60,11 @@ fn spawn_hud(mut commands: Commands, scheme: Res<Scheme>) {
             // Health: a bar in the scheme's accent.
             hud.spawn(Node { width: Val::Px(220.0), height: Val::Px(10.0), ..default() })
                 .insert(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.12)))
-                .with_child((HealthFill, Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() }, BackgroundColor(accent)));
+                .with_child((
+                    HealthFill,
+                    Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
+                    BackgroundColor(accent),
+                ));
             hud.spawn((Readout, text("", 18.0, INK)));
         });
 }
@@ -68,7 +72,14 @@ fn spawn_hud(mut commands: Commands, scheme: Res<Scheme>) {
 fn spawn_screens(mut commands: Commands) {
     let controls = "A / D  run      Space / Shift  dash\nJ / left click  punch      K / right click  kick\nattack while dashing  drop-kick\nL / middle click  grab      attack while holding  spin-throw\nEsc  pause\n\nPile the fallen up to the rim to escape the box.";
     let screens: [(Phase, Vec<(String, f32)>); 3] = [
-        (Phase::Start, vec![("ESCAPE THE BOX".into(), 46.0), (controls.into(), 18.0), ("Click or press Enter to start".into(), 22.0)]),
+        (
+            Phase::Start,
+            vec![
+                ("ESCAPE THE BOX".into(), 46.0),
+                (controls.into(), 18.0),
+                ("Click or press Enter to start".into(), 22.0),
+            ],
+        ),
         (Phase::Paused, vec![("PAUSED".into(), 46.0), ("Esc to resume".into(), 22.0)]),
         (Phase::Over, vec![("GAME OVER".into(), 46.0)]),
     ];
@@ -139,7 +150,8 @@ fn write_game_over(last: Res<LastRun>, best: Res<BestScore>, mut text: Query<&mu
         Some(b) => format!("Best  {}  (box {}, {})", b.score, b.reached, b.date),
         None => String::new(),
     };
-    t.0 = format!("Score  {}    Box  {}\n{}\n\nClick or press Enter to play again", last.score, last.reached, best_line);
+    t.0 =
+        format!("Score  {}    Box  {}\n{}\n\nClick or press Enter to play again", last.score, last.reached, best_line);
 }
 
 fn show_sound(sound: Option<Res<Sound>>, mut line: Query<&mut Text, With<SoundLine>>) {

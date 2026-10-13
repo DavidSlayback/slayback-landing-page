@@ -15,7 +15,6 @@ use crate::fighter::{Defeated, FLASH, Fighter, Flash, Hit, HitStopClock, Hp, Tea
 use crate::input::Actions;
 use crate::player::Player;
 
-
 /// The player is holding something; `spin` counts up from 0 once a throw starts.
 #[derive(Component, Debug)]
 pub struct Holding {
@@ -44,8 +43,14 @@ pub fn plugin(app: &mut App) {
 #[allow(clippy::type_complexity)]
 #[derive(SystemParam)]
 struct Grabbable<'w, 's> {
-    enemies: Query<'w, 's, (Entity, &'static Transform, &'static Fighter), (With<Brain>, Without<Carried>, Without<Player>)>,
-    parts: Query<'w, 's, (Entity, &'static Transform, &'static ColliderAabb, &'static mut DebrisPart), (Without<Carried>, Without<Player>)>,
+    enemies:
+        Query<'w, 's, (Entity, &'static Transform, &'static Fighter), (With<Brain>, Without<Carried>, Without<Player>)>,
+    parts: Query<
+        'w,
+        's,
+        (Entity, &'static Transform, &'static ColliderAabb, &'static mut DebrisPart),
+        (Without<Carried>, Without<Player>),
+    >,
     bombs: Query<'w, 's, (Entity, &'static Transform), (With<LitBomb>, Without<Carried>, Without<Player>)>,
 }
 
@@ -104,7 +109,13 @@ fn grab(
     if let Ok((_, _, _, mut part)) = things.parts.get_mut(target) {
         part.born = time.elapsed_secs(); // thawed: it freezes again only after it lands
     }
-    commands.entity(target).insert((Carried, RigidBody::Kinematic, ColliderDisabled, LinearVelocity::ZERO, AngularVelocity::ZERO));
+    commands.entity(target).insert((
+        Carried,
+        RigidBody::Kinematic,
+        ColliderDisabled,
+        LinearVelocity::ZERO,
+        AngularVelocity::ZERO,
+    ));
     commands.entity(me).insert(Holding { target, kind, spin: None });
 }
 
@@ -202,7 +213,11 @@ fn fly(
             flash.0 = FLASH;
             hp.0.stun = hp.0.stun.max(0.35);
             out.stop.0.trigger(HITSTOP);
-            out.hits.write(Hit { at: (tf.translation.truncate() + Vec2::new(aabb.center().x, aabb.center().y)) / 2.0, mv: Move::Kick, facing });
+            out.hits.write(Hit {
+                at: (tf.translation.truncate() + Vec2::new(aabb.center().x, aabb.center().y)) / 2.0,
+                mv: Move::Kick,
+                facing,
+            });
             if hp.0.hurt(spec.damage) == HitOutcome::Defeated {
                 out.defeated.write(Defeated { entity: target, team: Team::Enemy });
             }

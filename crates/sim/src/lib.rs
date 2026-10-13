@@ -21,12 +21,12 @@ pub struct Params {
     pub floor_friction: f32, // same, for the floor (low, so wind can drive dunes)
     pub restitution: f32,
     pub shield_restitution: f32, // bounce off the cursor disc and forcefield
-    pub cursor_r: f32, // cursor disc radius, px
-    pub spawn_rate: f32, // grains activated per second until capacity
-    pub source: u32,     // 0 = left edge, 1 = top edge (used when there are no emitters)
+    pub cursor_r: f32,           // cursor disc radius, px
+    pub spawn_rate: f32,         // grains activated per second until capacity
+    pub source: u32,             // 0 = left edge, 1 = top edge (used when there are no emitters)
     pub max_speed: f32,
-    pub collide: bool,    // grain-grain contacts (sparks pass through each other)
-    pub life_min: f32,    // seconds; life_max = 0 means grains never expire
+    pub collide: bool, // grain-grain contacts (sparks pass through each other)
+    pub life_min: f32, // seconds; life_max = 0 means grains never expire
     pub life_max: f32,
     pub open_edges: bool, // top, left and right are exits; only the floor is solid
     pub emitters: u32,    // wandering spark sources; 0 = use `source`
@@ -291,10 +291,10 @@ impl World {
         let side = sides[(self.rand() * sides.len() as f32) as usize % sides.len()];
         let t = self.rand();
         let (x, y, inward) = match side {
-            0 => (w * t, -EMITTER_OFFSET, TAU * 0.25),        // above the top edge, aiming down
-            1 => (w * t, h + EMITTER_OFFSET, -TAU * 0.25),    // below the floor, aiming up
-            2 => (-EMITTER_OFFSET, h * t, 0.0),               // left of the screen, aiming right
-            _ => (w + EMITTER_OFFSET, h * t, TAU * 0.5),      // right of the screen, aiming left
+            0 => (w * t, -EMITTER_OFFSET, TAU * 0.25), // above the top edge, aiming down
+            1 => (w * t, h + EMITTER_OFFSET, -TAU * 0.25), // below the floor, aiming up
+            2 => (-EMITTER_OFFSET, h * t, 0.0),        // left of the screen, aiming right
+            _ => (w + EMITTER_OFFSET, h * t, TAU * 0.5), // right of the screen, aiming left
         };
         (e.x, e.y) = (x, y);
         e.angle = inward + (self.rand() - 0.5) * 2.2; // up to ~63 degrees off the inward normal
@@ -407,11 +407,7 @@ impl World {
         let solid: Vec<bool> = self.mask.iter().map(|&m| m > 127).collect();
         let d_out = chamfer(&solid, w, h, true);
         let d_in = chamfer(&solid, w, h, false);
-        self.sdf = d_out
-            .iter()
-            .zip(&d_in)
-            .map(|(o, i)| ((o - i) / self.mscale).min(60000.0))
-            .collect();
+        self.sdf = d_out.iter().zip(&d_in).map(|(o, i)| ((o - i) / self.mscale).min(60000.0)).collect();
     }
 
     pub fn sdf_at(&self, x: f32, y: f32) -> f32 {
@@ -550,7 +546,19 @@ impl World {
         }
         // Reorder grains so each cell's members are contiguous: contact loops then stream through memory.
         let n = self.active;
-        for arr in [&mut self.x, &mut self.y, &mut self.vx, &mut self.vy, &mut self.px, &mut self.py, &mut self.energy, &mut self.hue, &mut self.age, &mut self.life, &mut self.heading] {
+        for arr in [
+            &mut self.x,
+            &mut self.y,
+            &mut self.vx,
+            &mut self.vy,
+            &mut self.px,
+            &mut self.py,
+            &mut self.energy,
+            &mut self.hue,
+            &mut self.age,
+            &mut self.life,
+            &mut self.heading,
+        ] {
             for k in 0..n {
                 self.scratch[k] = arr[self.sorted[k] as usize];
             }
@@ -726,7 +734,10 @@ impl World {
             self.age[i] += h;
             let expired = self.life[i] > 0.0 && self.age[i] > self.life[i];
             let out = if p.open_edges {
-                self.x[i] < -EXIT_MARGIN || self.x[i] > self.w + EXIT_MARGIN || self.y[i] < -EXIT_MARGIN || self.y[i] > self.h + EXIT_MARGIN
+                self.x[i] < -EXIT_MARGIN
+                    || self.x[i] > self.w + EXIT_MARGIN
+                    || self.y[i] < -EXIT_MARGIN
+                    || self.y[i] > self.h + EXIT_MARGIN
             } else {
                 self.x[i] > self.w + 12.0 || self.y[i] > self.h + 40.0
             };
@@ -743,7 +754,9 @@ impl World {
         let mut acc = [0.0f64; 5];
         let h = 1.0 / 180.0;
         for _ in 0..n {
-            let t = Instant::now(); self.update_flow(); acc[0] += t.elapsed().as_secs_f64();
+            let t = Instant::now();
+            self.update_flow();
+            acc[0] += t.elapsed().as_secs_f64();
             for _ in 0..3 {
                 let t = Instant::now();
                 for i in 0..self.active {
@@ -754,9 +767,17 @@ impl World {
                     self.py[i] = self.y[i] + self.vy[i] * h;
                 }
                 acc[1] += t.elapsed().as_secs_f64();
-                let t = Instant::now(); self.build_grid(); acc[2] += t.elapsed().as_secs_f64();
-                let t = Instant::now(); self.solve_pairs(); self.solve_pairs(); acc[3] += t.elapsed().as_secs_f64();
-                let t = Instant::now(); self.solve_solids(None); self.finalize(h); acc[4] += t.elapsed().as_secs_f64();
+                let t = Instant::now();
+                self.build_grid();
+                acc[2] += t.elapsed().as_secs_f64();
+                let t = Instant::now();
+                self.solve_pairs();
+                self.solve_pairs();
+                acc[3] += t.elapsed().as_secs_f64();
+                let t = Instant::now();
+                self.solve_solids(None);
+                self.finalize(h);
+                acc[4] += t.elapsed().as_secs_f64();
             }
         }
         ["flow", "predict", "grid", "pairs", "solids"].into_iter().zip(acc.map(|a| a * 1e3 / n as f64)).collect()
@@ -790,7 +811,10 @@ impl World {
         for s in 0..sub {
             let a = (s + 1) as f32 / sub as f32;
             let cursor = self.cursor_on.then(|| {
-                (self.cursor[2] + (self.cursor[0] - self.cursor[2]) * a, self.cursor[3] + (self.cursor[1] - self.cursor[3]) * a)
+                (
+                    self.cursor[2] + (self.cursor[0] - self.cursor[2]) * a,
+                    self.cursor[3] + (self.cursor[1] - self.cursor[3]) * a,
+                )
             });
             let steer = 9.0 * h.sqrt(); // heading random walk: uniform steps, ~2.6 rad standard deviation per sqrt(second)
             for i in 0..self.active {
@@ -836,8 +860,16 @@ impl World {
         for i in 0..self.active {
             let heat = if self.life[i] > 0.0 { (1.0 - self.age[i] / self.life[i]).clamp(0.0, 1.0) } else { 1.0 };
             let o = i * OUT_STRIDE;
-            self.out[o..o + OUT_STRIDE]
-                .copy_from_slice(&[self.x[i], self.y[i], self.vx[i], self.vy[i], self.energy[i], self.hue[i], heat, 0.0]);
+            self.out[o..o + OUT_STRIDE].copy_from_slice(&[
+                self.x[i],
+                self.y[i],
+                self.vx[i],
+                self.vy[i],
+                self.energy[i],
+                self.hue[i],
+                heat,
+                0.0,
+            ]);
         }
         self.emitter_out.clear();
         for e in &self.emitters {
@@ -882,11 +914,17 @@ fn chamfer(solid: &[bool], w: usize, h: usize, target: bool) -> Vec<f32> {
         for x in 0..w {
             let i = y * w + x;
             let mut v = d[i];
-            if x > 0 { v = v.min(d[i - 1] + 1.0); }
+            if x > 0 {
+                v = v.min(d[i - 1] + 1.0);
+            }
             if y > 0 {
                 v = v.min(d[i - w] + 1.0);
-                if x > 0 { v = v.min(d[i - w - 1] + r2); }
-                if x + 1 < w { v = v.min(d[i - w + 1] + r2); }
+                if x > 0 {
+                    v = v.min(d[i - w - 1] + r2);
+                }
+                if x + 1 < w {
+                    v = v.min(d[i - w + 1] + r2);
+                }
             }
             d[i] = v;
         }
@@ -895,11 +933,17 @@ fn chamfer(solid: &[bool], w: usize, h: usize, target: bool) -> Vec<f32> {
         for x in (0..w).rev() {
             let i = y * w + x;
             let mut v = d[i];
-            if x + 1 < w { v = v.min(d[i + 1] + 1.0); }
+            if x + 1 < w {
+                v = v.min(d[i + 1] + 1.0);
+            }
             if y + 1 < h {
                 v = v.min(d[i + w] + 1.0);
-                if x + 1 < w { v = v.min(d[i + w + 1] + r2); }
-                if x > 0 { v = v.min(d[i + w - 1] + r2); }
+                if x + 1 < w {
+                    v = v.min(d[i + w + 1] + r2);
+                }
+                if x > 0 {
+                    v = v.min(d[i + w - 1] + r2);
+                }
             }
             d[i] = v;
         }
@@ -913,7 +957,14 @@ mod tests {
 
     fn quiet(cap: usize, w: f32, h: f32) -> World {
         let mut world = World::new(cap, w, h, 7);
-        world.set_params(Params { gravity: 0.0, wind: 0.0, turb: 0.0, drag: 0.0, spawn_rate: 0.0, ..Params::default() });
+        world.set_params(Params {
+            gravity: 0.0,
+            wind: 0.0,
+            turb: 0.0,
+            drag: 0.0,
+            spawn_rate: 0.0,
+            ..Params::default()
+        });
         world
     }
 
@@ -1049,7 +1100,15 @@ mod tests {
 
     fn sparks(cap: usize) -> World {
         let mut world = quiet(cap, 400.0, 300.0);
-        world.set_params(Params { collide: false, open_edges: true, life_min: 0.3, life_max: 0.6, emitters: 3, spawn_rate: 1e6, ..world.params });
+        world.set_params(Params {
+            collide: false,
+            open_edges: true,
+            life_min: 0.3,
+            life_max: 0.6,
+            emitters: 3,
+            spawn_rate: 1e6,
+            ..world.params
+        });
         world
     }
 

@@ -1,0 +1,69 @@
+# Local guardrail: the standard Rust set (david-brain templates/rust) plus this repo's builds. Install once per clone:
+#   uv tool install pre-commit && pre-commit install -t pre-commit -t pre-push
+# Commit runs hygiene, rustfmt and clippy; push runs the tests and builds, mirroring CI's `check` job (keep the two in
+# step). Cargo goes through scripts/native.sh, which is plain cargo except on a Windows GNU host, where it sets the
+# linker flags the native game needs; going through it everywhere also keeps one shared build cache.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      # --locked catches a Cargo.lock that drifted from the manifests (e.g. lost in a rebase).
+      - id: clippy
+        name: clippy (sim, hero, game rules)
+        entry: bash scripts/native.sh clippy --all-targets --locked -q -- -D warnings
+        language: system
+        types_or: [rust, toml]
+        pass_filenames: false
+      - id: clippy-game-headless
+        name: clippy (game, headless)
+        entry: bash scripts/native.sh clippy -p game --no-default-features --all-targets --locked -q -- -D warnings
+        language: system
+        files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+      - id: test
+        name: tests (sim, hero, game rules)
+        entry: bash scripts/native.sh test --locked -q
+        language: system
+        types_or: [rust, toml]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: test-game-headless
+        name: tests (game scenarios, headless)
+        entry: bash scripts/native.sh test -p game --no-default-features --locked -q
+        language: system
+        files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]
+      # The renderer-side modules (look, ui, sound, comfort) only compile with `render`; CI lints them for wasm on
+      # main only, so lint them here before they land.
+      - id: clippy-game-wasm
+        name: clippy (game, wasm with render)
+        entry: bash scripts/native.sh clippy -p game --target wasm32-unknown-unknown --locked -q -- -D warnings
+        language: system
+        files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]
+      - id: hero-budget
+        name: hero build + 80 KB budget
+        entry: bash -c 'SKIP_GAME=1 bash scripts/build.sh >/dev/null && test "$(wc -c < dist/hero.wasm)" -le 81920'
+        language: system
+        files: ^(crates/sim|crates/hero-wasm|site)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]

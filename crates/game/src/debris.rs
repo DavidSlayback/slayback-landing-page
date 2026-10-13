@@ -67,7 +67,11 @@ fn break_apart(
                 continue;
             }
             let spin = if i % 2 == 0 { 6.0 } else { -6.0 };
-            commands.spawn((part(p.shape, centre + offset, time.elapsed_secs()), LinearVelocity(fling), AngularVelocity(spin)));
+            commands.spawn((
+                part(p.shape, centre + offset, time.elapsed_secs()),
+                LinearVelocity(fling),
+                AngularVelocity(spin),
+            ));
         }
     }
 }

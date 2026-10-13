@@ -80,7 +80,8 @@ impl Best {
     pub fn from_record(s: &str) -> Option<Best> {
         let mut it = s.trim().split(';');
         (it.next()? == "v1").then_some(())?;
-        let best = Best { score: it.next()?.parse().ok()?, reached: it.next()?.parse().ok()?, date: it.next()?.to_owned() };
+        let best =
+            Best { score: it.next()?.parse().ok()?, reached: it.next()?.parse().ok()?, date: it.next()?.to_owned() };
         it.next().is_none().then_some(best)
     }
 }

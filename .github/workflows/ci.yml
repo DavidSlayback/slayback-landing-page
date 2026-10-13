@@ -2,8 +2,9 @@ name: CI
 
 # Feature branches get one cheap job; the expensive work (the wasm game build, the browser harness, deploys) runs
 # only on main and release candidates (decisions Q41, Q42).
-# - Pull requests into main build only when not drafts: open PRs as drafts while iterating, mark ready to check.
-#   A newer push cancels an older run. Docs-only PRs skip. Stacked PRs wait until retargeted to main.
+# - Pull requests into main build only when not drafts. PRs (stacked ones included) stay drafts while iterating and
+#   restacking; mark one ready only to merge it now, so each PR builds once (decision Q44). Docs-only PRs skip.
+#   Stacked PRs don't build until retargeted to main.
 # - main deploys production (the hero; the game stays behind its release switch). A branch named rc/... deploys a
 #   preview of the full build with the game's release switch on.
 on:
@@ -15,9 +16,11 @@ on:
     paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 
+# A newer run supersedes an older one on the same PR or branch, main included: merging a stack lands several commits
+# in a row, and only the last needs building and deploying.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 env:
   # CI compiles each crate once: incremental artifacts only bloat the cache.
@@ -27,6 +30,7 @@ env:
 jobs:
   # Everything a PR needs, in one job (one toolchain setup, one cache): unit and headless game tests, clippy, and the
   # hero build with its size budget. The headless game builds without the `render` feature (no Bevy renderer).
+  # The local hooks (.pre-commit-config.yaml) run the same commands; keep the two in step.
   check:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
@@ -35,14 +39,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: check
           # Only main saves; PRs restore main's cache instead of storing their own copies (repo limit 10 GB).
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo test --release
-      - run: cargo test -p game --no-default-features
+      - run: cargo fmt --all --check
+      - run: cargo test --release --locked
+      - run: cargo test -p game --no-default-features --locked
       - run: cargo clippy --all-targets --release -- -D warnings
       - run: cargo clippy -p game --no-default-features --all-targets -- -D warnings
       - run: SKIP_GAME=1 bash scripts/build.sh

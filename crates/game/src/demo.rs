@@ -8,20 +8,20 @@ use bevy::prelude::*;
 
 use crate::ARENA;
 use crate::arena::WALL;
+use crate::bomb::BombHead;
 use crate::debris::part;
-use crate::run::BoxStarted;
-use avian2d::prelude::RigidBody;
-use game_core::debris::Shape;
+use crate::enemy::{Brain, HALF, Waves, enemy};
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
-use crate::run::RunState;
-use game_core::combat::Health;
-use crate::bomb::BombHead;
-use crate::enemy::{Brain, HALF, Waves, enemy};
-use game_core::enemy::Kind;
-use game_core::debris::humanoid_parts;
 use crate::input::{GRAB_KEY, KICK_KEY, PUNCH_KEY, ReadActions};
 use crate::player::Player;
+use crate::run::BoxStarted;
+use crate::run::RunState;
+use avian2d::prelude::RigidBody;
+use game_core::combat::Health;
+use game_core::debris::Shape;
+use game_core::debris::humanoid_parts;
+use game_core::enemy::Kind;
 
 /// A demo setting from the page query (`demo=1&slow=0.25`) or, natively, the environment (`DEMO=1 SLOW=0.25`).
 fn setting(key: &str) -> Option<String> {
@@ -65,15 +65,20 @@ pub fn plugin(app: &mut App) {
         .add_systems(Update, build_stairs.run_if(|f: Res<Foe>| f.stairs))
         .add_systems(Startup, move |mut time: ResMut<Time<Virtual>>| time.set_relative_speed(speed))
         // Straight into play: no start overlay.
-        .add_systems(PostStartup, move |mut next: ResMut<NextState<Phase>>, mut run: ResMut<RunState>, mut player: Query<&mut Hp, With<Player>>| {
-            next.set(Phase::Playing);
-            if let Some(t) = timer {
-                run.0.time_left = t;
-            }
-            if let (Some(h), Ok(mut p)) = (hp, player.single_mut()) {
-                p.0.hp = h;
-            }
-        })
+        .add_systems(
+            PostStartup,
+            move |mut next: ResMut<NextState<Phase>>,
+                  mut run: ResMut<RunState>,
+                  mut player: Query<&mut Hp, With<Player>>| {
+                next.set(Phase::Playing);
+                if let Some(t) = timer {
+                    run.0.time_left = t;
+                }
+                if let (Some(h), Ok(mut p)) = (hp, player.single_mut()) {
+                    p.0.hp = h;
+                }
+            },
+        )
         .add_systems(Startup, move |mut commands: Commands| drop_debris(&mut commands, debris))
         .insert_resource(PauseOnBlur(false))
         // Only while playing: after a death the script must not press "play again" (Space is also the dash).
