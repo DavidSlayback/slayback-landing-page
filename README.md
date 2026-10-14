@@ -183,3 +183,5 @@ cd tests/e2e && npm ci && npx playwright test
 ```
 
 Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. The game checks (load, start overlay and pause, scripted climb, reduced motion, demo fight) run when the build has the game and skip otherwise; `REQUIRE_GAME=1` makes a missing game a failure. CI's `browser` job runs on `main` and `rc/` branches (not on PRs): it tests the full switch-on build and the hero-only `dist` that main deploys.
+
+Review tools in `tests/e2e/tools/` run a `dist/` build in Chrome on the real GPU (`--swiftshader` to opt out): `capture.mjs` tiles frames into a sheet for frame-by-frame review, `frametime.mjs` reports slow frames, median and p99, and `trace-shaders.mjs` counts shader links and GPU stalls from page load. `shaders.spec.js` in the harness fails if any shader links once the warm-up is drawn.
