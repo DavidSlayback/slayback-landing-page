@@ -230,15 +230,16 @@ fn think(
     }
 }
 
-/// The doors as panels on the walls' inner faces, dark while closed, pulsing in the warning accent while they warn,
-/// and black while open.
+/// The doors as panels on the walls' inner faces, in the arena's darker door tone while closed (`game_core::palette`),
+/// pulsing in the signal accent while they warn, and black while open.
 #[cfg(feature = "render")]
 mod view {
     use bevy::prelude::*;
     use game_core::doors::{Door, WARNING};
+    use game_core::palette;
 
     use super::WallDoor;
-    use crate::look::Palette;
+    use crate::look::{Palette, srgb};
 
     /// Door panel size, metres: about a fighter and a half tall.
     const PANEL: Vec3 = Vec3::new(1.2, 2.1, 0.08);
@@ -251,18 +252,19 @@ mod view {
         app.add_systems(Update, (dress, pulse).chain());
     }
 
-    fn closed() -> Color {
-        Color::srgb(0.12, 0.13, 0.17)
+    fn closed(palette: &Palette) -> Color {
+        srgb(palette::arena_tone(palette.scheme).door)
     }
 
     fn dress(
         mut commands: Commands,
+        palette: Res<Palette>,
         doors: Query<(Entity, &WallDoor), Added<WallDoor>>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut mats: ResMut<Assets<StandardMaterial>>,
     ) {
         for (e, door) in &doors {
-            let mat = mats.add(StandardMaterial { base_color: closed(), unlit: true, ..default() });
+            let mat = mats.add(StandardMaterial { base_color: closed(&palette), unlit: true, ..default() });
             commands.entity(e).insert((Panel(mat.clone()), Visibility::default()));
             commands.spawn((
                 Mesh3d(meshes.add(Cuboid::from_size(PANEL))),
@@ -277,12 +279,12 @@ mod view {
     fn pulse(palette: Res<Palette>, doors: Query<(&WallDoor, &Panel)>, mut mats: ResMut<Assets<StandardMaterial>>) {
         for (door, panel) in &doors {
             let colour = match door.door {
-                Door::Closed => closed(),
+                Door::Closed => closed(&palette),
                 // Three flashes over the warning, brightening toward the opening.
                 Door::Warning(left) => {
                     let t = 1.0 - left / WARNING;
                     let wave = 0.5 + 0.5 * (t * 3.0 * std::f32::consts::TAU).cos();
-                    closed().mix(&palette.accents[3], (0.35 + 0.65 * t) * wave)
+                    closed(&palette).mix(&srgb(palette::signal(palette.scheme)), (0.35 + 0.65 * t) * wave)
                 }
                 Door::Open(_) => Color::BLACK,
             };

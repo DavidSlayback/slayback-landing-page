@@ -17,7 +17,7 @@ use game_core::plane::UNITS_PER_METRE;
 use crate::bomb::Exploded;
 use crate::camera;
 use crate::fighter::{Hit, Team};
-use crate::look::Palette;
+use crate::look::{Palette, srgb};
 use crate::score::Scored;
 
 /// Screen shake (`game_core::impact::Shake`): blows add trauma, which drains over real time. Reduced motion (G9) turns
@@ -95,7 +95,7 @@ fn load(
     let flat = |c: Color| StandardMaterial { base_color: c, unlit: true, cull_mode: None, ..default() };
     commands.insert_resource(BurstKit {
         star: meshes.add(star(8, 0.42)),
-        outer: mats.add(flat(palette.accents[3])),
+        outer: mats.add(flat(srgb(game_core::palette::signal(palette.scheme)))),
         core: mats.add(flat(Color::srgb(1.0, 0.97, 0.85))),
     });
 }
@@ -199,7 +199,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Popup { life: POPUP_LIFE, at: s.at + Vec3::Y * 1.0 },
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
-            TextColor(palette.accents[3]),
+            TextColor(srgb(game_core::palette::signal(palette.scheme))),
             TextShadow::default(),
             Node { position_type: PositionType::Absolute, ..default() },
         ));

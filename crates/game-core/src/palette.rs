@@ -34,6 +34,8 @@ pub struct Arena {
     pub edge: Rgb,
     /// The glass front wall's rails and posts: dimmer than the rim, so the pane reads as glass.
     pub glass: Rgb,
+    /// A closed door's panel: darker than the walls, so the doors read as openings.
+    pub door: Rgb,
 }
 
 /// `grey` with a fraction `k` of `accent` mixed in.
@@ -45,7 +47,7 @@ fn tint(grey: f32, accent: Rgb, k: f32) -> Rgb {
 const MUTE: f32 = 0.16;
 
 /// The arena in `scheme`'s muted tone: a mid floor, lighter walls (so the walls' faces read against the floor), a
-/// near-white rim and dimmer glass rails.
+/// near-white rim, dimmer glass rails and darker doors.
 pub fn arena_tone(scheme: &Scheme) -> Arena {
     let a = scheme.accents[0];
     Arena {
@@ -53,11 +55,12 @@ pub fn arena_tone(scheme: &Scheme) -> Arena {
         wall: tint(0.6, a, MUTE),
         edge: tint(0.86, a, 0.12),
         glass: tint(0.66, a, 0.12),
+        door: tint(0.3, a, MUTE),
     }
 }
 
 /// Shades a heap cycles through, so neighbouring pieces read apart under the outlines.
-const DEBRIS_SHADES: [f32; 3] = [0.62, 0.68, 0.74];
+pub const DEBRIS_SHADES: [f32; 3] = [0.62, 0.68, 0.74];
 
 /// A debris piece in `scheme`'s muted tone; `piece` (any number, e.g. the part's index) picks one of a few shades.
 /// Lighter than the floor, so a heap reads against it.
@@ -75,6 +78,11 @@ pub fn fighter_colour(scheme: &Scheme, who: Fighter) -> Figure {
         Fighter::Enemy(Kind::Ninja) => 3,
     }];
     Figure { body, trim: body.map(|c| c * 0.22) }
+}
+
+/// The signal accent: door warnings, impact bursts and score popups (the 2.5D game's warning colour).
+pub fn signal(scheme: &Scheme) -> Rgb {
+    scheme.accents[3]
 }
 
 /// The player's floor ring (Q60): the main accent.
@@ -107,7 +115,7 @@ mod tests {
     /// Every muted colour in a scheme: the arena's and a heap's worth of debris.
     fn muted(s: &Scheme) -> Vec<Rgb> {
         let a = arena_tone(s);
-        let mut out = vec![a.floor, a.wall, a.edge, a.glass];
+        let mut out = vec![a.floor, a.wall, a.edge, a.glass, a.door];
         out.extend((0..DEBRIS_SHADES.len()).map(|i| debris_tone(s, i)));
         out
     }
@@ -180,6 +188,8 @@ mod tests {
                 assert!(value(body) - value(trim) > 0.5, "{}: {f:?}", s.key);
             }
             assert_eq!(ring(s), s.accents[0]);
+            let a = arena_tone(s);
+            assert!(value(a.wall) - value(a.door) > 0.2, "{}: doors read against the walls", s.key);
         }
     }
 }
