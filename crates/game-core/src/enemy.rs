@@ -7,7 +7,7 @@
 use crate::combat::Move;
 
 /// The enemy types (decision Q26; bomb-heads are a modifier on any of them).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Fodder,
     Thug,

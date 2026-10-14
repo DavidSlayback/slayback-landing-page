@@ -60,7 +60,7 @@ pub fn frame(arena: &Arena, aspect: f32) -> Transform {
 }
 
 #[cfg(feature = "render")]
-pub use view::plugin;
+pub use view::{fit, plugin};
 
 #[cfg(feature = "render")]
 mod view {
@@ -86,7 +86,7 @@ mod view {
     }
 
     /// Keeps the framing right for the window's shape and the box's size.
-    fn fit(arena: Res<Arena>, mut cameras: Query<(&mut Transform, &Projection), With<Camera3d>>) {
+    pub fn fit(arena: Res<Arena>, mut cameras: Query<(&mut Transform, &Projection), With<Camera3d>>) {
         for (mut tf, projection) in &mut cameras {
             let aspect = match projection {
                 Projection::Perspective(p) => p.aspect_ratio,

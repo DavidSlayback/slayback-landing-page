@@ -9,7 +9,7 @@ use std::f32::consts::PI;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use game_core::combat::Move;
+use game_core::impact::{self, SQUASH_TIME, burst_size, pop};
 
 use crate::comfort::Comfort;
 use crate::fighter::Hit;
@@ -18,34 +18,13 @@ use crate::score::Scored;
 
 /// A burst's lifetime, seconds (real time).
 const BURST_LIFE: f32 = 0.16;
-/// How long a struck fighter stays squashed.
-pub const SQUASH_TIME: f32 = 0.14;
 /// A score number's lifetime and how far it rises, in pixels.
 const POPUP_LIFE: f32 = 0.9;
 const POPUP_RISE: f32 = 48.0;
 
-/// A burst's radius for one blow, world units (a fodder is 52 tall).
-pub fn burst_size(mv: Move, finisher: bool) -> f32 {
-    let base = match mv {
-        Move::Punch | Move::Slash => 18.0,
-        Move::Kick => 26.0,
-        Move::DropKick => 30.0,
-        Move::Smash => 32.0,
-    };
-    if finisher { base * 1.8 } else { base }
-}
-
-/// A burst's scale over its life (`t` from 0 to 1): it snaps open in the first 30%, then shrinks away.
-pub fn pop(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    if t < 0.3 { t / 0.3 } else { 1.0 - ((t - 0.3) / 0.7).powi(2) }
-}
-
-/// The squash on a struck fighter's figure at `left` seconds remaining: flattened and widened at the moment of the
-/// blow, back to normal as it runs out.
+/// The squash on a struck fighter's figure at `left` seconds remaining (`game_core::impact::squash`).
 pub fn squash(left: f32) -> Vec3 {
-    let k = (left / SQUASH_TIME).clamp(0.0, 1.0);
-    Vec3::new(1.0 + 0.18 * k, 1.0 - 0.18 * k, 1.0 + 0.18 * k)
+    Vec3::from_array(impact::squash(left))
 }
 
 /// A struck fighter's squash, seconds remaining (applied to its figure by `look`).
@@ -213,27 +192,6 @@ fn rise_popups(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn heavier_blows_and_kills_burst_bigger() {
-        assert!(burst_size(Move::Kick, false) > burst_size(Move::Punch, false));
-        assert!(burst_size(Move::Punch, true) > burst_size(Move::Smash, false), "a kill outshines any plain hit");
-    }
-
-    #[test]
-    fn a_burst_snaps_open_then_shrinks_away() {
-        assert_eq!(pop(0.0), 0.0);
-        assert_eq!(pop(0.3), 1.0, "fully open at 30% of its life");
-        assert!(pop(0.6) < 1.0 && pop(0.6) > pop(0.9));
-        assert_eq!(pop(1.0), 0.0);
-    }
-
-    #[test]
-    fn the_squash_flattens_at_the_blow_and_recovers() {
-        let hit = squash(SQUASH_TIME);
-        assert!(hit.y < 1.0 && hit.x > 1.0, "flattened and widened");
-        assert_eq!(squash(0.0), Vec3::ONE);
-    }
 
     #[test]
     fn the_star_is_a_closed_fan() {

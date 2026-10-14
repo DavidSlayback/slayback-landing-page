@@ -54,6 +54,165 @@ pub fn over_cap(count: usize) -> usize {
     count.saturating_sub(MAX_PARTS)
 }
 
+/// The 3D game's debris (spec #58): figures are built from cubes and a ball, Rumble Box style, and burst into exactly
+/// those pieces. Tumbling pieces freeze to static once they have rested for [`SETTLE`]; frozen heaps then cost almost
+/// nothing to simulate and can't wake as a whole (research section 7). Budget from spike S2: at most [`MAX_MOVING`]
+/// moving and [`MAX_FROZEN`] frozen pieces. Metres, y up, figures built looking along +x.
+pub mod solid {
+    /// Seconds a piece must stay at rest before it freezes.
+    pub const SETTLE: f32 = 1.5;
+    /// A piece still moving this long after it broke off freezes anyway (a pile's jitter must not keep it awake).
+    pub const MAX_LOOSE: f32 = 6.0;
+    /// Moving pieces allowed at once; past this the oldest moving ones freeze early.
+    pub const MAX_MOVING: usize = 300;
+    /// Frozen pieces kept; past this the oldest frozen ones go.
+    pub const MAX_FROZEN: usize = 1_500;
+    /// Below these speeds (m/s and rad/s) a piece counts as at rest.
+    pub const REST_SPEED: f32 = 0.15;
+    pub const REST_SPIN: f32 = 1.0;
+
+    /// A piece's solid: a box (full size) or a ball.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub enum Solid {
+        Cube([f32; 3]),
+        Ball(f32),
+    }
+
+    /// One piece of a figure: its solid and where its centre sits relative to the body's centre.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct Piece {
+        pub solid: Solid,
+        pub at: [f32; 3],
+    }
+
+    /// The fodder's height, metres (feet at minus half of it).
+    pub const FODDER_HEIGHT: f32 = 1.6;
+
+    const fn cube(size: [f32; 3], at: [f32; 3]) -> Piece {
+        Piece { solid: Solid::Cube(size), at }
+    }
+
+    /// The fodder figure, 11 pieces: a ball head, torso and hips, and two cubes to each arm and leg.
+    pub const FODDER: [Piece; 11] = [
+        Piece { solid: Solid::Ball(0.19), at: [0.0, 0.61, 0.0] },
+        cube([0.32, 0.4, 0.5], [0.0, 0.22, 0.0]),
+        cube([0.28, 0.14, 0.42], [0.0, -0.05, 0.0]),
+        // Arms: upper then lower, left (-z, the figure's left looking along +x) then right.
+        cube([0.16, 0.3, 0.16], [0.0, 0.27, -0.34]),
+        cube([0.15, 0.28, 0.15], [0.0, -0.02, -0.34]),
+        cube([0.16, 0.3, 0.16], [0.0, 0.27, 0.34]),
+        cube([0.15, 0.28, 0.15], [0.0, -0.02, 0.34]),
+        // Legs: thigh then shin.
+        cube([0.22, 0.34, 0.22], [0.0, -0.29, -0.11]),
+        cube([0.2, 0.34, 0.2], [0.0, -0.63, -0.11]),
+        cube([0.22, 0.34, 0.22], [0.0, -0.29, 0.11]),
+        cube([0.2, 0.34, 0.2], [0.0, -0.63, 0.11]),
+    ];
+
+    /// Whether a piece moving at `speed` and spinning at `spin` is at rest.
+    pub fn at_rest(speed: f32, spin: f32) -> bool {
+        speed < REST_SPEED && spin < REST_SPIN
+    }
+
+    /// A loose piece's clock: how long since it broke off and how long it has been at rest.
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct Settle {
+        pub age: f32,
+        pub rest: f32,
+    }
+
+    impl Settle {
+        /// Advances one frame; returns whether the piece should freeze now. Any motion restarts the rest clock.
+        pub fn step(&mut self, dt: f32, at_rest: bool) -> bool {
+            self.age += dt;
+            self.rest = if at_rest { self.rest + dt } else { 0.0 };
+            self.rest >= SETTLE || self.age >= MAX_LOOSE
+        }
+    }
+
+    /// How many of the oldest moving pieces to freeze early so at most [`MAX_MOVING`] move.
+    pub fn moving_over_cap(moving: usize) -> usize {
+        moving.saturating_sub(MAX_MOVING)
+    }
+
+    /// How many of the oldest frozen pieces to remove so at most [`MAX_FROZEN`] stay.
+    pub fn frozen_over_cap(frozen: usize) -> usize {
+        frozen.saturating_sub(MAX_FROZEN)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const DT: f32 = 1.0 / 60.0;
+
+        fn half_extent(p: &Piece) -> [f32; 3] {
+            match p.solid {
+                Solid::Cube(s) => [s[0] / 2.0, s[1] / 2.0, s[2] / 2.0],
+                Solid::Ball(r) => [r; 3],
+            }
+        }
+
+        #[test]
+        fn the_fodder_is_eleven_pieces_standing_inside_its_height() {
+            assert_eq!(FODDER.len(), 11);
+            assert_eq!(FODDER.iter().filter(|p| matches!(p.solid, Solid::Ball(_))).count(), 1, "one ball, the head");
+            let half = FODDER_HEIGHT / 2.0;
+            let (mut low, mut high) = (f32::MAX, f32::MIN);
+            for p in &FODDER {
+                let e = half_extent(p);
+                assert!(e.iter().all(|&x| x > 0.05), "{p:?} is a real block");
+                low = low.min(p.at[1] - e[1]);
+                high = high.max(p.at[1] + e[1]);
+            }
+            assert!((low + half).abs() < 0.01 && (high - half).abs() < 0.01, "feet to crown: {low}..{high}");
+        }
+
+        #[test]
+        fn the_fodders_pieces_dont_overlap_so_they_burst_apart_cleanly() {
+            for (i, a) in FODDER.iter().enumerate() {
+                for b in &FODDER[i + 1..] {
+                    let (ea, eb) = (half_extent(a), half_extent(b));
+                    let overlap = (0..3).all(|k| (a.at[k] - b.at[k]).abs() < ea[k] + eb[k] - 1e-3);
+                    assert!(!overlap, "{a:?} overlaps {b:?}");
+                }
+            }
+        }
+
+        #[test]
+        fn a_piece_freezes_after_resting_for_the_settle_time_and_motion_restarts_the_clock() {
+            let mut s = Settle::default();
+            let frames = (SETTLE / DT).round() as usize;
+            for _ in 0..frames - 2 {
+                assert!(!s.step(DT, true));
+            }
+            assert!(!s.step(DT, false), "a nudge just before it froze");
+            for _ in 0..frames - 1 {
+                assert!(!s.step(DT, true), "rests again from zero");
+            }
+            assert!(s.step(DT, true) || s.step(DT, true), "frozen once rested {SETTLE} s");
+            assert!(at_rest(0.05, 0.1) && !at_rest(0.5, 0.1) && !at_rest(0.05, 2.0));
+        }
+
+        #[test]
+        fn a_piece_that_never_settles_freezes_anyway() {
+            let mut s = Settle::default();
+            let frozen_at = (0..1000).position(|_| s.step(DT, false)).expect("froze") as f32 * DT;
+            assert!((frozen_at - MAX_LOOSE).abs() < 2.0 * DT, "{frozen_at}");
+        }
+
+        #[test]
+        fn the_caps_hold_three_hundred_moving_and_fifteen_hundred_frozen_pieces() {
+            assert_eq!(MAX_MOVING, 300);
+            assert_eq!(MAX_FROZEN, 1_500);
+            assert_eq!(moving_over_cap(250), 0);
+            assert_eq!(moving_over_cap(MAX_MOVING + 11), 11);
+            assert_eq!(frozen_over_cap(MAX_FROZEN), 0);
+            assert_eq!(frozen_over_cap(MAX_FROZEN + 1), 1);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -44,7 +44,7 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::srgb(0.035, 0.04, 0.055)))
         .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 900.0, ..default() })
         .insert_resource(Palette::page())
-        .add_plugins(crate::camera::plugin)
+        .add_plugins((crate::camera::plugin, crate::figure::plugin, crate::impact::plugin, crate::hud::plugin))
         .add_systems(Startup, (load_kit, spawn_light))
         .add_systems(Update, (dress_slabs, dress_player, (turn_figures, walk)).chain());
 }
@@ -155,7 +155,7 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
 
 /// The figure, turned by the fighter's facing; it is built looking along +x.
 #[derive(Component)]
-struct Rig;
+pub(crate) struct Rig;
 
 /// A limb that swings while walking: its rest position and swing sign.
 #[derive(Component)]
