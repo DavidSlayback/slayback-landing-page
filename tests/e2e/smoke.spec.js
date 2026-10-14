@@ -82,13 +82,14 @@ test.describe('/play', () => {
     await expect.poll(after(0, 'phase start'), { timeout: 150_000 }).toBe(true);
     const canvas = page.locator('#game');
     await page.waitForTimeout(1000);
-    // The overlay dims the box behind it (the controls' text is small): far fewer bright pixels until it starts.
-    const dimmed = await litFraction(page, await canvas.screenshot(), 0.35);
+    // The overlay dims the box behind it (the controls' text is small): far fewer bright pixels until it starts. The
+    // bar is 0.5: G4's pale muted arena still clears 0.35 under the overlay (55% both ways; at 0.5, 2% against 56%).
+    const dimmed = await litFraction(page, await canvas.screenshot(), 0.5);
     let from = logs.length;
     await canvas.click();
     await expect.poll(after(from, 'phase playing')).toBe(true);
     await page.waitForTimeout(1000);
-    const lit = await litFraction(page, await canvas.screenshot(), 0.35);
+    const lit = await litFraction(page, await canvas.screenshot(), 0.5);
     expect(lit, `the overlay is gone (lit ${lit} vs ${dimmed} under it)`).toBeGreaterThan(dimmed * 3);
     expect(logs.slice(from).some(l => l.includes('phase paused')), 'the focused page keeps playing').toBe(false);
     from = logs.length;
