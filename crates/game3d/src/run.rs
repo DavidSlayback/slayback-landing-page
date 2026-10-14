@@ -1,6 +1,6 @@
 //! The run loop: box after box until the player dies (rules: `game_core::run`, as in the 2.5D game). This module keeps
-//! the clock, checks the escape test, and empties the box between boxes and on death; `arena` rebuilds the box at the
-//! next rim and `score` keeps or resets the score.
+//! the clock, checks the escape test, empties the box between boxes, and on death shows the game-over screen; leaving
+//! it starts a fresh run at box 1. `arena` rebuilds the box at each rim and `score` keeps the score and the best.
 //!
 //! Escape (Q51): the pile under the player has reached the rim. The pile's height under the player's footprint comes
 //! from the debris pieces as data (`game_core::climb::pile_height`), so only debris counts: not the floor, the walls
@@ -18,6 +18,7 @@ use crate::arena::Arena;
 use crate::debris::Piece;
 use crate::enemy::{Brain, WallDoor, Waves};
 use crate::fighter::{Combat, Defeated, Hp, Team};
+use crate::flow::Phase;
 use crate::player::{HEIGHT, MAX_HP, Player, SPAWN};
 
 /// The run in progress.
@@ -28,7 +29,7 @@ pub struct RunState(pub Run);
 #[derive(Message, Clone, Copy, Debug)]
 pub struct BoxStarted(pub BoxSpec);
 
-/// How a box ended, for the score (and later the screens).
+/// How a box ended, for the score and the screens.
 #[derive(Message, Clone, Copy, Debug, PartialEq)]
 pub enum BoxEnded {
     /// Escaped box `number` with `time_left` on the clock.
@@ -53,7 +54,9 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, |run: Res<RunState>, mut started: MessageWriter<BoxStarted>| {
             started.write(BoxStarted(run.0.spec));
         })
-        .add_systems(Update, ((clock, escape, die).chain().after(Combat), announce));
+        .add_systems(Update, ((clock, escape, die).chain().after(Combat).run_if(in_state(Phase::Playing)), announce))
+        // Leaving the game-over screen starts a fresh run.
+        .add_systems(OnExit(Phase::Over), restart);
 }
 
 /// The box clock: running out costs health (decision Q27) and restarts it, which can end the run.
@@ -132,18 +135,21 @@ fn escape(
     reset.apply(run.0.spec);
 }
 
-/// The player's health ran out (a blow or the clock): the run ends. Until the screens (G8), a fresh one starts at
-/// box 1 with full health.
+/// The player's health ran out (a blow or the clock): the run ends on the game-over screen.
 fn die(
     mut defeats: MessageReader<Defeated>,
-    mut run: ResMut<RunState>,
-    mut reset: BoxReset,
+    run: Res<RunState>,
     mut ended: MessageWriter<BoxEnded>,
+    mut next: ResMut<NextState<Phase>>,
 ) {
-    if defeats.read().filter(|d| d.team == Team::Player).count() == 0 {
-        return;
+    if defeats.read().any(|d| d.team == Team::Player) {
+        ended.write(BoxEnded::Died { reached: run.0.spec.number });
+        next.set(Phase::Over);
     }
-    ended.write(BoxEnded::Died { reached: run.0.spec.number });
+}
+
+/// Again: box 1, full health, an empty box.
+fn restart(mut run: ResMut<RunState>, mut reset: BoxReset) {
     run.0.restart();
     if let Ok((.., mut hp)) = reset.player.single_mut() {
         hp.0 = Health::new(MAX_HP);

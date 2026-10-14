@@ -18,6 +18,8 @@ render = [
     "bevy/bevy_gilrs",
     # The HUD and floating score numbers (G2), as in the 2.5D game: about +0.4 MB gzipped (decision Q34).
     "bevy/bevy_ui", "bevy/bevy_ui_render", "bevy/bevy_text", "bevy/default_font",
+    # Sound effects (G8): the 2.5D game's short generated WAVs, embedded; muted until the player turns them on.
+    "bevy/bevy_audio", "bevy/wav",
 ]
 
 [[bin]]
@@ -33,6 +35,8 @@ game-core = { path = "../game-core" }
 bevy = { version = "=0.19.1", default-features = false, features = ["std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse", "gamepad"] }
 avian3d = { version = "=0.7.0", default-features = false, features = ["3d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
 
-# The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it).
+# The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it), the best
+# score and sound setting (localStorage; the best dated with the browser's clock), and pausing when the page loses focus.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Location", "Storage"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Location", "Storage"] }
+js-sys = "0.3"

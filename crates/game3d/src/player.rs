@@ -66,7 +66,10 @@ pub const MAX_HP: f32 = 100.0;
 pub const SPAWN: Vec3 = Vec3::new(0.0, HEIGHT / 2.0 + 0.3, 1.5);
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, control.before(Combat)).add_systems(FixedUpdate, walk);
+    app.add_systems(Startup, spawn)
+        // Only while playing: the click or Space that leaves a screen must not also punch or dash.
+        .add_systems(Update, control.before(Combat).run_if(in_state(crate::flow::Phase::Playing)))
+        .add_systems(FixedUpdate, walk);
 }
 
 fn spawn(mut commands: Commands) {

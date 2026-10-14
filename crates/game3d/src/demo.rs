@@ -1,7 +1,8 @@
-//! Demo mode (`/play/?demo=1`, or `DEMO=1` natively), driving the real game with synthetic key presses. So far it has
-//! one knob, the one the browser harness uses: `stairs=1` (`STAIRS=1`), the stairs run. Each box gets a staircase of
-//! debris up past its rim and the player walks right, up it and out, box after box. The scripted fight and the other
-//! knobs (slow motion, debris, enemy type, bombs) are G9's.
+//! Demo mode (`/play/?demo=1`, or `DEMO=1` natively), driving the real game with synthetic key presses. It goes
+//! straight into play (no start overlay) and doesn't pause when the page loses focus, as in the 2.5D game. So far it
+//! has one knob, the one the browser harness uses: `stairs=1` (`STAIRS=1`), the stairs run. Each box gets a
+//! staircase of debris up past its rim and the player walks right, up it and out, box after box. The scripted fight
+//! and the other knobs (slow motion, debris, enemy type, bombs) are G9's.
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
@@ -11,6 +12,7 @@ use game_core::run::rim_metres;
 
 use crate::debris::piece;
 use crate::enemy::Waves;
+use crate::flow::{PauseOnBlur, Phase};
 use crate::input::ReadActions;
 use crate::player::SPAWN;
 use crate::run::BoxStarted;
@@ -35,7 +37,13 @@ pub fn requested() -> bool {
 
 /// The demo, if the page or environment asked for it; otherwise nothing.
 pub fn plugin(app: &mut App) {
-    if requested() && setting("stairs").as_deref() == Some("1") {
+    if !requested() {
+        return;
+    }
+    // After the screens' Startup, which puts a fresh page on the start overlay.
+    app.insert_resource(PauseOnBlur(false))
+        .add_systems(PostStartup, |mut next: ResMut<NextState<Phase>>| next.set(Phase::Playing));
+    if setting("stairs").as_deref() == Some("1") {
         app.add_plugins(stairs);
     }
 }

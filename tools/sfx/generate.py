@@ -1,7 +1,7 @@
 """Generates the game's sound effects: short retro sounds synthesised from scratch, so we own them outright.
 
 Run from the repo root: `python tools/sfx/generate.py`. It writes 8-bit mono 22.05 kHz WAVs to
-`crates/game/assets/sfx/` (the game embeds them). Each effect is fully described by its entry in EFFECTS below and a
+`crates/game/assets/sfx/`, which both games embed. Each effect is fully described by its entry in EFFECTS below and a
 fixed noise seed, so regenerating gives byte-identical files. Standard library only.
 """
 
@@ -23,6 +23,8 @@ EFFECTS = {
     "shatter": (0.32, 900.0, 120.0, 0.2, 0.004, 2.0, "triangle", 0.6),
     # A bomb going off: a deep noise boom with a long tail.
     "boom": (0.7, 160.0, 30.0, 0.15, 0.005, 1.6, "sine", 0.9),
+    # A door starting to warn (3D game): a short rising two-step beep. Appended last so the others keep their seeds.
+    "door": (0.2, 330.0, 660.0, 0.85, 0.01, 1.2, "square", 0.4),
 }
 
 

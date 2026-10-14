@@ -1,4 +1,4 @@
-//! The 3D game's window and renderer around the gameplay and look in the `game3d` library.
+//! The 3D game's window and renderer around the gameplay, look, screens and sound in the `game3d` library.
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -17,6 +17,12 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins((game3d::plugin, game3d::look::plugin, game3d::demo::plugin))
+        .add_plugins((
+            game3d::plugin,
+            game3d::look::plugin,
+            game3d::screens::plugin,
+            game3d::sound::playback,
+            game3d::demo::plugin,
+        ))
         .run();
 }
