@@ -173,7 +173,7 @@ fn ease_squash(
     mut commands: Commands,
     real: Res<Time<Real>>,
     mut fighters: Query<(Entity, &mut Squash, &Children), With<Team>>,
-    mut rigs: Query<&mut Transform, Or<(With<crate::figure::Rig>, With<crate::look::Rig>)>>,
+    mut rigs: Query<&mut Transform, With<crate::figure::Rig>>,
 ) {
     for (e, mut s, children) in &mut fighters {
         s.0 = (s.0 - real.delta_secs()).max(0.0);
