@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 14:30 CDT
-In flight: nothing running. Branch arch-4-paints (c7a59d3, pushed, unmerged) holds, in order: the feel pass (Q65-Q69, steps 1-4 + smoothness), then three refactors from the architecture ranking: #1 one figure path for every fighter (fixes: the player never flashed when hit), #2 game-core in metres (deleted the 2.5D side-view leftovers and `movement`, -360 net lines, values pinned to old/32), #4 one place for the scheme's colours (paint.rs; fixes: the bomb fuse kept box 1's colour). Previewed at https://rc-3.slayback.pages.dev. Ranking #3 (demo drives the game by faked key presses) and #5 (worktree build friction, saved as a Claude memory) not done.
-Next: David plays rc-3 (feel sign-off, Q69). On sign-off: PR arch-4-paints into main (one PR, or split: feel pass, then refactors), merge, deploy rc-2. Then the playtest (#29). Optional: ranking #3 (demo sends intents, not keys); flatten bomb::space and grab::flat now they have no side-view siblings.
+As of: Wed Oct 14 2026 15:40 CDT
+In flight: nothing running. Branch feel-5-attacks (8f802c4, pushed, unmerged) = arch-4-paints plus Q70-Q72 (player attack range +35% with fodder on Move::Jab, lunge/twist/arc; roomier figures; first-hit 3.6 s freeze fixed by camera::Warm). arch-4-paints holds, in order: the feel pass (Q65-Q69, steps 1-4 + smoothness), then three refactors from the architecture ranking: #1 one figure path for every fighter (fixes: the player never flashed when hit), #2 game-core in metres (deleted the 2.5D side-view leftovers and `movement`, -360 net lines, values pinned to old/32), #4 one place for the scheme's colours (paint.rs; fixes: the bomb fuse kept box 1's colour). Previewed at https://rc-3.slayback.pages.dev. Ranking #3 (demo drives the game by faked key presses) and #5 (worktree build friction, saved as a Claude memory) not done.
+Next: David plays rc-3 (feel sign-off, Q69). On sign-off: PR feel-5-attacks into main (one PR, or split: feel pass, then refactors), merge, deploy rc-2. Then the playtest (#29). Optional: ranking #3 (demo sends intents, not keys); flatten bomb::space and grab::flat now they have no side-view siblings.
 Waiting on: David: play rc-3; playtesters (#29), gamepad on hardware (#26), C2 content (#13). Open roster question: heavies in box 1 (Rumble Box) vs thugs from box 2 (Q26).
 Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. Fresh worktrees: CARGO_TARGET_DIR=<main checkout>/target (cold target/ fails the pre-push hook: dlltool).
-Verified: rc-3 from c7a59d3: harness 13 passed, 2 skipped; 6,199 KB gzipped; game3d 62 scenarios + 17 render unit tests; game-core 109 tests incl. metre pins; full hook gate green. GPU captures checked: player hit flash, scheme rotation box 1/3/5.
+Verified: rc-3 from 8f802c4: harness 13 passed, 2 skipped; first punch now a 42 ms frame (was 3,642 ms). Earlier, rc-3 from c7a59d3: harness 13 passed, 2 skipped; 6,199 KB gzipped; game3d 62 scenarios + 17 render unit tests; game-core 109 tests incl. metre pins; full hook gate green. GPU captures checked: player hit flash, scheme rotation box 1/3/5.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
