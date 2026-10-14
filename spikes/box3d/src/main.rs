@@ -9,14 +9,24 @@
 //! - `burst=1`    knock a region of the pile loose every 2.5 s (with `bench=1`: only in the burst window)
 //! - `bench=1`    settle, measure 10 s settled, then (with `burst=1`) 10 s of bursts, then re-settle; logs `BENCH {json}`
 //! - `outline=W`  inverted-hull outline thickness per side (default 0.05, 0 = off); `bloom=1` HDR + bloom like the 2.5D game; `msaa=1|4`; `substeps=N`
+//! - `edge=W`     S1: post-process edge outlines sampling W px out (lines ~2W px; forces MSAA off); `et=T` edge
+//!                threshold; `es=T` draws only edges above T (silhouettes) at W px and creases at 1 px;
+//!                `edbg=1` shows the edge mask (2: depth); `fxaa=1` adds FXAA after the outline pass
+//! - `freeze=S`   S2: debris at rest for S seconds becomes `RigidBody::Static`; the heap (`cubes=N`) is then dropped in
+//!                batches of at most 300 dynamic pieces. `movers=M` adds M never-frozen pieces once the heap is frozen;
+//!                with `burst=1` every burst throws all of them in a cluster over a random spot of the heap
 //!
 //! Timing (as in the B2 spike): `interval` is First-to-First wall time, `main` is First to Last of the main
 //! schedule, `cpu` is First to the end of the render world, `phys` is the physics schedule's time in that frame.
 
+mod outline;
+
 use std::sync::{Arc, Mutex};
 
 use avian3d::prelude::*;
+use bevy::anti_alias::fxaa::Fxaa;
 use bevy::camera::Hdr;
+use bevy::render::render_resource::TextureUsages;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::platform::time::Instant;
 use bevy::post_process::bloom::Bloom;
@@ -50,6 +60,13 @@ struct Params {
     bloom: bool,
     msaa: u32,
     substeps: Option<u32>,
+    edge: f32,
+    edge_t: f32,
+    edge_s: f32,
+    edge_dbg: f32,
+    fxaa: bool,
+    freeze: f32,
+    movers: usize,
     raw: String,
 }
 
@@ -75,6 +92,13 @@ impl Params {
             bloom: flag("bloom", false),
             msaa: num("msaa").unwrap_or(4) as u32,
             substeps: num("substeps").map(|n| n as u32),
+            edge: get("edge").and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            edge_t: get("et").and_then(|v| v.parse().ok()).unwrap_or(0.0008),
+            edge_s: get("es").and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            edge_dbg: get("edbg").and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            fxaa: flag("fxaa", false),
+            freeze: get("freeze").and_then(|v| v.parse().ok()).unwrap_or(0.0),
+            movers: num("movers").unwrap_or(0),
             raw: q.to_string(),
         }
     }
@@ -166,6 +190,28 @@ struct Debris;
 
 #[derive(Component)]
 struct Hud;
+
+/// S2: debris turned static after resting `freeze` seconds.
+#[derive(Component)]
+struct Frozen;
+
+/// S2: seconds this debris piece has been at rest.
+#[derive(Component, Default)]
+struct Rest(f32);
+
+/// S2: a piece that never freezes (the moving budget, thrown by bursts).
+#[derive(Component)]
+struct Mover;
+
+/// S2: how much of the heap has been dropped, and whether the movers are in.
+#[derive(Resource, Default)]
+struct Fill {
+    next: usize,
+    movers: bool,
+}
+
+/// S2: at most this many heap pieces fall at once while the heap is built.
+const FILL_DYNAMIC: usize = 300;
 
 /// Figure layout relative to the capsule's centre (0.85 above the feet); `role` 0 body, 1 limb, 2 head.
 const PARTS: [(f32, bool, [f32; 3], i8, u8); 11] = [
@@ -263,7 +309,9 @@ fn main() {
     .add_systems(First, frame_start)
     .add_systems(FixedPostUpdate, phys_begin.in_set(PhysicsSystems::First))
     .add_systems(FixedPostUpdate, phys_end.in_set(PhysicsSystems::Last))
-    .add_systems(Update, (spawn_enemies, steer, punch, animate, cull, bench_control, hud).chain())
+    .init_resource::<Fill>()
+    .add_plugins(outline::EdgeOutlinePlugin)
+    .add_systems(Update, (spawn_enemies, steer, punch, animate, cull, fill, freeze, bench_control, hud).chain())
     .add_systems(Last, main_end);
     if let Some(n) = params.substeps {
         app.insert_resource(SubstepCount(n));
@@ -360,6 +408,24 @@ fn setup(
     if params.bloom {
         cam.insert((Hdr, Bloom::NATURAL));
     }
+    if params.edge > 0.0 {
+        // The outline pass reads the main depth texture: it must be bindable and single-sampled (WebGL2).
+        let usage = TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING;
+        cam.insert((
+            Msaa::Off,
+            Camera3d { depth_texture_usages: usage.into(), ..default() },
+            outline::EdgeOutline {
+                color: Vec4::new(0.03, 0.03, 0.05, 1.0),
+                width: params.edge,
+                threshold: params.edge_t,
+                debug: params.edge_dbg,
+                silhouette: params.edge_s,
+            },
+        ));
+    }
+    if params.fxaa {
+        cam.insert(Fxaa::default());
+    }
 
     commands.spawn((
         Hud,
@@ -440,7 +506,7 @@ fn spawn_debris(
     rot: Quat,
     lin: Vec3,
     ang: Vec3,
-) {
+) -> Entity {
     let collider = if ball { Collider::sphere(0.5) } else { Collider::cuboid(1.0, 1.0, 1.0) };
     // The body's scale scales the unit collider and the shared unit mesh together.
     let mut e = commands.spawn((
@@ -452,25 +518,90 @@ fn spawn_debris(
         Transform { translation: at, rotation: rot, scale: Vec3::splat(size) },
         LinearVelocity(lin),
         AngularVelocity(ang),
+        Rest::default(),
     ));
     spawn_visual(&mut e, kit, size, ball, mat);
+    e.id()
 }
 
 /// `?cubes=N`: a grid of cubes dropped from just above the floor, layer on layer, so they settle into a pile.
+/// With `freeze`, the heap is dropped in batches by `fill` instead.
 fn prefill(mut commands: Commands, kit: Res<Kit>, params: Res<Params>, mut rng: ResMut<Rng>) {
+    if params.freeze > 0.0 {
+        return;
+    }
+    for i in 0..params.cubes {
+        heap_cube(&mut commands, &kit, &mut rng, i, 0.6);
+    }
+}
+
+/// Heap cube `i`: cell `i` of a 25 x 25 grid (in a scattered order), one layer per 625 cubes, from height `y0` up.
+fn heap_cube(commands: &mut Commands, kit: &Kit, rng: &mut Rng, i: usize, y0: f32) -> Entity {
     let step = 0.75;
     let per_row = ((2.0 * HALF - 1.0) / step) as usize;
-    for i in 0..params.cubes {
-        let layer = i / (per_row * per_row);
-        // Cells in a scattered order (7919 is coprime to the cell count), so any N covers the whole floor.
-        let cell = (i * 7919) % (per_row * per_row);
-        let x = -HALF + 0.5 + step * (cell % per_row) as f32 + step / 2.0 + rng.range(-0.08, 0.08);
-        let z = -HALF + 0.5 + step * (cell / per_row) as f32 + step / 2.0 + rng.range(-0.08, 0.08);
-        let y = 0.6 + layer as f32 * 0.8;
-        let size = rng.range(0.3, 0.6);
-        let rot = Quat::from_euler(EulerRot::XYZ, rng.range(0.0, 3.0), rng.range(0.0, 3.0), rng.range(0.0, 3.0));
-        let mat = kit.colours[(rng.unit() * kit.colours.len() as f32) as usize % kit.colours.len()].clone();
-        spawn_debris(&mut commands, &kit, mat, size, false, Vec3::new(x, y, z), rot, Vec3::ZERO, Vec3::ZERO);
+    let layer = i / (per_row * per_row);
+    // Cells in a scattered order (7919 is coprime to the cell count), so any N covers the whole floor.
+    let cell = (i * 7919) % (per_row * per_row);
+    let x = -HALF + 0.5 + step * (cell % per_row) as f32 + step / 2.0 + rng.range(-0.08, 0.08);
+    let z = -HALF + 0.5 + step * (cell / per_row) as f32 + step / 2.0 + rng.range(-0.08, 0.08);
+    let y = y0 + layer as f32 * 0.8;
+    let size = rng.range(0.3, 0.6);
+    let rot = Quat::from_euler(EulerRot::XYZ, rng.range(0.0, 3.0), rng.range(0.0, 3.0), rng.range(0.0, 3.0));
+    let mat = kit.colours[(rng.unit() * kit.colours.len() as f32) as usize % kit.colours.len()].clone();
+    spawn_debris(commands, kit, mat, size, false, Vec3::new(x, y, z), rot, Vec3::ZERO, Vec3::ZERO)
+}
+
+/// S2: drop the heap with at most `FILL_DYNAMIC` pieces falling at once, then (once all of it is frozen) the movers.
+fn fill(
+    mut commands: Commands,
+    kit: Res<Kit>,
+    params: Res<Params>,
+    mut rng: ResMut<Rng>,
+    mut fill: ResMut<Fill>,
+    falling: Query<(), (With<Debris>, Without<Frozen>, Without<Mover>)>,
+) {
+    if params.freeze <= 0.0 || fill.movers {
+        return;
+    }
+    let falling = falling.iter().len();
+    if fill.next < params.cubes {
+        let n = FILL_DYNAMIC.saturating_sub(falling).min(params.cubes - fill.next).min(100);
+        for _ in 0..n {
+            heap_cube(&mut commands, &kit, &mut rng, fill.next, 0.6);
+            fill.next += 1;
+        }
+    } else if falling == 0 {
+        for i in 0..params.movers {
+            let e = heap_cube(&mut commands, &kit, &mut rng, i, 4.5);
+            commands.entity(e).insert(Mover);
+        }
+        fill.movers = true;
+    }
+}
+
+/// S2: debris that has rested for `freeze` seconds becomes static. Movers never freeze.
+fn freeze(
+    mut commands: Commands,
+    params: Res<Params>,
+    time: Res<Time>,
+    mut debris: Query<
+        (Entity, &LinearVelocity, &AngularVelocity, &mut Rest),
+        (With<Debris>, Without<Frozen>, Without<Mover>),
+    >,
+) {
+    if params.freeze <= 0.0 {
+        return;
+    }
+    let dt = time.delta_secs();
+    for (e, v, w, mut rest) in &mut debris {
+        if v.length() < 0.2 && w.length() < 0.5 {
+            rest.0 += dt;
+        } else {
+            rest.0 = 0.0;
+        }
+        if rest.0 >= params.freeze {
+            commands.entity(e).insert((RigidBody::Static, Frozen));
+        }
     }
 }
 
@@ -652,14 +783,33 @@ fn cull(
     }
 }
 
-fn burst(
-    rng: &mut Rng,
-    debris: &mut Query<(&Transform, &mut LinearVelocity, &mut AngularVelocity), With<Debris>>,
-) -> usize {
+type Loose<'w, 's> = Query<
+    'w,
+    's,
+    (&'static mut Position, &'static mut LinearVelocity, &'static mut AngularVelocity, Has<Mover>),
+    (With<Debris>, Without<Frozen>),
+>;
+
+/// Knock loose debris within 4 units of a random spot. With movers (S2), throw all of them instead: they are
+/// stacked in a 7 x 7 cluster from 4 units up over the spot and flung outward with spin, like a crowd bursting.
+fn burst(rng: &mut Rng, debris: &mut Loose) -> usize {
     let at = Vec3::new(rng.range(-6.0, 6.0), 0.0, rng.range(-6.0, 6.0));
     let mut n = 0;
-    for (t, mut v, mut w) in debris.iter_mut() {
-        let d = (t.translation - at).with_y(0.0);
+    if debris.iter().any(|(.., mover)| mover) {
+        for (mut p, mut v, mut w, mover) in debris.iter_mut() {
+            if !mover {
+                continue;
+            }
+            let off = Vec3::new((n % 7) as f32 - 3.0, 0.0, ((n / 7) % 7) as f32 - 3.0) * 0.75;
+            p.0 = at + off + Vec3::Y * (4.0 + (n / 49) as f32 * 0.75);
+            v.0 = off.normalize_or_zero() * 2.5 + Vec3::Y * rng.range(1.0, 4.0);
+            w.0 = rng.spin(10.0);
+            n += 1;
+        }
+        return n;
+    }
+    for (p, mut v, mut w, _) in debris.iter_mut() {
+        let d = (p.0 - at).with_y(0.0);
         if d.length() < 4.0 {
             v.0 = d.normalize_or_zero() * 3.0 + Vec3::Y * rng.range(4.0, 7.0);
             w.0 = rng.spin(10.0);
@@ -677,8 +827,9 @@ fn bench_control(
     substeps: Res<SubstepCount>,
     mut bench: ResMut<Bench>,
     mut rng: ResMut<Rng>,
-    mut debris: Query<(&Transform, &mut LinearVelocity, &mut AngularVelocity), With<Debris>>,
-    sleepers: Query<Has<Sleeping>, With<Debris>>,
+    fill: Res<Fill>,
+    mut debris: Loose,
+    sleepers: Query<(Has<Sleeping>, Has<Frozen>), With<Debris>>,
     mut next_burst: Local<f32>,
 ) {
     if !params.bench {
@@ -689,11 +840,19 @@ fn bench_control(
         return;
     }
     let total = sleepers.iter().len();
-    let awake = sleepers.iter().filter(|s| !s).count();
+    let awake = sleepers.iter().filter(|(s, f)| !s && !f).count();
+    let frozen = sleepers.iter().filter(|(_, f)| *f).count();
     let frac = if total == 0 { 0.0 } else { awake as f32 / total as f32 };
     let now = Instant::now();
+    // S2: the settle clock starts once the heap is frozen and the movers are in.
+    if params.freeze > 0.0 && !fill.movers {
+        bench.since = now;
+    }
     let t = (now - bench.since).as_secs_f32();
-    let head = format!("\"q\":\"{}\",\"cubes\":{},\"substeps\":{}", params.raw, params.cubes, substeps.0);
+    let head = format!(
+        "\"q\":\"{}\",\"cubes\":{},\"substeps\":{},\"frozen\":{frozen},\"total\":{total}",
+        params.raw, params.cubes, substeps.0
+    );
     if matches!(bench.phase, Phase::Settled | Phase::Burst) {
         bench.awake_sum += awake as u64;
         bench.awake_frames += 1;
@@ -706,7 +865,7 @@ fn bench_control(
         Phase::Settling | Phase::Resettling if t > 0.5 && (frac <= SETTLED_AWAKE || t > 30.0) => {
             let event = if bench.phase == Phase::Settling { "settled" } else { "resettled" };
             emit(&format!(
-                "BENCH {{{head},\"event\":\"{event}\",\"after_s\":{t:.2},\"awake\":{awake},\"total\":{total}}}"
+                "BENCH {{{head},\"event\":\"{event}\",\"after_s\":{t:.2},\"awake\":{awake}}}"
             ));
             let next = if bench.phase == Phase::Settling { Phase::Warmup } else { Phase::Watching };
             bench.awake_max = 0;
@@ -742,7 +901,7 @@ fn bench_control(
             bench.awake_max = bench.awake_max.max(awake);
             if t >= 5.0 {
                 emit(&format!(
-                    "BENCH {{{head},\"event\":\"watch\",\"secs\":5,\"awake_max\":{},\"awake_end\":{awake},\"total\":{total}}}",
+                    "BENCH {{{head},\"event\":\"watch\",\"secs\":5,\"awake_max\":{},\"awake_end\":{awake}}}",
                     bench.awake_max
                 ));
                 go(&mut bench, Phase::Done);
@@ -798,17 +957,18 @@ impl Clock {
 fn hud(
     time: Res<Time>,
     mut fps: Local<f32>,
-    sleepers: Query<Has<Sleeping>, With<Debris>>,
+    sleepers: Query<(Has<Sleeping>, Has<Frozen>), With<Debris>>,
     enemies: Query<(), With<Enemy>>,
     mut text: Query<&mut Text, With<Hud>>,
 ) {
     let dt = time.delta_secs().max(1e-4);
     *fps = if *fps == 0.0 { 1.0 / dt } else { *fps * 0.95 + 0.05 / dt };
     let total = sleepers.iter().len();
-    let awake = sleepers.iter().filter(|s| !s).count();
+    let awake = sleepers.iter().filter(|(s, f)| !s && !f).count();
+    let frozen = sleepers.iter().filter(|(_, f)| *f).count();
     if let Ok(mut t) = text.single_mut() {
         t.0 = format!(
-            "{:.0} fps   cubes {total} ({awake} awake)   enemies {}   WASD/arrows move, Space punch",
+            "{:.0} fps   cubes {total} ({awake} awake, {frozen} frozen)   enemies {}   WASD/arrows move, Space punch",
             *fps,
             enemies.iter().len()
         );

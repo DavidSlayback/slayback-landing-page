@@ -11,6 +11,7 @@ const [base, outDir, ...shots] = process.argv.slice(2);
     const [, name, query, secs] = s.match(/^([^=]+)=(.*)@([\d.]+)$/);
     const page = await ctx.newPage();
     page.on('pageerror', e => console.log(name, 'pageerror', String(e).slice(0, 200)));
+    page.on('console', m => m.type() === 'error' && console.log(name, 'console', m.text().slice(0, 300)));
     await page.goto(`${base}/index.html?${query}`);
     await page.waitForTimeout(Number(secs) * 1000);
     const file = path.join(outDir, `${name}.png`);
