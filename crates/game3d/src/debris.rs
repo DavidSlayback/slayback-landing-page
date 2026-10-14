@@ -5,7 +5,7 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::debris::solid::{FODDER, Settle, Solid, at_rest, frozen_over_cap, moving_over_cap};
+use game_core::debris::solid::{Settle, Solid, at_rest, figure, frozen_over_cap, moving_over_cap};
 use game_core::grab::Held;
 
 use crate::bomb::{BombHead, lit_bomb};
@@ -20,7 +20,7 @@ pub struct Piece {
     /// `Time` seconds when it broke off: the oldest go first.
     pub born: f32,
     pub solid: Solid,
-    /// Which part of the figure it was (an index into its kind's figure).
+    /// Which part of the figure it was (an index into its kind's figure, `game_core::debris::solid::figure`).
     pub part: usize,
     pub settle: Settle,
 }
@@ -57,20 +57,20 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
     )
 }
 
-/// Defeated enemies burst into their pieces: each keeps some of the blow's momentum and flies out from the body's
+/// Defeated enemies burst into their own kind's pieces: each keeps some of the blow's momentum and flies out from the body's
 /// centre with an uneven spin, so the figure explodes into tumbling blocks rather than falling apart.
 fn burst(
     mut commands: Commands,
     time: Res<Time>,
     mut defeated: MessageReader<Defeated>,
-    enemies: Query<(&Transform, &Facing, &LinearVelocity, Has<BombHead>), With<Brain>>,
+    enemies: Query<(&Brain, &Transform, &Facing, &LinearVelocity, Has<BombHead>)>,
 ) {
     for d in defeated.read().filter(|d| d.team == Team::Enemy) {
-        let Ok((transform, facing, velocity, bomb_head)) = enemies.get(d.entity) else { continue };
+        let Ok((brain, transform, facing, velocity, bomb_head)) = enemies.get(d.entity) else { continue };
         let centre = transform.translation;
         let turn = facing.rotation();
         commands.entity(d.entity).despawn();
-        for (i, p) in FODDER.iter().enumerate() {
+        for (i, p) in figure(brain.0.style().kind).iter().enumerate() {
             let offset = turn * Vec3::from_array(p.at);
             let out = offset.with_y(offset.y * 0.5).normalize_or_zero();
             let fling = velocity.0 * CARRY + out * BURST_OUT + Vec3::Y * BURST_UP;

@@ -112,7 +112,8 @@ fn rotate(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::debris::solid::FODDER;
+    use crate::debris::solid::{FODDER, figure};
+    use crate::enemy::Kind;
 
     const LEVEL: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
@@ -191,8 +192,10 @@ mod tests {
             Solid::Cube(s) => s.iter().fold(f32::MAX, |m, x| m.min(*x)),
             Solid::Ball(r) => 2.0 * r,
         };
-        for p in &FODDER {
-            assert!(smallest(p) <= MAX_STEP, "{p:?} lying flat is a step");
+        for kind in [Kind::Fodder, Kind::Thug, Kind::Ninja] {
+            for p in figure(kind) {
+                assert!(smallest(p) <= MAX_STEP, "{kind:?}: {p:?} lying flat is a step");
+            }
         }
         assert!(2.0 * smallest(&FODDER[1]) > MAX_STEP, "a torso on a torso is a wall");
     }
