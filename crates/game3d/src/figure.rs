@@ -12,29 +12,39 @@ use bevy::prelude::*;
 use game_core::combat::Phase;
 use game_core::debris::solid::{FODDER, Solid};
 use game_core::enemy::Kind;
+use game_core::palette::{self, DEBRIS_SHADES, Fighter};
 
 use crate::bomb::{self, BombHead};
 use crate::debris::Piece;
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
-use crate::look::Palette;
+use crate::look::{Palette, srgb, vivid};
 use crate::player::Facing;
 
-/// A figure's colours: live body, the wind-up glow before it strikes, and its debris.
+/// A figure's colours: live body, the wind-up glow before it strikes, and its debris's shades.
 pub struct Colours {
     pub body: Color,
     pub windup: Color,
-    pub debris: Color,
+    pub debris: [Color; DEBRIS_SHADES.len()],
 }
 
-/// Every figure colour, from the scheme: live fighters in its vivid accents, debris in a muted version of the same.
+/// Every figure colour, by `game_core::palette`'s rules (Q50): live fighters in the scheme's vivid accents, debris
+/// in its muted tone like the arena, so the dead read apart from the living.
 pub fn colours(kind: Kind, palette: &Palette) -> Colours {
-    let body = match kind {
-        Kind::Fodder => palette.accents[1],
-        Kind::Thug => palette.accents[2],
-        Kind::Ninja => palette.accents[3],
-    };
-    Colours { body, windup: body.mix(&Color::WHITE, 0.6), debris: body.mix(&Color::srgb(0.33, 0.35, 0.4), 0.6) }
+    let body = palette::fighter_colour(palette.scheme, Fighter::Enemy(kind)).body;
+    Colours {
+        body: vivid(body),
+        windup: srgb(body).mix(&Color::WHITE, 0.6),
+        debris: std::array::from_fn(|i| srgb(palette::debris_tone(palette.scheme, i))),
+    }
+}
+
+/// One kind's materials.
+#[derive(Clone)]
+struct Mats {
+    skin: Handle<StandardMaterial>,
+    windup: Handle<StandardMaterial>,
+    debris: [Handle<StandardMaterial>; DEBRIS_SHADES.len()],
 }
 
 /// The figure under a fighter, turned by its facing and squashed by hits.
@@ -56,7 +66,7 @@ struct Stride(f32);
 #[derive(Resource, Default)]
 struct Kit {
     meshes: HashMap<[u32; 3], Handle<Mesh>>,
-    mats: HashMap<Kind, [Handle<StandardMaterial>; 3]>,
+    mats: HashMap<Kind, Mats>,
     flash: Handle<StandardMaterial>,
     blob: Handle<Mesh>,
     blob_mat: Handle<StandardMaterial>,
@@ -79,29 +89,30 @@ impl Kit {
     }
 
     /// Body, wind-up and debris materials for `kind`.
-    fn mats(
-        &mut self,
-        kind: Kind,
-        palette: &Palette,
-        mats: &mut Assets<StandardMaterial>,
-    ) -> [Handle<StandardMaterial>; 3] {
+    fn mats(&mut self, kind: Kind, palette: &Palette, mats: &mut Assets<StandardMaterial>) -> Mats {
         self.mats
             .entry(kind)
             .or_insert_with(|| {
                 let c = colours(kind, palette);
-                let matte = |c: Color| StandardMaterial { base_color: c, perceptual_roughness: 0.85, ..default() };
-                [
-                    mats.add(matte(c.body)),
-                    mats.add(StandardMaterial { base_color: c.windup, unlit: true, ..default() }),
-                    mats.add(matte(c.debris)),
-                ]
+                let mut matte =
+                    |c: Color| mats.add(StandardMaterial { base_color: c, perceptual_roughness: 0.85, ..default() });
+                let skin = matte(c.body);
+                let debris = c.debris.map(&mut matte);
+                Mats {
+                    skin,
+                    debris,
+                    windup: mats.add(StandardMaterial { base_color: c.windup, unlit: true, ..default() }),
+                }
             })
             .clone()
     }
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Kit>().add_systems(Startup, load).add_systems(Update, (dress_enemies, dress_debris, animate));
+    app.init_resource::<Kit>().add_systems(Startup, load).add_systems(
+        Update,
+        (repaint.run_if(resource_changed::<Palette>), dress_enemies, dress_debris, animate).chain(),
+    );
 }
 
 fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
@@ -116,6 +127,19 @@ fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut
     });
 }
 
+/// Repaints every kind's materials when a box changes the scheme (live figures and their debris alike).
+fn repaint(kit: Res<Kit>, palette: Res<Palette>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    for (&kind, m) in &kit.mats {
+        let c = colours(kind, &palette);
+        let paints = [(&m.skin, c.body), (&m.windup, c.windup)].into_iter();
+        for (mat, colour) in paints.chain(m.debris.iter().zip(c.debris)) {
+            if let Some(mut mat) = mats.get_mut(mat) {
+                mat.base_color = colour;
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn dress_enemies(
     mut commands: Commands,
@@ -127,7 +151,7 @@ fn dress_enemies(
     enemies: Query<(Entity, &Brain, &Body, Has<BombHead>), Added<Brain>>,
 ) {
     for (e, brain, body, bomb_head) in &enemies {
-        let [skin, ..] = kit.mats(brain.0.style().kind, &palette, &mut mats);
+        let skin = kit.mats(brain.0.style().kind, &palette, &mut mats).skin;
         commands.entity(e).insert((Visibility::default(), Stride::default()));
         commands.spawn((
             Mesh3d(kit.blob.clone()),
@@ -165,7 +189,8 @@ fn dress_debris(
     pieces: Query<(Entity, &Piece), Added<Piece>>,
 ) {
     for (e, piece) in &pieces {
-        let [.., debris] = kit.mats(Kind::Fodder, &palette, &mut mats);
+        // Neighbouring parts take different shades, so a heap's pieces read apart under the outlines.
+        let debris = kit.mats(Kind::Fodder, &palette, &mut mats).debris[piece.part % DEBRIS_SHADES.len()].clone();
         commands.entity(e).insert((Mesh3d(kit.mesh(piece.solid, &mut meshes)), MeshMaterial3d(debris)));
     }
 }
@@ -211,7 +236,7 @@ fn animate(
         let swing = stride.0.sin() * 0.14 * (speed / game_core::plane::RUN_SPEED * 2.0).min(1.0);
         let telegraph = brain.0.telegraph();
         let pose = strike(telegraph, attack.swing.and_then(|s| s.phase()));
-        let Some([skin, windup, _]) = kit.mats.get(&brain.0.style().kind) else { continue };
+        let Some(Mats { skin, windup, .. }) = kit.mats.get(&brain.0.style().kind) else { continue };
         let mat = if flash.0 > 0.0 {
             &kit.flash
         } else if telegraph > 0.3 {

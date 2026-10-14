@@ -23,6 +23,8 @@ pub mod impact;
 pub mod input;
 #[cfg(feature = "render")]
 pub mod look;
+#[cfg(feature = "render")]
+pub mod outline;
 pub mod player;
 pub mod run;
 pub mod score;

@@ -13,6 +13,7 @@ pub mod doors;
 pub mod enemy;
 pub mod grab;
 pub mod impact;
+pub mod palette;
 pub mod plane;
 pub mod quality;
 pub mod run;
