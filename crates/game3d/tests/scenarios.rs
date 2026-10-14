@@ -14,11 +14,14 @@ use game_core::grab::{Held, impact};
 use game_core::plane::RUN_SPEED;
 use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
+use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
 use game3d::debris::{Piece, piece};
+use game3d::demo::Demo;
 use game3d::enemy::{Brain, Waves, fodder};
-use game3d::fighter::{Defeated, Hp, Team};
+use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::grab::{Carried, Thrown};
+use game3d::input::Actions;
 use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
@@ -35,11 +38,17 @@ fn headless() -> App {
 
 /// A headless app keeping its records in `store`.
 fn headless_with(store: Store) -> App {
+    headless_and(store, |_| {})
+}
+
+/// A headless app with `extra` set up before it starts (comfort settings, the demo).
+fn headless_and(store: Store, extra: impl FnOnce(&mut App)) -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, TransformPlugin, game3d::plugin))
         .insert_resource(Waves { enabled: false, ..default() })
-        .insert_resource(store)
-        .init_resource::<ButtonInput<KeyCode>>()
+        .insert_resource(store);
+    extra(&mut app);
+    app.init_resource::<ButtonInput<KeyCode>>()
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     app.finish();
     app.cleanup();
@@ -1253,4 +1262,283 @@ fn a_blast_on_the_last_of_the_players_health_ends_the_run_on_the_game_over_scree
     assert!(play_until_over(&mut app, 0.5), "the blast ended the run");
     assert!(gone(&app, lit));
     assert_eq!(last_run(&app).reached, 1);
+}
+
+// Gamepad, comfort and demo mode (G9).
+
+/// What happened in the box: blows that landed on enemies, enemy kills, and whether anything was thrown.
+#[derive(Resource, Default)]
+struct Seen {
+    blows: Vec<Move>,
+    kills: usize,
+    thrown: bool,
+}
+
+fn watch(
+    mut seen: ResMut<Seen>,
+    mut hits: MessageReader<Hit>,
+    mut defeats: MessageReader<Defeated>,
+    thrown: Query<(), With<Thrown>>,
+    enemies: Query<(), With<Brain>>,
+) {
+    seen.blows.extend(hits.read().filter(|h| enemies.contains(h.victim)).map(|h| h.mv));
+    seen.kills += defeats.read().filter(|d| d.team == Team::Enemy).count();
+    seen.thrown |= !thrown.is_empty();
+}
+
+/// A headless app that records what happens (`Seen`), with `extra` set up first, after a second to land.
+fn watched(extra: impl FnOnce(&mut App)) -> App {
+    let mut app = headless_and(fresh_store(), |app| {
+        app.init_resource::<Seen>().add_systems(Update, watch.after(game3d::fighter::Combat));
+        extra(app);
+    });
+    step(&mut app, 1.0);
+    app
+}
+
+fn actions(app: &App) -> Actions {
+    *app.world().resource::<Actions>()
+}
+
+/// Presses `button` on gamepad `pad` for one frame and lets it go (nothing else clears a pad's presses headless).
+fn pad_tap(app: &mut App, pad: Entity, button: GamepadButton) -> Actions {
+    app.world_mut().get_mut::<Gamepad>(pad).unwrap().digital_mut().press(button);
+    step(app, 1.0 / FPS);
+    let mut g = app.world_mut().get_mut::<Gamepad>(pad).unwrap();
+    g.digital_mut().release(button);
+    g.digital_mut().clear();
+    actions(app)
+}
+
+/// Verbs as (dash, punch, kick, grab, pause, begin, sound).
+fn verbs(a: Actions) -> [bool; 7] {
+    let v = a.verbs;
+    [v.dash, v.punch, v.kick, v.grab, v.pause, v.begin, v.sound]
+}
+
+const NONE: [bool; 7] = [false; 7];
+
+/// `NONE` with the verbs at `on` set.
+fn only(on: &[usize]) -> [bool; 7] {
+    let mut v = NONE;
+    for &i in on {
+        v[i] = true;
+    }
+    v
+}
+
+const DASH: usize = 0;
+const PUNCH: usize = 1;
+const KICK: usize = 2;
+const GRAB: usize = 3;
+const PAUSE: usize = 4;
+const BEGIN: usize = 5;
+const SOUND: usize = 6;
+
+/// One frame's move direction with these keys, d-pad buttons and stick held on `pad`; then all let go.
+fn direction(app: &mut App, pad: Entity, held: &[KeyCode], dpad: &[GamepadButton], stick: [f32; 2]) -> [f32; 2] {
+    press(app, held);
+    let mut g = app.world_mut().get_mut::<Gamepad>(pad).unwrap();
+    for &b in dpad {
+        g.digital_mut().press(b);
+    }
+    g.analog_mut().set(GamepadAxis::LeftStickX, stick[0]);
+    g.analog_mut().set(GamepadAxis::LeftStickY, stick[1]);
+    step(app, 1.0 / FPS);
+    keys(app).release_all();
+    let mut g = app.world_mut().get_mut::<Gamepad>(pad).unwrap();
+    g.digital_mut().release_all();
+    g.digital_mut().clear();
+    g.analog_mut().set(GamepadAxis::LeftStickX, 0.0);
+    g.analog_mut().set(GamepadAxis::LeftStickY, 0.0);
+    actions(app).dir
+}
+
+#[test]
+fn every_verb_maps_from_the_keyboard_the_mouse_and_a_gamepad() {
+    let mut app = standing();
+    app.init_resource::<ButtonInput<MouseButton>>();
+    let pad = app.world_mut().spawn(Gamepad::default()).id();
+    let keyboard = [
+        (KeyCode::Space, only(&[DASH, BEGIN])),
+        (KeyCode::ShiftLeft, only(&[DASH])),
+        (KeyCode::ShiftRight, only(&[DASH])),
+        (KeyCode::KeyJ, only(&[PUNCH])),
+        (KeyCode::KeyK, only(&[KICK])),
+        (KeyCode::KeyL, only(&[GRAB])),
+        (KeyCode::Escape, only(&[PAUSE])),
+        (KeyCode::Enter, only(&[BEGIN])),
+        (KeyCode::KeyM, only(&[SOUND])),
+    ];
+    for (key, want) in keyboard {
+        tap(&mut app, key);
+        assert_eq!(verbs(actions(&app)), want, "{key:?}");
+    }
+    let mouse = [
+        (MouseButton::Left, only(&[PUNCH, BEGIN])),
+        (MouseButton::Right, only(&[KICK])),
+        (MouseButton::Middle, only(&[GRAB])),
+    ];
+    for (button, want) in mouse {
+        app.world_mut().resource_mut::<ButtonInput<MouseButton>>().press(button);
+        step(&mut app, 1.0 / FPS);
+        let mut m = app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+        m.release(button);
+        m.clear();
+        assert_eq!(verbs(actions(&app)), want, "{button:?}");
+    }
+    let gamepad = [
+        (GamepadButton::South, only(&[DASH, BEGIN])),
+        (GamepadButton::RightTrigger, only(&[DASH])),
+        (GamepadButton::RightTrigger2, only(&[DASH])),
+        (GamepadButton::West, only(&[PUNCH])),
+        (GamepadButton::North, only(&[KICK])),
+        (GamepadButton::East, only(&[GRAB])),
+        (GamepadButton::Start, only(&[PAUSE, BEGIN])),
+        (GamepadButton::Select, only(&[SOUND])),
+    ];
+    for (button, want) in gamepad {
+        assert_eq!(verbs(pad_tap(&mut app, pad, button)), want, "{button:?}");
+    }
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(verbs(actions(&app)), NONE, "nothing stays pressed");
+    // Moving: the keys, the d-pad and the stick give the same eight directions.
+    let d = std::f32::consts::FRAC_1_SQRT_2;
+    let close = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 1e-5 && (a[1] - b[1]).abs() < 1e-5;
+    assert!(close(direction(&mut app, pad, &[KeyCode::KeyW, KeyCode::KeyD], &[], [0.0; 2]), [d, d]), "W+D");
+    assert_eq!(direction(&mut app, pad, &[KeyCode::ArrowDown], &[], [0.0; 2]), [0.0, -1.0], "the arrow keys");
+    let dpad = direction(&mut app, pad, &[], &[GamepadButton::DPadUp, GamepadButton::DPadLeft], [0.0; 2]);
+    assert!(close(dpad, [-d, d]), "the d-pad: up-left, {dpad:?}");
+    assert_eq!(direction(&mut app, pad, &[], &[], [0.1, -0.9]), [0.0, -1.0], "the stick: down");
+}
+
+#[test]
+fn a_gamepad_plays_every_verb_dash_punch_kick_grab_throw_and_pause() {
+    let mut app = watched(|_| {});
+    let pad = app.world_mut().spawn(Gamepad::default()).id();
+    // Each blow knocks its fodder back, so each verb gets a fresh one in front.
+    let fresh = |app: &mut App, gap: f32| {
+        let e = fodder_at(app, [gap, 0.0]);
+        stun(app, e);
+        step(app, 0.1);
+        e
+    };
+    let first = fresh(&mut app, 1.1);
+    pad_tap(&mut app, pad, GamepadButton::West);
+    step(&mut app, 0.3);
+    assert!(hp(&app, first) < FULL, "X punched the fodder in front");
+    let second = fresh(&mut app, 1.2);
+    pad_tap(&mut app, pad, GamepadButton::North);
+    step(&mut app, 0.4);
+    assert!(hp(&app, second) < FULL, "Y kicked the next");
+    assert_eq!(app.world().resource::<Seen>().blows[..2], [Move::Punch, Move::Kick]);
+    // Grab one, then throw it with an attack.
+    fresh(&mut app, 0.9);
+    pad_tap(&mut app, pad, GamepadButton::East);
+    step(&mut app, 0.1);
+    assert!(holding(&mut app).is_some(), "B grabbed the fodder");
+    pad_tap(&mut app, pad, GamepadButton::West);
+    step(&mut app, 0.5);
+    assert!(holding(&mut app).is_none() && app.world().resource::<Seen>().thrown, "an attack threw it");
+    step(&mut app, 1.0);
+    // A dashes.
+    pad_tap(&mut app, pad, GamepadButton::South);
+    assert!(player(&mut app).1.xz().length() > RUN_SPEED + 1.0, "A dashed: {}", player(&mut app).1);
+    step(&mut app, 0.5);
+    // Start pauses and resumes.
+    pad_tap(&mut app, pad, GamepadButton::Start);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Paused);
+    pad_tap(&mut app, pad, GamepadButton::Start);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Playing);
+}
+
+/// Punches a fodder in front; the screen shake's trauma afterwards, and whether the fodder squashed.
+fn punch_one(reduced_motion: bool) -> (f32, bool) {
+    let mut app = watched(|app| {
+        app.insert_resource(Comfort { reduced_motion });
+    });
+    let foe = fodder_at(&mut app, [1.1, 0.0]);
+    stun(&mut app, foe);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyJ);
+    step(&mut app, 0.3);
+    assert!(hp(&app, foe) < FULL, "the punch landed");
+    (app.world().resource::<Shake>().trauma, app.world().get::<Squash>(foe).is_some())
+}
+
+#[test]
+fn reduced_motion_turns_the_screen_shake_and_the_squash_off() {
+    let (trauma, squashed) = punch_one(false);
+    assert!(trauma > 0.0 && squashed, "a blow shakes the screen ({trauma}) and squashes its victim");
+    assert_eq!(punch_one(true), (0.0, false), "with reduced motion it does neither");
+}
+
+#[test]
+fn quality_scaling_sheds_outlines_then_bursts_when_frames_run_long() {
+    let mut app = standing();
+    step(&mut app, 5.0);
+    assert!(app.world().resource::<Quality>().shed().is_empty(), "60 fps keeps everything");
+    // Frames of 1/30 s: the scaler sees each frame's real duration.
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
+    let mut steps = vec![];
+    for _ in 0..(8.0 * 30.0) as usize {
+        app.update();
+        let shed = app.world().resource::<Quality>().shed();
+        if steps.last() != Some(&shed) {
+            steps.push(shed);
+        }
+    }
+    let all = [Shed::Outlines, Shed::Bursts];
+    assert_eq!(steps, [&all[..0], &all[..1], &all[..]], "one effect at a time, costliest first");
+}
+
+#[test]
+fn the_demo_fight_punches_kicks_drop_kicks_and_spin_throws_with_a_kill_each_beat() {
+    let mut app = watched(|app| {
+        app.add_plugins(Demo::default());
+    });
+    // Two rounds of the four beats, and a little more for turning round.
+    step(&mut app, 13.0);
+    let seen = app.world().resource::<Seen>();
+    for mv in [Move::Punch, Move::Kick, Move::DropKick] {
+        assert!(seen.blows.contains(&mv), "a {mv:?} landed: {:?}", seen.blows);
+    }
+    assert!(seen.thrown, "a fodder was spin-thrown");
+    assert!(seen.kills >= 9, "every beat killed (the throw two): {} kills, {:?}", seen.kills, seen.blows);
+    let (at, ..) = player(&mut app);
+    let half = Arena::default().floor / 2.0;
+    assert!(at.x.abs() < half.x - 1.0, "the player keeps off the walls: {at}");
+}
+
+#[test]
+fn the_demo_knobs_load_debris_and_set_the_clock_and_health() {
+    let mut app = headless_and(fresh_store(), |app| {
+        app.add_plugins(Demo { debris: 600, timer: Some(6.0), hp: Some(20.0), ..default() });
+    });
+    step(&mut app, 1.0 / FPS);
+    let mut q = app.world_mut().query_filtered::<Entity, With<Piece>>();
+    let loaded: Vec<Entity> = q.iter(app.world()).collect();
+    assert_eq!(loaded.len(), 600, "the debris is in the box");
+    assert_eq!(player_hp(&mut app).0, 20.0, "health set");
+    let clock = app.world().resource::<RunState>().0.time_left;
+    assert!((clock - 6.0).abs() < 0.1, "the box clock set: {clock}");
+    // The fight goes on over it; the loaded pieces settle and freeze where they lie, but for a few it knocks about.
+    step(&mut app, 4.0);
+    for &e in &loaded {
+        let y = at_of(&app, e).y;
+        assert!(y > 0.0 && y < 1.5, "on the floor: y {y}");
+    }
+    let frozen = loaded.iter().filter(|e| body_of(&app, **e) == RigidBody::Static).count();
+    assert!(frozen >= 590, "frozen: {frozen} of 600");
+}
+
+#[test]
+fn the_demo_slows_the_game_clock() {
+    let app = watched(|app| {
+        app.add_plugins(Demo { slow: 0.25, stairs: true, ..default() });
+    });
+    let virt = app.world().resource::<Time<Virtual>>().elapsed_secs();
+    assert!((virt - 0.25).abs() < 0.02, "one real second is a quarter of a game second: {virt}");
 }

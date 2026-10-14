@@ -119,12 +119,43 @@ test.describe('/play', () => {
       const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
       if (process.env.REQUIRE_GAME) expect(built).toBe(true);
       test.skip(!built, 'game not in this build');
-      test.skip(GAME3D, 'the 3D game has no comfort settings yet (G9)');
       const logs = [];
       page.on('console', m => logs.push(m.text()));
       await page.goto('/play/');
       await page.waitForFunction(() => document.getElementById('game').width !== 300, null, { timeout: 150_000 });
-      await expect.poll(() => logs.some(l => l.includes('comfort: reduced motion on'))).toBe(true);
+      // The 3D game also drops the screen shake and the squash, and says so.
+      const line = GAME3D ? 'comfort: reduced motion on (no shake or squash' : 'comfort: reduced motion on';
+      await expect.poll(() => logs.some(l => l.includes(line))).toBe(true);
     });
+  });
+
+  test('?motion=reduce turns reduced motion on without the media query', async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    const logs = [];
+    page.on('console', m => logs.push(m.text()));
+    await page.goto('/play/?motion=reduce');
+    await page.waitForFunction(() => document.getElementById('game').width !== 300, null, { timeout: 150_000 });
+    await expect.poll(() => logs.some(l => l.includes('comfort: reduced motion on'))).toBe(true);
+  });
+
+  test('the demo fight plays its beats under reduced motion with no console errors', async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    test.skip(!GAME3D, 'the 2.5D demo does not log its beats');
+    const errors = collectErrors(page);
+    const logs = [];
+    page.on('console', m => logs.push(m.text()));
+    // The scripted fight by synthetic key presses: a punch, a kick, a drop-kick and a spin-throw, each a kill.
+    await page.goto('/play/?demo=1&motion=reduce');
+    for (const beat of ['demo: punch', 'demo: kick', 'demo: drop-kick', 'demo: spin-throw']) {
+      await expect.poll(() => logs.some(l => l.includes(beat)), { timeout: 150_000 }).toBe(true);
+    }
+    expect(logs.some(l => l.includes('comfort: reduced motion on')), 'reduced motion from the query').toBe(true);
+    expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 });

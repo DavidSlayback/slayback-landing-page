@@ -15,6 +15,7 @@ use game_core::enemy::Kind;
 use game_core::palette::{self, DEBRIS_SHADES, Fighter};
 
 use crate::bomb::{self, BombHead};
+use crate::comfort::Comfort;
 use crate::debris::Piece;
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
@@ -115,8 +116,18 @@ pub fn plugin(app: &mut App) {
     );
 }
 
-fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    kit.flash = mats.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() });
+fn load(
+    mut kit: ResMut<Kit>,
+    comfort: Res<Comfort>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
+    // A hit flashes the body full white; under reduced motion, a softer lit pale grey instead (as the 2.5D game tints).
+    kit.flash = mats.add(if comfort.reduced_motion {
+        StandardMaterial { base_color: Color::srgb(0.78, 0.8, 0.85), perceptual_roughness: 0.85, ..default() }
+    } else {
+        StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }
+    });
     // A soft dark disc under the feet stands in for a shadow (no shadow map).
     kit.blob = meshes.add(Circle::new(0.42).mesh().resolution(24));
     kit.blob_mat = mats.add(StandardMaterial {
