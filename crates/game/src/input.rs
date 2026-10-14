@@ -1,19 +1,10 @@
 //! One set of actions from every input device (D11): keyboard, mouse and any standard gamepad map to the same verbs,
-//! with nothing to configure. Gameplay reads [`Actions`]; only this module reads devices.
-//!
-//! | Action | Keyboard | Mouse | Gamepad |
-//! |---|---|---|---|
-//! | Run | A / D, arrows | | left stick, d-pad |
-//! | Dash | Space, Shift | | A (south), right trigger |
-//! | Punch | J | left | X (west) |
-//! | Kick | K | right | Y (north) |
-//! | Grab / set down | L | middle | B (east) |
-//! | Pause | Esc | | Start |
-//! | Start / again | Enter, Space | left | Start, A |
-//! | Sound (paused) | M | | Select |
+//! with nothing to configure. Gameplay reads [`Actions`]; only this module reads devices. The mapping table and the
+//! gamepad rules are shared with the 3D game in `game_core::controls`; this side runs on A / D only.
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
+use game_core::controls::{Pad, Verbs};
 
 /// This frame's actions. Everything but `axis` is "just pressed".
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
@@ -29,6 +20,18 @@ pub struct Actions {
     pub sound: bool,
 }
 
+impl Actions {
+    fn new(axis: f32, v: Verbs) -> Self {
+        let Verbs { dash, punch, kick, grab, pause, begin, sound } = v;
+        Self { axis, dash, punch, kick, grab, pause, begin, sound }
+    }
+
+    fn verbs(&self) -> Verbs {
+        let Self { dash, punch, kick, grab, pause, begin, sound, .. } = *self;
+        Verbs { dash, punch, kick, grab, pause, begin, sound }
+    }
+}
+
 /// Where actions are gathered; anything that fakes input (the demo) runs before it.
 #[derive(SystemSet, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ReadActions;
@@ -39,77 +42,33 @@ pub const KICK_KEY: KeyCode = KeyCode::KeyK;
 pub const GRAB_KEY: KeyCode = KeyCode::KeyL;
 pub const BEGIN_KEYS: [KeyCode; 2] = [KeyCode::Enter, KeyCode::Space];
 
-/// Stick travel below this is ignored (worn sticks drift).
-const DEADZONE: f32 = 0.3;
-
 pub fn plugin(app: &mut App) {
     app.init_resource::<Actions>().add_systems(PreUpdate, read.in_set(ReadActions).after(InputSystems));
 }
 
-/// One gamepad's state, as the mapping needs it.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Pad {
-    pub stick_x: f32,
-    pub dpad_x: f32,
-    /// Buttons just pressed this frame.
-    pub south: bool,
-    pub east: bool,
-    pub north: bool,
-    pub west: bool,
-    pub right_trigger: bool,
-    pub start: bool,
-    pub select: bool,
-}
-
-impl Pad {
-    fn from(g: &Gamepad) -> Self {
-        Self {
-            stick_x: g.left_stick().x,
-            dpad_x: g.dpad().x,
-            south: g.just_pressed(GamepadButton::South),
-            east: g.just_pressed(GamepadButton::East),
-            north: g.just_pressed(GamepadButton::North),
-            west: g.just_pressed(GamepadButton::West),
-            right_trigger: g.just_pressed(GamepadButton::RightTrigger) || g.just_pressed(GamepadButton::RightTrigger2),
-            start: g.just_pressed(GamepadButton::Start),
-            select: g.just_pressed(GamepadButton::Select),
-        }
+/// One gamepad's state, as the shared mapping needs it.
+fn pad(g: &Gamepad) -> Pad {
+    Pad {
+        stick: g.left_stick().to_array(),
+        dpad: g.dpad().to_array(),
+        south: g.just_pressed(GamepadButton::South),
+        east: g.just_pressed(GamepadButton::East),
+        north: g.just_pressed(GamepadButton::North),
+        west: g.just_pressed(GamepadButton::West),
+        right_trigger: g.just_pressed(GamepadButton::RightTrigger) || g.just_pressed(GamepadButton::RightTrigger2),
+        start: g.just_pressed(GamepadButton::Start),
+        select: g.just_pressed(GamepadButton::Select),
     }
 }
 
-/// A gamepad's actions (the table above).
+/// A gamepad's actions (the table in `game_core::controls`).
 pub fn pad_actions(p: Pad) -> Actions {
-    let axis = if p.dpad_x != 0.0 {
-        p.dpad_x.signum()
-    } else if p.stick_x.abs() >= DEADZONE {
-        p.stick_x.signum()
-    } else {
-        0.0
-    };
-    Actions {
-        axis,
-        dash: p.south || p.right_trigger,
-        punch: p.west,
-        kick: p.north,
-        grab: p.east,
-        pause: p.start,
-        begin: p.start || p.south,
-        sound: p.select,
-    }
+    Actions::new(p.axis(), p.verbs())
 }
 
 /// Combines two devices: either one pressing counts; the axis comes from whichever is pushed.
 pub fn merge(a: Actions, b: Actions) -> Actions {
-    Actions {
-        axis: if a.axis != 0.0 { a.axis } else { b.axis },
-        dash: a.dash || b.dash,
-        punch: a.punch || b.punch,
-        kick: a.kick || b.kick,
-        grab: a.grab || b.grab,
-        pause: a.pause || b.pause,
-        begin: a.begin || b.begin,
-        sound: a.sound || b.sound,
-    }
+    Actions::new(if a.axis != 0.0 { a.axis } else { b.axis }, a.verbs().or(b.verbs()))
 }
 
 fn read(
@@ -130,8 +89,8 @@ fn read(
         begin: keys.any_just_pressed(BEGIN_KEYS) || click(MouseButton::Left),
         sound: keys.just_pressed(KeyCode::KeyM),
     };
-    for pad in &pads {
-        all = merge(all, pad_actions(Pad::from(pad)));
+    for g in &pads {
+        all = merge(all, pad_actions(pad(g)));
     }
     *actions = all;
 }
@@ -141,21 +100,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_stick_has_a_deadzone_and_the_dpad_wins() {
-        assert_eq!(pad_actions(Pad { stick_x: 0.2, ..default() }).axis, 0.0);
-        assert_eq!(pad_actions(Pad { stick_x: -0.7, ..default() }).axis, -1.0);
-        assert_eq!(pad_actions(Pad { stick_x: -0.7, dpad_x: 1.0, ..default() }).axis, 1.0);
-    }
-
-    #[test]
-    fn every_verb_has_a_button() {
-        let a = |p: Pad| pad_actions(p);
-        assert!(a(Pad { south: true, ..default() }).dash && a(Pad { right_trigger: true, ..default() }).dash);
-        assert!(a(Pad { west: true, ..default() }).punch);
-        assert!(a(Pad { north: true, ..default() }).kick);
-        assert!(a(Pad { east: true, ..default() }).grab);
-        assert!(a(Pad { start: true, ..default() }).pause && a(Pad { start: true, ..default() }).begin);
-        assert!(a(Pad { select: true, ..default() }).sound);
+    fn a_pad_runs_on_its_x_axis_with_every_verb() {
+        let a = pad_actions(Pad { stick: [-0.7, 0.9], west: true, ..default() });
+        assert_eq!(a.axis, -1.0, "the stick's x only; up and down mean nothing in 2.5D");
+        assert!(a.punch && !a.kick);
     }
 
     #[test]

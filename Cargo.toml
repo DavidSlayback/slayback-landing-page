@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/game"]
-# The game (Bevy) only targets wasm32 in CI and pulls native windowing deps elsewhere; plain `cargo test` skips it.
+members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/game", "crates/game3d"]
+# The games (Bevy) only target wasm32 in CI and pull native windowing deps elsewhere; plain `cargo test` skips them.
 default-members = ["crates/sim", "crates/hero-wasm", "crates/game-core"]
 
 [workspace.package]
