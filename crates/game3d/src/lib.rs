@@ -6,6 +6,7 @@
 //! from the real game systems (see `tests/scenarios.rs`). Units are metres; y is up, and the camera looks toward -z.
 
 pub mod arena;
+pub mod bomb;
 pub mod camera;
 pub mod debris;
 pub mod demo;
@@ -37,7 +38,8 @@ use bevy::prelude::*;
 pub const GRAVITY: f32 = 15.0;
 
 /// Everything that makes up the game except windowing and rendering: physics, the phases, the box, fighting, the
-/// player, grabbing and throwing, enemies, their debris, the run, the score and best, and the sound setting.
+/// player, grabbing and throwing, enemies and their bomb-heads, their debris, the run, the score and best, and the
+/// sound setting.
 pub fn plugin(app: &mut App) {
     app.add_plugins(PhysicsPlugins::default()).insert_resource(Gravity(Vec3::NEG_Y * GRAVITY)).add_plugins((
         input::plugin,
@@ -46,6 +48,7 @@ pub fn plugin(app: &mut App) {
         fighter::plugin,
         player::plugin,
         grab::plugin,
+        bomb::plugin,
         enemy::plugin,
         debris::plugin,
         run::plugin,

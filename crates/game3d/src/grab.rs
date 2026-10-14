@@ -3,7 +3,8 @@
 //! debris thaws. It rides overhead; an attack whirls it once and a half round the player (`player::control` aims it)
 //! and lets go straight ahead, flying flat. In flight it hurts every enemy it passes through, once each, and a thrown
 //! enemy is hurt by its first impact; then it lands as what it was (a stunned enemy, or loose debris back under the
-//! debris rules). Grab again while carrying to set the thing down in front.
+//! debris rules). A lit bomb (`bomb`) grabs and throws the same way, but stops at the first enemy it hits and lies
+//! there until its fuse runs out. Grab again while carrying to set the thing down in front.
 
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
@@ -11,18 +12,19 @@ use bevy::prelude::*;
 use game_core::aim::level;
 use game_core::combat::{FINISHER_HITSTOP, HitOutcome, Move};
 use game_core::debris::solid::{Settle, Solid};
-use game_core::grab::flat::{knock, passes, pick, swing, throw_velocity};
+use game_core::grab::flat::{knock, passes, pick, stops, swing, throw_velocity};
 use game_core::grab::{FLIGHT, HITSTOP, Held, SPIN, impact};
 
 use crate::arena::Arena;
+use crate::bomb;
 use crate::debris::Piece;
 use crate::fighter::{Attack, Body, Combat, Defeated, FLASH, Flash, Hit, HitStopClock, Hp, Layer, Team};
 use crate::input::Actions;
 use crate::player::{self, Facing, HEIGHT, Holding, Player, RADIUS};
 use crate::{on_floor, plane};
 
-/// Something the player can pick up, and what it is when held. Enemies and debris parts carry it from their bundles;
-/// lit bomb-heads (G7) get `Grabbable(Held::Bomb)` and then grab, carry and throw like the rest.
+/// Something the player can pick up, and what it is when held. Enemies, debris parts and lit bombs carry it from their
+/// bundles (a lit bomb is `Grabbable(Held::Bomb)`).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Grabbable(pub Held);
 
@@ -67,7 +69,8 @@ fn size(body: Option<&Body>, piece: Option<&Piece>) -> (f32, f32) {
         (Some(b), _) => (b.radius, b.height / 2.0),
         (None, Some(Solid::Cube([x, y, z]))) => (x.max(z) / 2.0, y / 2.0),
         (None, Some(Solid::Ball(r))) => (r, r),
-        (None, None) => (0.2, 0.2),
+        // A lit bomb.
+        (None, None) => (bomb::RADIUS, bomb::RADIUS),
     }
 }
 
@@ -266,6 +269,12 @@ fn fly(
                 && own.0.hurt(spec.self_damage) == HitOutcome::Defeated
             {
                 out.defeated.write(Defeated { entity: e, team: Team::Enemy, at: now });
+            }
+            // A lit bomb stops dead at the first enemy it hits and drops there, in the group, until it blows.
+            if stops(t.kind) {
+                t.ttl = 0.0;
+                commands.entity(e).insert(LinearVelocity::ZERO);
+                break;
             }
         }
         t.from = now;

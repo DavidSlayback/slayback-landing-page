@@ -1,8 +1,9 @@
 //! Demo mode (`/play/?demo=1`, or `DEMO=1` natively), driving the real game with synthetic key presses. It goes
 //! straight into play (no start overlay) and doesn't pause when the page loses focus, as in the 2.5D game. So far it
-//! has one knob, the one the browser harness uses: `stairs=1` (`STAIRS=1`), the stairs run. Each box gets a
-//! staircase of debris up past its rim and the player walks right, up it and out, box after box. The scripted fight
-//! and the other knobs (slow motion, debris, enemy type, bombs) are G9's.
+//! has two knobs. `stairs=1` (`STAIRS=1`), the one the browser harness uses, is the stairs run: each box gets a
+//! staircase of debris up past its rim and the player walks right, up it and out, box after box. `bombs=1`
+//! (`BOMBS=1`) makes every enemy that comes through a door a bomb-head. The scripted fight and the other knobs (slow
+//! motion, debris, enemy type) are G9's.
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
@@ -45,6 +46,9 @@ pub fn plugin(app: &mut App) {
         .add_systems(PostStartup, |mut next: ResMut<NextState<Phase>>| next.set(Phase::Playing));
     if setting("stairs").as_deref() == Some("1") {
         app.add_plugins(stairs);
+    }
+    if setting("bombs").as_deref() == Some("1") {
+        app.add_systems(Startup, |mut waves: ResMut<Waves>| waves.bombs = Some(1.0));
     }
 }
 

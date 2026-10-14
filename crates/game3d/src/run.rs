@@ -15,6 +15,7 @@ use game_core::doors::Door;
 use game_core::run::{BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
 
 use crate::arena::Arena;
+use crate::bomb::LitBomb;
 use crate::debris::Piece;
 use crate::enemy::{Brain, WallDoor, Waves};
 use crate::fighter::{Combat, Defeated, Hp, Team};
@@ -74,8 +75,8 @@ fn clock(
     }
 }
 
-/// What one box holds that the next doesn't: enemies and debris.
-type BoxContents = Or<(With<Brain>, With<Piece>)>;
+/// What one box holds that the next doesn't: enemies, debris and lit bombs.
+type BoxContents = Or<(With<Brain>, With<Piece>, With<LitBomb>)>;
 /// The player's parts a box's end touches.
 type PlayerParts = (&'static mut Transform, &'static mut Position, &'static mut LinearVelocity, &'static mut Hp);
 

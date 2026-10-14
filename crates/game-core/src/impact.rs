@@ -8,6 +8,8 @@ use crate::combat::Move;
 pub const SQUASH_TIME: f32 = 0.14;
 /// Trauma from a bomb blast.
 pub const BLAST_TRAUMA: f32 = 0.8;
+/// A blast's star burst radius, world units: twice a finishing drop-kick's.
+pub const BLAST_BURST: f32 = 108.0;
 /// Trauma drained per second.
 const DRAIN: f32 = 1.8;
 
