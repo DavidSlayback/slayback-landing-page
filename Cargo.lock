@@ -2728,6 +2728,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "game-core",
+ "js-sys",
  "web-sys",
 ]
 

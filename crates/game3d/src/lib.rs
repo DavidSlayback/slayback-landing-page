@@ -13,6 +13,7 @@ pub mod enemy;
 pub mod fighter;
 #[cfg(feature = "render")]
 pub mod figure;
+pub mod flow;
 pub mod grab;
 #[cfg(feature = "render")]
 pub mod hud;
@@ -24,6 +25,10 @@ pub mod look;
 pub mod player;
 pub mod run;
 pub mod score;
+#[cfg(feature = "render")]
+pub mod screens;
+pub mod sound;
+pub mod store;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -31,11 +36,12 @@ use bevy::prelude::*;
 /// Gravity, m/s²: heavier than Earth's, so falls and tumbles read snappily at this camera distance.
 pub const GRAVITY: f32 = 15.0;
 
-/// Everything that makes up the game except windowing and rendering: physics, the box, fighting, the player, grabbing
-/// and throwing, enemies, their debris, the run and the score.
+/// Everything that makes up the game except windowing and rendering: physics, the phases, the box, fighting, the
+/// player, grabbing and throwing, enemies, their debris, the run, the score and best, and the sound setting.
 pub fn plugin(app: &mut App) {
     app.add_plugins(PhysicsPlugins::default()).insert_resource(Gravity(Vec3::NEG_Y * GRAVITY)).add_plugins((
         input::plugin,
+        flow::plugin,
         arena::plugin,
         fighter::plugin,
         player::plugin,
@@ -44,6 +50,7 @@ pub fn plugin(app: &mut App) {
         debris::plugin,
         run::plugin,
         score::plugin,
+        sound::plugin,
     ));
 }
 

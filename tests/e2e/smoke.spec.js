@@ -7,7 +7,7 @@ import { DIST } from './playwright.config.js';
 import { HOME, collectErrors, hasGl, litFraction } from './helpers.js';
 
 // Which game the build serves at /play (scripts/build.sh's GAME). The 3D port (spec #58) brings the 2.5D game's
-// checks over slice by slice; until then those are skipped on a 3D build.
+// checks over slice by slice; until then those are skipped on a 3D build, and 3D-only checks on a 2.5D one.
 const GAME3D = process.env.GAME === 'game3d';
 
 test.describe('homepage', () => {
@@ -65,6 +65,35 @@ test.describe('/play', () => {
     await page.waitForFunction(() => document.getElementById('game').width !== 300, null, { timeout: 150_000 });
     await page.waitForTimeout(2000);
     // winit starts Bevy's loop by throwing out of init(); the page catches it, but Chrome may still log it.
+    expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
+  });
+
+  test('the start overlay shows, a click starts the game and Esc pauses it', async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    test.skip(!GAME3D, 'the 2.5D game does not log its phases');
+    const errors = collectErrors(page);
+    const logs = [];
+    page.on('console', m => logs.push(m.text()));
+    const after = (from, text) => () => logs.slice(from).some(l => l.includes(text));
+    await page.goto('/play/');
+    await expect.poll(after(0, 'phase start'), { timeout: 150_000 }).toBe(true);
+    const canvas = page.locator('#game');
+    await page.waitForTimeout(1000);
+    // The overlay dims the box behind it (the controls' text is small): far fewer bright pixels until it starts.
+    const dimmed = await litFraction(page, await canvas.screenshot(), 0.35);
+    let from = logs.length;
+    await canvas.click();
+    await expect.poll(after(from, 'phase playing')).toBe(true);
+    await page.waitForTimeout(1000);
+    const lit = await litFraction(page, await canvas.screenshot(), 0.35);
+    expect(lit, `the overlay is gone (lit ${lit} vs ${dimmed} under it)`).toBeGreaterThan(dimmed * 3);
+    expect(logs.slice(from).some(l => l.includes('phase paused')), 'the focused page keeps playing').toBe(false);
+    from = logs.length;
+    await page.keyboard.press('Escape');
+    await expect.poll(after(from, 'phase paused')).toBe(true);
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 

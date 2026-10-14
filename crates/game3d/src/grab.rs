@@ -56,7 +56,9 @@ const TUMBLE: f32 = 9.0;
 const VICTIM_STUN: f32 = 0.35;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Update, (grab, carry, fly).chain().after(player::control).before(Combat));
+    // Grabbing only while playing: L or a middle click on a screen must not pick anything up.
+    let playing = in_state(crate::flow::Phase::Playing);
+    app.add_systems(Update, (grab.run_if(playing), carry, fly).chain().after(player::control).before(Combat));
 }
 
 /// A thing's size for carrying: its radius across the floor and its half height, metres.

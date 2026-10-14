@@ -99,7 +99,16 @@ pub struct Combat;
 pub fn plugin(app: &mut App) {
     app.init_resource::<HitStopClock>().add_message::<Hit>().add_message::<Defeated>().add_systems(
         Update,
-        (advance_swings, resolve_hits, finish_swings, tick_health, hit_stop).chain().in_set(Combat),
+        (
+            advance_swings,
+            resolve_hits,
+            finish_swings,
+            tick_health,
+            // Only while playing: the screens hold the clock paused, and the hit-stop would let it go.
+            hit_stop.run_if(in_state(crate::flow::Phase::Playing)),
+        )
+            .chain()
+            .in_set(Combat),
     );
 }
 

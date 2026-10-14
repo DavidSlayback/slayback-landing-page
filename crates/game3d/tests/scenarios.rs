@@ -15,24 +15,44 @@ use game3d::arena::{Arena, Slab};
 use game3d::debris::{Piece, piece};
 use game3d::enemy::{Brain, Waves, fodder};
 use game3d::fighter::{Defeated, Hp, Team};
+use game3d::flow::Phase;
 use game3d::grab::{Carried, Thrown};
 use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
-use game3d::score::RunScore;
+use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
+use game3d::sound::{SOUND_KEY, Sound};
+use game3d::store::Store;
 
 const FPS: f32 = 60.0;
 
 /// A game app without window or renderer. Keyboard state is driven by the test (no input plugin clears it), and
-/// enemies only appear where a test puts them.
+/// enemies only appear where a test puts them. Records (the best score, the sound setting) go to a fresh directory.
 fn headless() -> App {
+    headless_with(fresh_store())
+}
+
+/// A headless app keeping its records in `store`.
+fn headless_with(store: Store) -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, TransformPlugin, game3d::plugin))
         .insert_resource(Waves { enabled: false, ..default() })
+        .insert_resource(store)
         .init_resource::<ButtonInput<KeyCode>>()
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
     app.finish();
     app.cleanup();
     app
+}
+
+/// An empty directory of records of the test's own, so scenarios never read or overwrite a real best score.
+fn fresh_store() -> Store {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("game3d-scenarios-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a records directory");
+    Store::in_dir(dir)
 }
 
 fn step(app: &mut App, seconds: f32) {
@@ -616,7 +636,12 @@ fn running_out_of_time_costs_health_and_on_the_last_of_it_ends_the_run() {
     q.single_mut(app.world_mut()).unwrap().0.hp = game_core::run::TIMEOUT_PENALTY;
     app.world_mut().resource_mut::<RunState>().0.time_left = 0.05;
     step(&mut app, 0.1);
-    assert_eq!(box_number(&app), 1, "the run ended and a new one starts at box 1");
+    assert_eq!(phase(&app), Phase::Over, "the run ended on the game-over screen");
+    assert_eq!(last_run(&app), LastRun { score: 900, reached: 2, new_best: true });
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.1);
+    assert_eq!(phase(&app), Phase::Playing);
+    assert_eq!(box_number(&app), 1, "and a new one starts at box 1");
     let (hp, full) = player_hp(&mut app);
     assert_eq!(hp, full, "at full health");
     assert_eq!(app.world().resource::<RunScore>().0.points, 0, "with a fresh score");
@@ -628,18 +653,13 @@ fn a_defeat_ends_the_run_and_the_next_starts_at_box_1_in_an_empty_box() {
     app.world_mut().resource_mut::<RunState>().0.escape(100.0, 100.0);
     app.world_mut().resource_mut::<RunScore>().0.points = 1_200;
     block(&mut app, TORSO, Vec3::new(3.0, 0.16, 0.0), 0.0);
-    let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
-    q.single_mut(app.world_mut()).unwrap().0.hp = 1.0;
+    set_player_hp(&mut app, 1.0);
     fodder_at(&mut app, [1.0, 0.0]);
-    let mut ended = false;
-    for _ in 0..(4.0 * FPS) as usize {
-        step(&mut app, 1.0 / FPS);
-        if app.world().resource::<RunScore>().0.points == 0 {
-            ended = true;
-            break;
-        }
-    }
-    assert!(ended, "the fodder's punch ended the run");
+    assert!(play_until_over(&mut app, 4.0), "the fodder's punch ended the run");
+    let frozen = player(&mut app).0;
+    step(&mut app, 0.5);
+    assert_eq!(player(&mut app).0, frozen, "the game stands still behind the game-over screen");
+    tap(&mut app, KeyCode::Enter);
     step(&mut app, 0.1);
     assert_eq!(box_number(&app), 1);
     let (hp, full) = player_hp(&mut app);
@@ -820,4 +840,166 @@ fn aim_assist_bends_a_throw_toward_the_biggest_group_within_30_degrees() {
     for &e in &wide {
         assert_eq!(hp(&app, e), FULL, "the group outside 30 degrees wasn't aimed at");
     }
+}
+
+fn phase(app: &App) -> Phase {
+    *app.world().resource::<State<Phase>>().get()
+}
+
+fn set_player_hp(app: &mut App, hp: f32) {
+    let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
+    q.single_mut(app.world_mut()).unwrap().0.hp = hp;
+}
+
+/// Steps until the game-over screen, for at most `seconds`; whether it came.
+fn play_until_over(app: &mut App, seconds: f32) -> bool {
+    for _ in 0..(seconds * FPS) as usize {
+        step(app, 1.0 / FPS);
+        if phase(app) == Phase::Over {
+            return true;
+        }
+    }
+    false
+}
+
+/// Kills a fodder in front of the player with one punch, and lets the swing finish.
+fn kill_one(app: &mut App) {
+    let victim = fodder_at(app, [1.1, 0.0]);
+    app.world_mut().get_mut::<Hp>(victim).unwrap().0.hp = 1.0;
+    step(app, 0.05);
+    tap(app, KeyCode::KeyJ);
+    step(app, 0.3);
+    assert!(app.world().get_entity(victim).is_err(), "the punch killed the fodder");
+    step(app, 0.5);
+}
+
+/// Ends the run: the clock runs out on the last of the player's health.
+fn time_out(app: &mut App) {
+    set_player_hp(app, game_core::run::TIMEOUT_PENALTY);
+    app.world_mut().resource_mut::<RunState>().0.time_left = 0.02;
+    assert!(play_until_over(app, 0.5), "the timeout ended the run");
+}
+
+fn last_run(app: &App) -> LastRun {
+    *app.world().resource::<LastRun>()
+}
+
+#[test]
+fn a_run_starts_from_the_overlay_scores_a_kill_and_ends_on_the_game_over_screen_with_a_new_best_kept() {
+    let store = fresh_store();
+    let mut app = headless_with(store.clone());
+    // The window's start overlay: nothing runs until the player starts.
+    app.world_mut().resource_mut::<NextState<Phase>>().set(Phase::Start);
+    step(&mut app, 0.5);
+    assert_eq!(phase(&app), Phase::Start);
+    let (at, clock) = (player(&mut app).0, app.world().resource::<RunState>().0.time_left);
+    step(&mut app, 1.0);
+    assert_eq!(player(&mut app).0, at, "the player hangs where it spawned");
+    assert_eq!(app.world().resource::<RunState>().0.time_left, clock, "and the box clock stands still");
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 1.0);
+    assert_eq!(phase(&app), Phase::Playing, "Enter starts the run");
+    assert!(app.world().resource::<RunState>().0.time_left < clock - 0.5, "and the clock runs");
+    assert!(app.world().resource::<BestScore>().0.is_none(), "no best on record yet");
+
+    kill_one(&mut app);
+    let points = game_core::score::KILL;
+    assert_eq!(app.world().resource::<RunScore>().0.points, points, "a kill scores");
+    time_out(&mut app);
+    assert_eq!(last_run(&app), LastRun { score: points, reached: 1, new_best: true });
+    let best = app.world().resource::<BestScore>().0.clone().expect("a best on record");
+    assert_eq!((best.score, best.reached), (points, 1));
+    assert_eq!(store.get(BEST_KEY), Some(best.to_record()), "kept in the 2.5D game's format");
+
+    // Again: a fresh run that scores less doesn't beat it.
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.1);
+    assert_eq!(phase(&app), Phase::Playing);
+    assert_eq!(app.world().resource::<RunScore>().0.points, 0, "the new run starts from zero");
+    assert_eq!(box_number(&app), 1);
+    time_out(&mut app);
+    assert_eq!(last_run(&app), LastRun { score: 0, reached: 1, new_best: false });
+    assert_eq!(app.world().resource::<BestScore>().0.as_ref(), Some(&best), "the best stands");
+
+    // The next visit reads the same record.
+    let mut next = headless_with(store);
+    step(&mut next, 1.0 / FPS);
+    assert_eq!(next.world().resource::<BestScore>().0.as_ref(), Some(&best), "the best carries over");
+}
+
+#[test]
+fn a_best_from_the_2_5d_game_carries_over_and_only_a_higher_score_beats_it() {
+    let store = fresh_store();
+    store.set(BEST_KEY, "v1;150;3;2026-10-01");
+    let mut app = headless_with(store.clone());
+    step(&mut app, 1.0);
+    kill_one(&mut app);
+    time_out(&mut app);
+    assert!(!last_run(&app).new_best, "100 doesn't beat 150");
+    assert_eq!(store.get(BEST_KEY).as_deref(), Some("v1;150;3;2026-10-01"), "and the record is untouched");
+
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 1.0);
+    kill_one(&mut app);
+    // The next one away from the first one's debris.
+    teleport(&mut app, SPAWN + Vec3::X * -4.0);
+    step(&mut app, 0.5);
+    kill_one(&mut app);
+    time_out(&mut app);
+    let last = last_run(&app);
+    assert!(last.new_best && last.score > 150, "two kills beat it: {last:?}");
+    assert!(store.get(BEST_KEY).unwrap().starts_with(&format!("v1;{};1;", last.score)), "and replace the record");
+}
+
+#[test]
+fn esc_pauses_everything_and_esc_again_resumes_it() {
+    let mut app = standing();
+    let foe = fodder_at(&mut app, [-4.0, 0.0]);
+    step(&mut app, 0.2);
+    tap(&mut app, KeyCode::Escape);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Paused);
+    let foe_at = |app: &App| app.world().get::<Transform>(foe).unwrap().translation;
+    let (me, them, clock) = (player(&mut app).0, foe_at(&app), app.world().resource::<RunState>().0.time_left);
+    // Moving and attacking while paused does nothing.
+    press(&mut app, &[KeyCode::KeyD]);
+    tap(&mut app, KeyCode::KeyJ);
+    step(&mut app, 1.0);
+    keys(&mut app).release_all();
+    assert_eq!(player(&mut app).0, me, "the player stands still");
+    assert_eq!(foe_at(&app), them, "and so does the fodder");
+    assert_eq!(app.world().resource::<RunState>().0.time_left, clock, "and the box clock");
+    let mut attacks = app.world_mut().query_filtered::<&game3d::fighter::Attack, With<Player>>();
+    assert!(!attacks.single(app.world()).unwrap().busy(), "the punch wasn't saved up for later");
+
+    tap(&mut app, KeyCode::Escape);
+    step(&mut app, 1.0);
+    assert_eq!(phase(&app), Phase::Playing);
+    assert!(app.world().resource::<RunState>().0.time_left < clock - 0.5, "Esc again restarts the clock");
+    assert_ne!(foe_at(&app), them, "and the fodder comes on");
+}
+
+#[test]
+fn sound_is_off_until_m_on_the_pause_screen_turns_it_on_and_the_choice_is_kept() {
+    let store = fresh_store();
+    let mut app = headless_with(store.clone());
+    step(&mut app, 0.1);
+    let on = |app: &App| app.world().resource::<Sound>().on;
+    assert!(!on(&app), "off by default");
+    tap(&mut app, KeyCode::KeyM);
+    assert!(!on(&app), "M does nothing while playing");
+    tap(&mut app, KeyCode::Escape);
+    step(&mut app, 0.1);
+    tap(&mut app, KeyCode::KeyM);
+    assert!(on(&app), "M on the pause screen turns it on");
+    assert_eq!(store.get(SOUND_KEY).as_deref(), Some("on"));
+
+    let mut next = headless_with(store.clone());
+    step(&mut next, 0.1);
+    assert!(on(&next), "the next visit starts with sound on");
+    tap(&mut next, KeyCode::Escape);
+    step(&mut next, 0.1);
+    tap(&mut next, KeyCode::KeyM);
+    assert!(!on(&next));
+    assert_eq!(store.get(SOUND_KEY).as_deref(), Some("off"), "and muting is kept too");
 }

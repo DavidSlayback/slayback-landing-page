@@ -1,5 +1,6 @@
 //! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in the scheme's
-//! main accent, then the box number, the box clock, and the score with its streak multiplier. The screens are G8's.
+//! main accent, then the box number, the box clock, and the score with its streak multiplier. The start, pause and
+//! game-over screens are `screens`.
 
 use bevy::prelude::*;
 
@@ -19,7 +20,8 @@ struct HealthFill;
 #[derive(Component)]
 struct Readout;
 
-const INK: Color = Color::srgb(0.93, 0.98, 0.9);
+/// Text colour, shared with the screens.
+pub(crate) const INK: Color = Color::srgb(0.93, 0.98, 0.9);
 
 fn spawn(mut commands: Commands, palette: Res<Palette>) {
     commands
