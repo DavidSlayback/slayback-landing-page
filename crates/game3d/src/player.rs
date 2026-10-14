@@ -1,6 +1,7 @@
 //! The player: moves in eight directions over the floor and faces the way it last moved, turning smoothly (Q49); dashes;
 //! and punches, kicks and drop-kicks (any attack during a dash), with aim assist turning a swing toward the nearest
-//! enemy inside its cone.
+//! enemy inside its cone. Holding something ([`Holding`], picked up in `grab`), an attack starts the spin-throw
+//! instead: the player turns toward the biggest enemy group within 30° (Q62) and plants its feet for the spin.
 //!
 //! The body is a kinematic capsule moved by a move-and-slide controller ([`walk`], avian's `MoveAndSlide`): it slides
 //! along walls and frozen debris, falls and lands, steps up ledges up to `game_core::climb::MAX_STEP` (no jump, Q59)
@@ -13,10 +14,13 @@ use bevy::prelude::*;
 use game_core::aim::{Cone, level};
 use game_core::climb::{MAX_STEP, walkable};
 use game_core::combat::Move;
+use game_core::grab::Held;
+use game_core::grab::flat::throw_heading;
 use game_core::plane::{self, Dash, run_velocity};
 
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Combat, Hp, Layer, Team, body};
+use crate::grab::Carried;
 use crate::input::Actions;
 use crate::{on_floor, plane as to_plane};
 
@@ -36,6 +40,21 @@ impl Facing {
     /// The world rotation for this facing, for a figure built looking along +x.
     pub fn rotation(&self) -> Quat {
         Quat::from_rotation_y(self.0.yaw)
+    }
+}
+
+/// The player has something in hand: carried overhead, then, once an attack starts the throw, `spin` seconds into
+/// whirling it round (`grab` moves it and lets go).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Holding {
+    pub target: Entity,
+    pub kind: Held,
+    pub spin: Option<f32>,
+}
+
+impl Holding {
+    pub fn spinning(&self) -> bool {
+        self.spin.is_some()
     }
 }
 
@@ -65,16 +84,29 @@ fn spawn(mut commands: Commands) {
         .insert((RigidBody::Kinematic, CustomPositionIntegration));
 }
 
-/// Turns this frame's actions (any device; see `input`) into floor velocity, facing and attacks. Public so other
-/// systems can order themselves after it.
+/// The player's parts `control` steers.
+type Controls = (
+    &'static Transform,
+    &'static mut LinearVelocity,
+    &'static mut Facing,
+    &'static mut Dasher,
+    &'static mut Attack,
+    &'static Hp,
+    Option<&'static mut Holding>,
+);
+
+/// Turns this frame's actions (any device; see `input`) into floor velocity, facing, attacks and throws. Public so
+/// other systems can order themselves after it.
 #[allow(clippy::type_complexity)]
 pub fn control(
     time: Res<Time>,
     actions: Res<Actions>,
-    enemies: Query<&Transform, (With<Brain>, Without<Player>)>,
-    mut players: Query<(&Transform, &mut LinearVelocity, &mut Facing, &mut Dasher, &mut Attack, &Hp), With<Player>>,
+    enemies: Query<&Transform, (With<Brain>, Without<Player>, Without<Carried>)>,
+    mut players: Query<Controls, With<Player>>,
 ) {
-    let Ok((transform, mut velocity, mut facing, mut dash, mut attack, hp)) = players.single_mut() else { return };
+    let Ok((transform, mut velocity, mut facing, mut dash, mut attack, hp, mut holding)) = players.single_mut() else {
+        return;
+    };
     let dt = time.delta_secs();
     if hp.0.stunned() {
         return; // knockback plays out
@@ -86,20 +118,30 @@ pub fn control(
     } else {
         None
     };
-    if let Some(button) = button.filter(|_| !attack.busy()) {
-        let mv = Move::for_button(button, dash.0.dashing());
-        // Aim assist: turn toward the nearest enemy in the swing's cone (a drop-kick's dash bends toward it too).
-        let me = transform.translation;
-        let cone = Cone::of(mv, to_plane(me), facing.0.yaw, RADIUS);
-        let level_enemies: Vec<Vec3> = enemies.iter().map(|t| t.translation).filter(|e| level(me.y, e.y)).collect();
-        if let Some((_, yaw)) = cone.assist(level_enemies.iter().map(|e| to_plane(*e)), crate::enemy::RADIUS) {
-            facing.0.snap(yaw);
-            dash.0.aim(facing.0.forward());
+    let me = transform.translation;
+    let level_enemies = || enemies.iter().map(|t| t.translation).filter(|e| level(me.y, e.y)).map(to_plane);
+    match (button, holding.as_deref_mut()) {
+        // Holding something, an attack throws it: turn toward the biggest group ahead (Q62) and start the spin.
+        (Some(_), Some(held)) if !held.spinning() => {
+            let enemies: Vec<[f32; 2]> = level_enemies().collect();
+            let heading = throw_heading(to_plane(me), facing.0.yaw, &enemies);
+            facing.0.snap(heading);
+            held.spin = Some(0.0);
         }
-        attack.start(mv);
+        (Some(button), None) if !attack.busy() => {
+            let mv = Move::for_button(button, dash.0.dashing());
+            // Aim assist: turn toward the nearest enemy in the swing's cone (a drop-kick's dash bends toward it too).
+            let cone = Cone::of(mv, to_plane(me), facing.0.yaw, RADIUS);
+            if let Some((_, yaw)) = cone.assist(level_enemies(), crate::enemy::RADIUS) {
+                facing.0.snap(yaw);
+                dash.0.aim(facing.0.forward());
+            }
+            attack.start(mv);
+        }
+        _ => {}
     }
-    // A punch or kick plants the feet; a drop-kick rides the dash.
-    if attack.swing.is_some_and(|s| s.mv != Move::DropKick) {
+    // A punch, a kick or the spin plants the feet; a drop-kick rides the dash.
+    if attack.swing.is_some_and(|s| s.mv != Move::DropKick) || holding.is_some_and(|h| h.spinning()) {
         let v = run_velocity(to_plane(velocity.0), [0.0, 0.0], dt);
         velocity.x = v[0];
         velocity.z = -v[1];

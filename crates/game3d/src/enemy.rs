@@ -10,11 +10,13 @@ use bevy::prelude::*;
 use game_core::debris::solid::FODDER_HEIGHT;
 use game_core::doors::Door;
 use game_core::enemy::{Intent, Kind, Mind};
+use game_core::grab::Held;
 use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading};
 use game_core::steer::steer;
 
 use crate::arena::Arena;
 use crate::fighter::{Attack, Combat, Hp, Team, body};
+use crate::grab::{Carried, Grabbable};
 use crate::player::{Facing, Player};
 use crate::{on_floor, plane};
 
@@ -113,6 +115,7 @@ pub fn enemy(kind: Kind, at: Vec3, yaw: f32) -> impl Bundle {
     facing.snap(yaw);
     (
         Brain(Mind::new(kind)),
+        Grabbable(Held::Enemy),
         Name::new(name),
         body(Team::Enemy, radius, height, kind.style().max_hp),
         Transform::from_translation(at),
@@ -164,7 +167,10 @@ fn think(
     time: Res<Time>,
     arena: Res<Arena>,
     player: Query<(&Transform, &Facing), (With<Player>, Without<Brain>)>,
-    mut enemies: Query<(Entity, &Transform, &mut Brain, &mut Facing, &mut Attack, &Hp, &mut LinearVelocity)>,
+    mut enemies: Query<
+        (Entity, &Transform, &mut Brain, &mut Facing, &mut Attack, &Hp, &mut LinearVelocity),
+        Without<Carried>,
+    >,
 ) {
     let Ok((target, them)) = player.single() else { return };
     let dt = time.delta_secs();

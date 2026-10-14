@@ -6,9 +6,11 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use game_core::debris::solid::{FODDER, Settle, Solid, at_rest, frozen_over_cap, moving_over_cap};
+use game_core::grab::Held;
 
 use crate::enemy::Brain;
 use crate::fighter::{Combat, Defeated, Layer, Team};
+use crate::grab::Grabbable;
 use crate::player::Facing;
 
 /// One piece of a broken figure: what it is, which figure part it was, and its settling clock.
@@ -39,6 +41,8 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
     };
     (
         Piece { born, solid, part, settle: Settle::default() },
+        // Frozen or loose, a piece can be picked up and thrown (frozen ones thaw).
+        Grabbable(Held::Debris),
         Name::new("debris"),
         RigidBody::Dynamic,
         collider,
