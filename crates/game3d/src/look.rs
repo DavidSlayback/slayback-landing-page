@@ -7,21 +7,20 @@
 //! game without assets or a renderer.
 
 use bevy::prelude::*;
-use game_core::palette::{self, Rgb};
+use game_core::palette::Rgb;
 use game_core::scheme::{self, Scheme};
 
 use crate::arena::{Kind, Slab, WALL};
+use crate::paint::{Paints, Role};
 use crate::run::BoxStarted;
 
 /// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
 /// It changes as each box starts, so whatever is coloured from it repaints when it changes. Colour things by
 /// `game_core::palette`'s rules for [`Palette::scheme`] through [`srgb`], e.g.
-/// `srgb(palette::fighter_colour(p.scheme, who).body)`. The raw accents are here for effects that want one directly.
+/// `srgb(palette::fighter_colour(p.scheme, who).body)`; `paint::colour` holds every rule the game uses.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct Palette {
     pub scheme: &'static Scheme,
-    /// The four neon accents, the first one primary.
-    pub accents: [Color; 4],
 }
 
 /// A `game_core::palette` colour as a Bevy colour.
@@ -32,7 +31,7 @@ pub fn srgb([r, g, b]: Rgb) -> Color {
 impl Palette {
     pub fn nth(i: usize) -> Self {
         let scheme = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
-        Self { scheme, accents: scheme.accents.map(srgb) }
+        Self { scheme }
     }
 }
 
@@ -64,6 +63,7 @@ pub fn plugin(app: &mut App) {
         .insert_resource(Palette::nth(page.0))
         .insert_resource(page)
         .add_plugins((
+            crate::paint::plugin,
             crate::camera::plugin,
             crate::outline::plugin,
             crate::figure::plugin,
@@ -71,10 +71,7 @@ pub fn plugin(app: &mut App) {
             crate::hud::plugin,
         ))
         .add_systems(Startup, (load_kit, spawn_light))
-        .add_systems(
-            Update,
-            (rotate_scheme, repaint.run_if(resource_changed::<Palette>), dress_slabs, fade_walls).chain(),
-        );
+        .add_systems(Update, (rotate_scheme, dress_slabs, fade_walls).chain());
 }
 
 /// Each box takes the next scheme, starting from the page's (Q31).
@@ -83,16 +80,6 @@ fn rotate_scheme(mut started: MessageReader<BoxStarted>, page: Res<PageScheme>, 
     let next = Palette::nth(page.0 + spec.scheme);
     if palette.scheme.key != next.scheme.key {
         *palette = next;
-    }
-}
-
-/// Paints the kit's materials from the palette: once at the start, then whenever a box changes the scheme.
-fn repaint(palette: Res<Palette>, kit: Res<Kit>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    let arena = palette::arena_tone(palette.scheme);
-    for (mat, colour) in [(&kit.floor, srgb(arena.floor)), (&kit.wall, srgb(arena.wall))] {
-        if let Some(mut m) = mats.get_mut(mat) {
-            m.base_color = colour;
-        }
     }
 }
 
@@ -107,10 +94,16 @@ struct Kit {
     line: Handle<StandardMaterial>,
 }
 
-/// Makes the kit; [`repaint`] colours it.
-fn load_kit(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    let mut matte = || mats.add(StandardMaterial { perceptual_roughness: 0.9, ..default() });
-    let (floor, wall) = (matte(), matte());
+/// Makes the kit: the floor and walls in their shared paints (`paint`), the glass and the black lines.
+fn load_kit(
+    mut commands: Commands,
+    palette: Res<Palette>,
+    mut paints: ResMut<Paints>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
+) {
+    let floor = paints.get(Role::Floor, &palette, &mut mats);
+    let wall = paints.get(Role::Wall, &palette, &mut mats);
     let unlit = || StandardMaterial { unlit: true, ..default() };
     let kit = Kit {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),

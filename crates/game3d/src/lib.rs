@@ -26,6 +26,8 @@ pub mod input;
 pub mod look;
 #[cfg(feature = "render")]
 pub mod outline;
+#[cfg(feature = "render")]
+pub mod paint;
 pub mod player;
 pub mod pose;
 pub mod run;

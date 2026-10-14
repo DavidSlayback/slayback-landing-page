@@ -166,6 +166,7 @@ pub mod view {
 
     use super::{LitBomb, RADIUS};
     use crate::look::Palette;
+    use crate::paint::{Paints, Role, colour};
 
     /// The bomb's meshes, and the shell and fuse materials every unlit bomb shares.
     #[derive(Resource)]
@@ -194,6 +195,7 @@ pub mod view {
     fn load(
         mut commands: Commands,
         palette: Res<Palette>,
+        mut paints: ResMut<Paints>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut mats: ResMut<Assets<StandardMaterial>>,
     ) {
@@ -202,7 +204,7 @@ pub mod view {
             shell_mesh: meshes.add(Sphere::new(RADIUS).mesh().ico(1).expect("a valid icosphere")),
             fuse_mesh: meshes.add(Cuboid::new(0.07, 0.14, 0.07)),
             shell: mats.add(shell(SHELL)),
-            fuse: mats.add(StandardMaterial { base_color: palette.accents[3], unlit: true, ..default() }),
+            fuse: paints.get(Role::Signal, &palette, &mut mats),
         });
     }
 
@@ -239,7 +241,7 @@ pub mod view {
 
     /// Lit bombs blink in the warning accent, faster as the fuse runs out (`Fuse::blink`).
     fn blink(palette: Res<Palette>, bombs: Query<(&LitBomb, &Light)>, mut mats: ResMut<Assets<StandardMaterial>>) {
-        let hot = palette.accents[3].to_linear() * 1.5;
+        let hot = colour(Role::Signal, &palette).to_linear() * 1.5;
         for (lit, light) in &bombs {
             let glow = if lit.fuse.blink() { hot } else { LinearRgba::BLACK };
             if let Some(mut m) = mats.get_mut(&light.0)

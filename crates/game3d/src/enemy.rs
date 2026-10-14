@@ -250,10 +250,10 @@ fn think(
 mod view {
     use bevy::prelude::*;
     use game_core::doors::{Door, WARNING};
-    use game_core::palette;
 
     use super::WallDoor;
-    use crate::look::{Palette, srgb};
+    use crate::look::Palette;
+    use crate::paint::{Role, colour};
 
     /// Door panel size, metres: about a fighter and a half tall (taller than box 1's walls, as in Rumble Box).
     const PANEL: Vec3 = Vec3::new(1.2, 2.1, 0.08);
@@ -267,7 +267,7 @@ mod view {
     }
 
     fn closed(palette: &Palette) -> Color {
-        srgb(palette::arena_tone(palette.scheme).door)
+        colour(Role::Door, palette)
     }
 
     fn dress(
@@ -298,7 +298,7 @@ mod view {
                 Door::Warning(left) => {
                     let t = 1.0 - left / WARNING;
                     let wave = 0.5 + 0.5 * (t * 3.0 * std::f32::consts::TAU).cos();
-                    closed(&palette).mix(&srgb(palette::signal(palette.scheme)), (0.35 + 0.65 * t) * wave)
+                    closed(&palette).mix(&colour(Role::Signal, &palette), (0.35 + 0.65 * t) * wave)
                 }
                 Door::Open(_) => Color::BLACK,
             };

@@ -6,6 +6,7 @@ use bevy::prelude::*;
 
 use crate::fighter::Hp;
 use crate::look::Palette;
+use crate::paint::{Role, colour};
 use crate::player::Player;
 use crate::run::RunState;
 use crate::score::RunScore;
@@ -44,7 +45,7 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             .with_child((
                 HealthFill,
                 Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
-                BackgroundColor(palette.accents[0]),
+                BackgroundColor(colour(Role::Ring, &palette)),
             ));
             hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), TextShadow::default()));
         });
@@ -53,7 +54,7 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
 /// The bar follows the scheme as boxes rotate it.
 fn repaint(palette: Res<Palette>, mut fill: Query<&mut BackgroundColor, With<HealthFill>>) {
     for mut bg in &mut fill {
-        bg.0 = palette.accents[0];
+        bg.0 = colour(Role::Ring, &palette);
     }
 }
 

@@ -5,8 +5,8 @@
 //! in place of its ball head. When an enemy dies, the same pieces become debris, dressed here in the arena's muted
 //! tones.
 //!
-//! One path dresses, colours and animates every fighter, so what one figure does (a hit flash, the softer flash under
-//! reduced motion, a wind-up glow) the others do too. Gameplay entities carry no visuals; this plugin dresses them
+//! One path dresses and animates every fighter, so what one figure does (a hit flash, the softer flash under reduced
+//! motion, a wind-up glow) the others do too. Colours are `paint`'s. Gameplay entities carry no visuals; this plugin dresses them
 //! when they appear, so the headless scenarios run the same game without a renderer.
 
 use std::collections::HashMap;
@@ -15,29 +15,21 @@ use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
 use game_core::combat::Move;
 use game_core::debris::solid::{Limb, Solid, figure};
-use game_core::palette::{self, DEBRIS_SHADES, Fighter, Rgb};
+use game_core::palette::{DEBRIS_SHADES, Fighter};
 
 use crate::bomb::{self, BombHead};
 use crate::comfort::Comfort;
 use crate::debris::Piece;
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
-use crate::look::{Palette, srgb};
+use crate::look::Palette;
+use crate::paint::{Paint, Paints, Role};
 use crate::player::{Dasher, Facing, Holding, Player};
 use crate::pose::{self, Act};
 
 /// How much smaller than its solid an enemy's part is drawn, so the loose parts show gaps between them. The player's
 /// parts are sized with gaps already.
 const GAP: f32 = 0.86;
-
-/// Which of a fighter's colours a part wears.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Paint {
-    Body,
-    Head,
-    Fist,
-    Trim,
-}
 
 /// What a part looks like this frame: a hit's flash over everything, then the wind-up glow, then its own paint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,60 +76,6 @@ pub const PLAYER: [(Solid, [f32; 3], Limb, f32, Paint); 14] = [
     (Solid::Cube([0.06, 0.1, 0.26]), [0.2, 0.64, 0.0], Limb::Trunk, 0.0, Paint::Trim),
 ];
 
-/// A fighter's colours, by `game_core::palette`'s rules (Q50, Q66). The player reads by contrast between its parts,
-/// as Rumble Box's does (orange head, blue body, red fists): a pale head, fists in the scheme's accent furthest from
-/// the body, dark legs. An enemy wears one vivid colour, lit up while it winds up a blow.
-pub struct Colours {
-    pub body: Color,
-    pub head: Color,
-    pub fist: Color,
-    pub trim: Color,
-    pub windup: Color,
-}
-
-pub fn colours(who: Fighter, palette: &Palette) -> Colours {
-    let f = palette::fighter_colour(palette.scheme, who);
-    let body = srgb(f.body);
-    let pale = body.mix(&Color::WHITE, 0.6);
-    match who {
-        Fighter::Player => Colours {
-            body,
-            head: pale,
-            fist: srgb(furthest(palette.scheme.accents, f.body)),
-            trim: srgb(f.trim),
-            windup: pale,
-        },
-        Fighter::Enemy(_) => Colours { body, head: body, fist: body, trim: body, windup: pale },
-    }
-}
-
-/// The accent furthest from `from` (by squared sRGB distance).
-fn furthest(accents: [Rgb; 4], from: Rgb) -> Rgb {
-    let d = |c: &Rgb| c.iter().zip(from).map(|(a, b)| (a - b) * (a - b)).sum::<f32>();
-    accents.into_iter().max_by(|a, b| d(a).total_cmp(&d(b))).unwrap_or(from)
-}
-
-/// One fighter's materials.
-#[derive(Clone)]
-struct Mats {
-    body: Handle<StandardMaterial>,
-    head: Handle<StandardMaterial>,
-    fist: Handle<StandardMaterial>,
-    trim: Handle<StandardMaterial>,
-    windup: Handle<StandardMaterial>,
-}
-
-impl Mats {
-    fn paint(&self, paint: Paint) -> &Handle<StandardMaterial> {
-        match paint {
-            Paint::Body => &self.body,
-            Paint::Head => &self.head,
-            Paint::Fist => &self.fist,
-            Paint::Trim => &self.trim,
-        }
-    }
-}
-
 /// The figure under a fighter, turned by its facing, lifted and leaned by its pose, and squashed by hits (`impact`).
 #[derive(Component)]
 pub struct Rig;
@@ -174,17 +112,14 @@ impl Motion {
     }
 }
 
-/// Meshes per solid, materials per fighter and for debris, shared so every piece batches.
+/// Meshes per solid, and the flash, shadow and ring, shared so every piece batches (colours are in `Paints`).
 #[derive(Resource, Default)]
 struct Kit {
     meshes: HashMap<[u32; 3], Handle<Mesh>>,
-    mats: HashMap<Fighter, Mats>,
-    debris: Vec<Handle<StandardMaterial>>,
     flash: Handle<StandardMaterial>,
     blob: Handle<Mesh>,
     blob_mat: Handle<StandardMaterial>,
     ring: Handle<Mesh>,
-    ring_mat: Handle<StandardMaterial>,
 }
 
 impl Kit {
@@ -202,34 +137,17 @@ impl Kit {
             })
             .clone()
     }
-
-    /// `who`'s materials, made on first use; [`repaint`] keeps them in the current scheme.
-    fn mats(&mut self, who: Fighter, palette: &Palette, mats: &mut Assets<StandardMaterial>) -> Mats {
-        self.mats
-            .entry(who)
-            .or_insert_with(|| {
-                let c = colours(who, palette);
-                let mut matte =
-                    |c: Color| mats.add(StandardMaterial { base_color: c, perceptual_roughness: 0.85, ..default() });
-                let (body, head, fist, trim) = (matte(c.body), matte(c.head), matte(c.fist), matte(c.trim));
-                let windup = mats.add(StandardMaterial { base_color: c.windup, unlit: true, ..default() });
-                Mats { body, head, fist, trim, windup }
-            })
-            .clone()
-    }
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Kit>().add_systems(Startup, load).add_systems(
-        Update,
-        (repaint.run_if(resource_changed::<Palette>), dress_fighters, dress_debris, animate).chain(),
-    );
+    app.init_resource::<Kit>()
+        .add_systems(Startup, load)
+        .add_systems(Update, (dress_fighters, dress_debris, animate).chain());
 }
 
 fn load(
     mut kit: ResMut<Kit>,
     comfort: Res<Comfort>,
-    palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -239,12 +157,6 @@ fn load(
     } else {
         StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }
     });
-    kit.debris = (0..DEBRIS_SHADES.len())
-        .map(|i| {
-            let c = srgb(palette::debris_tone(palette.scheme, i));
-            mats.add(StandardMaterial { base_color: c, perceptual_roughness: 0.85, ..default() })
-        })
-        .collect();
     // A soft dark disc under the feet stands in for a shadow (no shadow map).
     kit.blob = meshes.add(Circle::new(0.42).mesh().resolution(24));
     kit.blob_mat = mats.add(StandardMaterial {
@@ -253,30 +165,8 @@ fn load(
         unlit: true,
         ..default()
     });
-    // The player's ring (Q60): flat on the floor under the feet, in the main accent, unlit so it stays bright.
+    // The player's ring (Q60): flat on the floor under the feet, in its paint (`Role::Ring`).
     kit.ring = meshes.add(Annulus::new(0.5, 0.64).mesh().resolution(48));
-    let ring = srgb(palette::ring(palette.scheme));
-    kit.ring_mat = mats.add(StandardMaterial { base_color: ring, unlit: true, ..default() });
-}
-
-/// Repaints every fighter's materials, the debris and the player's ring when a box changes the scheme.
-fn repaint(kit: Res<Kit>, palette: Res<Palette>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    let mut paint = |mat: &Handle<StandardMaterial>, colour: Color| {
-        if let Some(mut mat) = mats.get_mut(mat) {
-            mat.base_color = colour;
-        }
-    };
-    for (&who, m) in &kit.mats {
-        let c = colours(who, &palette);
-        let all = [(&m.body, c.body), (&m.head, c.head), (&m.fist, c.fist), (&m.trim, c.trim), (&m.windup, c.windup)];
-        for (mat, colour) in all {
-            paint(mat, colour);
-        }
-    }
-    for (i, mat) in kit.debris.iter().enumerate() {
-        paint(mat, srgb(palette::debris_tone(palette.scheme, i)));
-    }
-    paint(&kit.ring_mat, srgb(palette::ring(palette.scheme)));
 }
 
 /// One part to build: its solid, rest position, limb, reach, paint and drawn scale.
@@ -325,6 +215,7 @@ fn parts(who: Fighter) -> Vec<Build> {
 fn dress_fighters(
     mut commands: Commands,
     mut kit: ResMut<Kit>,
+    mut paints: ResMut<Paints>,
     bombs: Res<bomb::view::Kit>,
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -337,7 +228,9 @@ fn dress_fighters(
             None if is_player => Fighter::Player,
             None => continue,
         };
-        let m = kit.mats(who, &palette, &mut mats);
+        if matches!(who, Fighter::Enemy(_)) {
+            paints.get(Role::Windup(who), &palette, &mut mats);
+        }
         // The player's stride is full at its run speed; enemies walk slower, so theirs is full at half that.
         let full = game_core::plane::RUN_SPEED * if is_player { 1.0 } else { 0.5 };
         commands.entity(e).insert((Visibility::default(), Motion::new(full, is_player)));
@@ -352,7 +245,7 @@ fn dress_fighters(
         if is_player {
             commands.spawn((
                 Mesh3d(kit.ring.clone()),
-                MeshMaterial3d(kit.ring_mat.clone()),
+                MeshMaterial3d(paints.get(Role::Ring, &palette, &mut mats)),
                 Transform::from_xyz(0.0, feet + 0.02, 0.0).with_rotation(flat),
                 ChildOf(e),
             ));
@@ -366,7 +259,7 @@ fn dress_fighters(
             }
             commands.spawn((
                 Mesh3d(kit.mesh(b.solid, &mut meshes)),
-                MeshMaterial3d(m.paint(b.paint).clone()),
+                MeshMaterial3d(paints.get(Role::Fighter(who, b.paint), &palette, &mut mats)),
                 Transform::from_translation(b.rest).with_scale(Vec3::splat(b.scale)),
                 Part { limb: b.limb, rest: b.rest, reach: b.reach, paint: b.paint },
                 ChildOf(rig),
@@ -378,12 +271,15 @@ fn dress_fighters(
 fn dress_debris(
     mut commands: Commands,
     mut kit: ResMut<Kit>,
+    mut paints: ResMut<Paints>,
+    palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut mats: ResMut<Assets<StandardMaterial>>,
     pieces: Query<(Entity, &Piece), Added<Piece>>,
 ) {
     for (e, piece) in &pieces {
         // Neighbouring parts take different shades, so a heap's pieces read apart under the outlines.
-        let debris = kit.debris[piece.part % kit.debris.len()].clone();
+        let debris = paints.get(Role::Debris(piece.part % DEBRIS_SHADES.len()), &palette, &mut mats);
         commands.entity(e).insert((Mesh3d(kit.mesh(piece.solid, &mut meshes)), MeshMaterial3d(debris)));
     }
 }
@@ -418,6 +314,7 @@ fn windup(mv: Move, telegraph: f32) -> (Vec3, Vec3) {
 fn animate(
     time: Res<Time>,
     kit: Res<Kit>,
+    paints: Res<Paints>,
     mut fighters: Query<(
         &GlobalTransform,
         &Facing,
@@ -438,7 +335,6 @@ fn animate(
     let k = pose::follow(dt);
     for (me, facing, v, attack, flash, holding, dasher, brain, mut m, children) in &mut fighters {
         let who = brain.map_or(Fighter::Player, |b| Fighter::Enemy(b.0.style().kind));
-        let Some(mats) = kit.mats.get(&who) else { continue };
         let speed = v.0.with_y(0.0).length();
         let amount = (speed / m.full_stride).min(1.0);
         m.phase += speed * 3.0 * dt;
@@ -504,10 +400,11 @@ fn animate(
                     tf.translation = to;
                 }
                 let mat = match shade(part.paint, flash.0 > 0.0, telegraph > 0.3) {
-                    Shade::Flash => &kit.flash,
-                    Shade::Windup => &mats.windup,
-                    Shade::Paint(p) => mats.paint(p),
+                    Shade::Flash => Some(&kit.flash),
+                    Shade::Windup => paints.made(Role::Windup(who)),
+                    Shade::Paint(p) => paints.made(Role::Fighter(who, p)),
                 };
+                let Some(mat) = mat else { continue };
                 if material.0 != *mat {
                     material.0 = mat.clone();
                 }

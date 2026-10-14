@@ -18,7 +18,8 @@ use crate::bomb::Exploded;
 use crate::camera;
 use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
 use crate::fighter::{Hit, Team};
-use crate::look::{Palette, srgb};
+use crate::look::Palette;
+use crate::paint::{Paints, Role, colour};
 use crate::score::Scored;
 
 /// Shake at full trauma, metres the camera moves across the view.
@@ -52,7 +53,6 @@ struct BurstKit {
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load)
-        .add_systems(Update, repaint.run_if(resource_changed::<Palette>))
         .add_systems(Update, ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain())
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
@@ -77,28 +77,17 @@ fn star(points: usize, inner: f32) -> Mesh {
 fn load(
     mut commands: Commands,
     palette: Res<Palette>,
+    mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Unlit, so they read at full strength with no bloom (research section 7).
-    let flat = |c: Color| StandardMaterial { base_color: c, unlit: true, cull_mode: None, ..default() };
+    // Unlit, so they read at full strength with no bloom (research section 7); the outer star in the signal paint.
+    let core = StandardMaterial { base_color: Color::srgb(1.0, 0.97, 0.85), unlit: true, cull_mode: None, ..default() };
     commands.insert_resource(BurstKit {
         star: meshes.add(star(8, 0.42)),
-        outer: mats.add(flat(signal(&palette))),
-        core: mats.add(flat(Color::srgb(1.0, 0.97, 0.85))),
+        outer: paints.get(Role::Signal, &palette, &mut mats),
+        core: mats.add(core),
     });
-}
-
-/// The bursts' and popups' colour: the palette's signal accent.
-fn signal(palette: &Palette) -> Color {
-    srgb(game_core::palette::signal(palette.scheme))
-}
-
-/// Recolours the bursts when a box changes the scheme.
-fn repaint(palette: Res<Palette>, kit: Res<BurstKit>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    if let Some(mut m) = mats.get_mut(&kit.outer) {
-        m.base_color = signal(&palette);
-    }
 }
 
 /// Moves the camera off its framing by the shake, across and up the view, after `camera::fit` has placed it.
@@ -195,7 +184,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Popup { life: POPUP_LIFE, at: s.at + Vec3::Y * 1.0 },
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
-            TextColor(signal(&palette)),
+            TextColor(colour(Role::Signal, &palette)),
             TextShadow::default(),
             Node { position_type: PositionType::Absolute, ..default() },
         ));
