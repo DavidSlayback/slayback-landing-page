@@ -6,14 +6,16 @@ use std::time::Duration;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
+use game_core::climb::{Placed, pile_height};
 use game_core::combat::Move;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid};
 use game_core::plane::RUN_SPEED;
-use game3d::arena::Arena;
+use game3d::arena::{Arena, Slab};
 use game3d::debris::{Piece, piece};
 use game3d::enemy::{Brain, Waves, fodder};
 use game3d::fighter::{Defeated, Hp, Team};
 use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
+use game3d::run::RunState;
 use game3d::score::RunScore;
 
 const FPS: f32 = 60.0;
@@ -397,4 +399,269 @@ fn past_the_frozen_cap_the_oldest_frozen_pieces_go() {
     assert_eq!(born.len(), MAX_FROZEN);
     let oldest = born.iter().fold(f32::MAX, |m, b| m.min(*b));
     assert!((oldest - 40.0 * 1e-3).abs() < 1e-6, "the 40 oldest went: the oldest left was born at {oldest}");
+}
+
+// Climbing and the run (G3).
+
+/// Puts the player at `at` (its capsule's centre), at rest.
+fn teleport(app: &mut App, at: Vec3) {
+    let mut q = app.world_mut().query_filtered::<(&mut Transform, &mut Position, &mut LinearVelocity), With<Player>>();
+    let (mut t, mut p, mut v) = q.single_mut(app.world_mut()).unwrap();
+    t.translation = at;
+    p.0 = at;
+    v.0 = Vec3::ZERO;
+}
+
+/// A frozen block of debris of `size`, centred at `at` and turned `yaw` radians about the vertical.
+fn block(app: &mut App, size: [f32; 3], at: Vec3, yaw: f32) -> Entity {
+    let turn = Quat::from_rotation_y(yaw);
+    app.world_mut().spawn(piece(Solid::Cube(size), 0, at, turn, 0.0)).insert(RigidBody::Static).id()
+}
+
+fn feet(app: &mut App) -> f32 {
+    player(app).0.y - HEIGHT / 2.0
+}
+
+fn box_number(app: &App) -> usize {
+    app.world().resource::<RunState>().0.spec.number
+}
+
+/// Holds `held` for `seconds`, returning the highest the feet got.
+fn hold_highest(app: &mut App, held: &[KeyCode], seconds: f32) -> f32 {
+    press(app, held);
+    let mut top = f32::MIN;
+    for _ in 0..(seconds * FPS).round() as usize {
+        step(app, 1.0 / FPS);
+        top = top.max(feet(app));
+    }
+    keys(app).release_all();
+    top
+}
+
+/// The fodder's torso block, the biggest debris piece.
+const TORSO: [f32; 3] = [0.5, 0.32, 0.4];
+
+#[test]
+fn the_player_steps_up_onto_a_piece_lying_on_the_floor_but_not_onto_a_waist_high_block() {
+    let mut app = standing();
+    let at = player(&mut app).0;
+    block(&mut app, TORSO, Vec3::new(at.x + 1.5, TORSO[1] / 2.0, at.z), 0.0);
+    step(&mut app, 0.1);
+    let top = hold_highest(&mut app, &[KeyCode::KeyD], 0.7);
+    assert!((top - TORSO[1]).abs() < 0.03, "stepped onto the torso block: feet reached {top}");
+    assert!(player(&mut app).0.x > at.x + 2.5, "and walked on over it");
+    assert!(feet(&mut app).abs() < 0.02, "back down on the floor: {}", feet(&mut app));
+
+    let mut app = standing();
+    let at = player(&mut app).0;
+    block(&mut app, [0.6, 0.8, 1.6], Vec3::new(at.x + 1.5, 0.4, at.z), 0.0);
+    step(&mut app, 0.1);
+    let top = hold_highest(&mut app, &[KeyCode::KeyD], 1.5);
+    assert!(top < 0.02, "a 0.8 m block is a wall, not a step: feet reached {top}");
+    assert!(player(&mut app).0.x < at.x + 1.5 - 0.3 - RADIUS + 0.02, "stopped against it");
+}
+
+#[test]
+fn the_player_cannot_climb_a_wall_or_the_glass() {
+    for held in [KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyS] {
+        let mut app = standing();
+        // Walk into it, then keep pushing and dashing against it.
+        let mut top = hold_highest(&mut app, &[held], 2.0);
+        for _ in 0..4 {
+            press(&mut app, &[held]);
+            tap(&mut app, KeyCode::Space);
+            top = top.max(hold_highest(&mut app, &[held], 0.5));
+        }
+        assert!(top < 0.02, "{held:?}: the feet stayed on the floor, reaching {top}");
+    }
+}
+
+#[test]
+fn from_a_pile_just_under_the_rim_the_player_can_neither_step_onto_the_glass_nor_over_it() {
+    let mut app = standing();
+    let rim = app.world().resource::<Arena>().rim;
+    let half = Arena::default().floor / 2.0;
+    // A platform against the glass, a little lower than a step under the rim, and the player on it.
+    let top = rim - 0.3;
+    block(&mut app, [3.0, top, 1.5], Vec3::new(0.0, top / 2.0, half.y - 0.75), 0.0);
+    teleport(&mut app, Vec3::new(0.0, top + HEIGHT / 2.0 + 0.05, half.y - 1.0));
+    step(&mut app, 0.3);
+    assert!((feet(&mut app) - top).abs() < 0.03, "stands on the platform: {}", feet(&mut app));
+    let highest = hold_highest(&mut app, &[KeyCode::KeyS], 2.0);
+    let (pos, _, _) = player(&mut app);
+    assert!(pos.z < half.y - RADIUS + 0.02, "still inside the glass: {pos}");
+    assert!(highest < top + 0.02, "never rose onto the glass's top edge: {highest}");
+    assert_eq!(box_number(&app), 1, "and that is no escape");
+}
+
+#[test]
+fn the_player_climbs_a_pile_of_debris_and_escapes_to_box_2() {
+    let mut app = standing();
+    let rim = app.world().resource::<Arena>().rim;
+    // A rough ramp: columns of torso-sized blocks, each a block taller than the last and slightly askew, dropped loose
+    // so they settle and freeze like a real pile.
+    let columns = (rim / TORSO[1]).ceil() as usize + 1;
+    for c in 0..columns {
+        for layer in 0..=c {
+            for side in [-1.0, 1.0] {
+                let wobble = ((c * 7 + layer * 3) % 5) as f32 * 0.04 - 0.08;
+                let at = Vec3::new(1.0 + 0.48 * c as f32, TORSO[1] * (layer as f32 + 0.5) + 0.01, -2.0 + side * 0.26);
+                let turn = Quat::from_rotation_y(wobble);
+                app.world_mut().spawn(piece(Solid::Cube(TORSO), 1, at, turn, 0.0));
+            }
+        }
+    }
+    step(&mut app, SETTLE + 1.0);
+    let settled = pieces(&mut app);
+    assert!(settled.iter().all(|(_, b)| *b == RigidBody::Static), "the pile settled and froze");
+    let peak = settled.iter().fold(0.0f32, |m, (at, _)| m.max(at.y + TORSO[1] / 2.0));
+    assert!(peak >= rim, "and stands up to the rim ({rim} m): {peak}");
+    let score = app.world().resource::<RunScore>().0.points;
+    // From the foot of the ramp, up it.
+    teleport(&mut app, Vec3::new(-0.5, HEIGHT / 2.0 + 0.02, -2.0));
+    step(&mut app, 0.2);
+    press(&mut app, &[KeyCode::KeyD]);
+    let mut top: f32 = 0.0;
+    for _ in 0..(4.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if box_number(&app) == 2 {
+            break;
+        }
+        top = top.max(feet(&mut app));
+    }
+    keys(&mut app).release_all();
+    assert_eq!(box_number(&app), 2, "escaped to box 2 (feet reached {top} of the rim's {rim})");
+    step(&mut app, 0.1);
+    assert!(pieces(&mut app).is_empty(), "the next box starts empty");
+    assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "with the player back at the start");
+    assert!(app.world().resource::<RunScore>().0.points > score, "the time left scored a bonus");
+    let next = app.world().resource::<Arena>().rim;
+    assert!((next - game_core::run::rim_metres(&game_core::run::box_spec(2))).abs() < 1e-5, "box 2's rim: {next}");
+    let mut walls = app.world_mut().query::<&Slab>();
+    let tallest = walls.iter(app.world()).fold(0.0f32, |m, s| m.max(s.size.y));
+    assert!((tallest - next).abs() < 1e-5, "the walls were rebuilt at the new rim: {tallest}");
+}
+
+/// `n` fodder burst one after another around `centre`, each standing on the heap so far, as kills in one spot would
+/// leave them.
+fn heap(app: &mut App, n: usize, centre: Vec2) {
+    for i in 0..n {
+        let a = i as f32 * 2.4;
+        let r = 0.8 * ((i % 7) as f32 / 7.0).sqrt();
+        let (x, z) = (centre.x + r * a.cos(), centre.y + r * a.sin());
+        let mut q = app.world_mut().query::<(&Piece, &Transform)>();
+        let lying: Vec<Placed> = q
+            .iter(app.world())
+            .map(|(p, t)| Placed { solid: p.solid, centre: t.translation.to_array(), rotation: t.rotation.to_array() })
+            .collect();
+        let ground = pile_height(&lying, [x, z], 0.35, 100.0);
+        let at = Vec3::new(x, ground + FODDER_HEIGHT / 2.0 + 0.05, z);
+        let e = app.world_mut().spawn(fodder(at, a)).id();
+        app.update();
+        app.world_mut().write_message(Defeated { entity: e, team: Team::Enemy, at });
+        for _ in 0..15 {
+            app.update();
+        }
+    }
+}
+
+#[test]
+fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
+    let mut app = standing();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
+    let centre = Vec2::new(-6.6, -4.1);
+    heap(&mut app, 25, centre);
+    for _ in 0..((SETTLE + 6.0) * 30.0) as usize {
+        app.update();
+    }
+    let before = pieces(&mut app);
+    assert!(before.iter().all(|(_, b)| *b == RigidBody::Static), "the heap froze");
+    // Walk at the heap from the open floor, up and across it, at 30 fps.
+    teleport(&mut app, Vec3::new(centre.x + 4.0, HEIGHT / 2.0 + 0.02, centre.y + 3.0));
+    for _ in 0..6 {
+        app.update();
+    }
+    let mut top: f32 = 0.0;
+    let mut lowest = f32::MAX;
+    press(&mut app, &[KeyCode::KeyA, KeyCode::KeyW]);
+    for _ in 0..120 {
+        app.update();
+        top = top.max(feet(&mut app));
+        lowest = lowest.min(feet(&mut app));
+    }
+    keys(&mut app).release_all();
+    assert!(top > 1.2, "climbed well up the heap: feet reached {top}");
+    assert!(lowest > -0.02, "never sank into the floor: {lowest}");
+    let after = pieces(&mut app);
+    assert_eq!(after.len(), before.len(), "no piece was lost");
+    let moved = before.iter().zip(&after).map(|(a, b)| a.0.distance(b.0)).fold(0.0f32, f32::max);
+    assert!(moved < 1e-4, "frozen pieces don't budge under the player: {moved}");
+}
+
+#[test]
+fn running_out_of_time_costs_health_and_on_the_last_of_it_ends_the_run() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.escape(100.0, 100.0);
+    app.world_mut().resource_mut::<RunScore>().0.points = 900;
+    app.world_mut().resource_mut::<RunState>().0.time_left = 0.05;
+    step(&mut app, 0.1);
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full - game_core::run::TIMEOUT_PENALTY, "the timeout cost health");
+    assert_eq!(box_number(&app), 2, "but the run goes on");
+    assert!(app.world().resource::<RunState>().0.time_left > 60.0, "on a fresh clock");
+    // Out of time again, on the last of the health.
+    let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
+    q.single_mut(app.world_mut()).unwrap().0.hp = game_core::run::TIMEOUT_PENALTY;
+    app.world_mut().resource_mut::<RunState>().0.time_left = 0.05;
+    step(&mut app, 0.1);
+    assert_eq!(box_number(&app), 1, "the run ended and a new one starts at box 1");
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "at full health");
+    assert_eq!(app.world().resource::<RunScore>().0.points, 0, "with a fresh score");
+}
+
+#[test]
+fn a_defeat_ends_the_run_and_the_next_starts_at_box_1_in_an_empty_box() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<RunState>().0.escape(100.0, 100.0);
+    app.world_mut().resource_mut::<RunScore>().0.points = 1_200;
+    block(&mut app, TORSO, Vec3::new(3.0, 0.16, 0.0), 0.0);
+    let mut q = app.world_mut().query_filtered::<&mut Hp, With<Player>>();
+    q.single_mut(app.world_mut()).unwrap().0.hp = 1.0;
+    fodder_at(&mut app, [1.0, 0.0]);
+    let mut ended = false;
+    for _ in 0..(4.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if app.world().resource::<RunScore>().0.points == 0 {
+            ended = true;
+            break;
+        }
+    }
+    assert!(ended, "the fodder's punch ended the run");
+    step(&mut app, 0.1);
+    assert_eq!(box_number(&app), 1);
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "at full health");
+    assert!(enemies(&mut app).is_empty() && pieces(&mut app).is_empty(), "in an empty box");
+    assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "back at the start");
+    let rim = app.world().resource::<Arena>().rim;
+    assert_eq!(rim, game_core::run::rim_metres(&game_core::run::box_spec(1)), "box 1's rim again");
+}
+
+#[test]
+fn the_demo_stairs_run_climbs_out_of_box_after_box() {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, TransformPlugin, game3d::plugin, game3d::demo::stairs))
+        .init_resource::<ButtonInput<KeyCode>>()
+        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
+    app.finish();
+    app.cleanup();
+    let mut reached = vec![1];
+    for _ in 0..(20.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if reached.last() != Some(&box_number(&app)) {
+            reached.push(box_number(&app));
+        }
+    }
+    assert!(reached.starts_with(&[1, 2, 3]), "box after box: {reached:?}");
 }

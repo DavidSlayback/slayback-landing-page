@@ -1,10 +1,12 @@
-//! The run's score (rules: `game_core::score`): each kill is worth 100 times a streak multiplier. The best score and the
-//! time bonus on escape come with the run loop (G3) and the screens.
+//! The run's score (rules: `game_core::score`): each kill is worth 100 times a streak multiplier, and escaping a box
+//! adds a bonus for the time left. It carries from box to box and starts again with a new run. The best score comes
+//! with the screens (G8).
 
 use bevy::prelude::*;
 use game_core::score::Score;
 
 use crate::fighter::{Combat, Defeated, Team};
+use crate::run::BoxEnded;
 
 /// The current run's score.
 #[derive(Resource, Default)]
@@ -19,7 +21,7 @@ pub struct Scored {
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<RunScore>().add_message::<Scored>().add_systems(Update, count.after(Combat));
+    app.init_resource::<RunScore>().add_message::<Scored>().add_systems(Update, (count.after(Combat), tally));
 }
 
 fn count(
@@ -32,5 +34,17 @@ fn count(
     for d in defeats.read().filter(|d| d.team == Team::Enemy) {
         let points = score.0.kill();
         scored.write(Scored { at: d.at, points, streak: score.0.streak });
+    }
+}
+
+/// An escape adds its time bonus; a death starts the next run's score from zero.
+fn tally(mut ended: MessageReader<BoxEnded>, mut score: ResMut<RunScore>) {
+    for end in ended.read() {
+        match *end {
+            BoxEnded::Escaped { number, time_left } => {
+                score.0.escape(time_left, number);
+            }
+            BoxEnded::Died { .. } => score.0 = Score::default(),
+        }
     }
 }

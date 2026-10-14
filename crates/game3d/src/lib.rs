@@ -8,6 +8,7 @@
 pub mod arena;
 pub mod camera;
 pub mod debris;
+pub mod demo;
 pub mod enemy;
 pub mod fighter;
 #[cfg(feature = "render")]
@@ -20,6 +21,7 @@ pub mod input;
 #[cfg(feature = "render")]
 pub mod look;
 pub mod player;
+pub mod run;
 pub mod score;
 
 use avian3d::prelude::*;
@@ -29,7 +31,7 @@ use bevy::prelude::*;
 pub const GRAVITY: f32 = 15.0;
 
 /// Everything that makes up the game except windowing and rendering: physics, the box, fighting, the player, enemies,
-/// their debris and the score.
+/// their debris, the run and the score.
 pub fn plugin(app: &mut App) {
     app.add_plugins(PhysicsPlugins::default()).insert_resource(Gravity(Vec3::NEG_Y * GRAVITY)).add_plugins((
         input::plugin,
@@ -38,6 +40,7 @@ pub fn plugin(app: &mut App) {
         player::plugin,
         enemy::plugin,
         debris::plugin,
+        run::plugin,
         score::plugin,
     ));
 }

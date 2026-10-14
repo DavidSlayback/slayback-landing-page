@@ -17,6 +17,6 @@ fn main() {
             }),
             ..default()
         }))
-        .add_plugins((game3d::plugin, game3d::look::plugin))
+        .add_plugins((game3d::plugin, game3d::look::plugin, game3d::demo::plugin))
         .run();
 }
