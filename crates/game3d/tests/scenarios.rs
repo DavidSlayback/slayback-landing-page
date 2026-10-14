@@ -1770,8 +1770,7 @@ fn thugs_and_ninjas_burst_into_their_own_pieces_and_a_bomb_head_drops_its_head()
 
 #[test]
 fn a_dash_covers_its_distance_along_the_floor_and_the_player_stays_grounded() {
-    use game_core::movement::DASH_TIME;
-    use game_core::plane::DASH_SPEED;
+    use game_core::plane::{DASH_SPEED, DASH_TIME};
     let mut app = standing();
     let (start, _, _) = player(&mut app);
     // Nothing held: the dash goes the way the player faces (+x).
