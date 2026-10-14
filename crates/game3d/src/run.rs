@@ -164,13 +164,7 @@ fn announce(mut started: MessageReader<BoxStarted>, mut waves: ResMut<Waves>) {
     for BoxStarted(spec) in started.read() {
         info!(
             "box {} started (rim {:.2} m, {} s, crowd {} to {}, doors every {:.1} s, {} at once)",
-            spec.number,
-            game_core::run::rim_metres(spec),
-            spec.timer,
-            spec.crowd,
-            spec.peak,
-            spec.interval,
-            spec.burst
+            spec.number, spec.rim, spec.timer, spec.crowd, spec.peak, spec.interval, spec.burst
         );
         waves.timer = Timer::from_seconds(spec.interval, TimerMode::Repeating);
     }

@@ -2,7 +2,7 @@
 //! last move direction (decision Q49).
 //!
 //! Plane vectors are `[x, y]` with y pointing away from the camera; angles are radians, counter-clockwise from +x.
-//! Distances are metres (the 2.5D game's 32 world units).
+//! Distances are metres.
 
 use std::f32::consts::{PI, TAU};
 
@@ -12,8 +12,6 @@ pub const RUN_SPEED: f32 = 6.0;
 pub const RUN_ACCEL: f32 = 60.0;
 /// How fast the facing turns, rad/s: a full about-turn takes about 0.2 s.
 pub const TURN_RATE: f32 = 16.0;
-/// The 2.5D game's world units per metre (its physics length unit), for rules shared with it.
-pub const UNITS_PER_METRE: f32 = 32.0;
 /// Dash speed, m/s: the 2.5D dash's 2.6 times the run speed. It lasts `movement::DASH_TIME` (~2.6 m, about four
 /// fighters across) and is spaced by `movement::DASH_COOLDOWN`.
 pub const DASH_SPEED: f32 = 16.0;

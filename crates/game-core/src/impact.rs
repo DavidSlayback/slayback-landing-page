@@ -1,4 +1,4 @@
-//! How a hit feels, shared by both games: screen-shake trauma, the comic star burst's size and pop, and the squash on
+//! How a hit feels: screen-shake trauma, the comic star burst's size and pop, and the squash on
 //! whoever takes the blow. All of it runs on real time, so it plays through hit-stop: the frozen frame is the squashed,
 //! burst-lit, shaking one.
 
@@ -8,19 +8,18 @@ use crate::combat::Move;
 pub const SQUASH_TIME: f32 = 0.14;
 /// Trauma from a bomb blast.
 pub const BLAST_TRAUMA: f32 = 0.8;
-/// A blast's star burst radius, world units: twice a finishing drop-kick's.
-pub const BLAST_BURST: f32 = 108.0;
+/// A blast's star burst radius, metres: twice a finishing drop-kick's.
+pub const BLAST_BURST: f32 = 3.375;
 /// Trauma drained per second.
 const DRAIN: f32 = 1.8;
 
-/// A burst's radius for one blow, in the 2.5D game's world units (a fodder is 52 tall; divide by
-/// `plane::UNITS_PER_METRE` for metres).
+/// A burst's radius for one blow, metres.
 pub fn burst_size(mv: Move, finisher: bool) -> f32 {
     let base = match mv {
-        Move::Punch | Move::Slash => 18.0,
-        Move::Kick => 26.0,
-        Move::DropKick => 30.0,
-        Move::Smash => 32.0,
+        Move::Punch | Move::Slash => 0.5625,
+        Move::Kick => 0.8125,
+        Move::DropKick => 0.9375,
+        Move::Smash => 1.0,
     };
     if finisher { base * 1.8 } else { base }
 }
@@ -66,7 +65,7 @@ impl Shake {
         self.trauma = (self.trauma - DRAIN * dt).max(0.0);
     }
 
-    /// The view's offset at time `t` (seconds), as a fraction of the full shake (each game scales it): two unrelated
+    /// The view's offset at time `t` (seconds), as a fraction of the full shake (the game scales it): two unrelated
     /// sines per axis read as noise without a noise crate.
     pub fn offset(&self, t: f32) -> [f32; 2] {
         let a = self.trauma * self.trauma;

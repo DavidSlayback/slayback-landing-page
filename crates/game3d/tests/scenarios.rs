@@ -642,7 +642,7 @@ fn the_player_climbs_a_pile_of_debris_and_escapes_to_box_2() {
     assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "with the player back at the start");
     assert!(app.world().resource::<RunScore>().0.points > score, "the time left scored a bonus");
     let next = app.world().resource::<Arena>().rim;
-    assert!((next - game_core::run::rim_metres(&game_core::run::box_spec(2))).abs() < 1e-5, "box 2's rim: {next}");
+    assert!((next - game_core::run::box_spec(2).rim).abs() < 1e-5, "box 2's rim: {next}");
     let mut walls = app.world_mut().query::<&Slab>();
     let tallest = walls.iter(app.world()).fold(0.0f32, |m, s| m.max(s.size.y));
     assert!((tallest - next).abs() < 1e-5, "the walls were rebuilt at the new rim: {tallest}");
@@ -751,7 +751,7 @@ fn a_defeat_ends_the_run_and_the_next_starts_at_box_1_in_an_empty_box() {
     assert!(enemies(&mut app).is_empty() && pieces(&mut app).is_empty(), "in an empty box");
     assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "back at the start");
     let rim = app.world().resource::<Arena>().rim;
-    assert_eq!(rim, game_core::run::rim_metres(&game_core::run::box_spec(1)), "box 1's rim again");
+    assert_eq!(rim, game_core::run::box_spec(1).rim, "box 1's rim again");
 }
 
 #[test]

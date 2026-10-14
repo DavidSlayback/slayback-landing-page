@@ -2,9 +2,9 @@
 //! toward the player while keeping apart and off the walls (Q63), telegraph and strike. The box keeps its crowd topped
 //! up, calling at several doors at once (`game_core::run::BoxSpec`: crowd ramp, interval, burst), at Rumble Box's pace.
 //!
-//! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game, fed distances in its
-//! world units), steering from `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the
-//! box (`game_core::run::pick_kind`); this module turns them into entities, velocity, facing and swings. Fodder seek
+//! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game), steering from
+//! `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the box
+//! (`game_core::run::pick_kind`); this module turns them into entities, velocity, facing and swings. Fodder seek
 //! and keep apart; thugs plough straight in, ignoring the crowd; a ninja the player faces circles round to its back.
 
 use avian3d::prelude::*;
@@ -13,7 +13,7 @@ use game_core::debris::solid::height;
 use game_core::doors::Door;
 use game_core::enemy::{Intent, Kind, Mind, NinjaPhase};
 use game_core::grab::Held;
-use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading};
+use game_core::plane::{RUN_ACCEL, RUN_SPEED, approach, heading};
 use game_core::run::{box_spec, pick_kind};
 use game_core::steer::{circle, steer};
 
@@ -211,8 +211,7 @@ fn think(
         // The player is facing this enemy (ninjas won't stand there).
         let in_front = dist > 1e-4 && -(forward[0] * to_player[0] + forward[1] * to_player[1]) / dist > IN_FRONT;
         let stunned = hp.0.stunned();
-        // The brains think in the 2.5D game's world units.
-        let intent = brain.0.decide(dist * UNITS_PER_METRE, in_front, dt, stunned, attack.busy());
+        let intent = brain.0.decide(dist, in_front, dt, stunned, attack.busy());
         if stunned {
             continue; // knockback plays out
         }

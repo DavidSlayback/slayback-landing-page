@@ -1,6 +1,5 @@
-//! Attacks, hits, health and hit-stop: the rules of a single exchange of blows.
-//!
-//! Coordinates are world units with +y up (Bevy's convention); `facing` is +1 (right) or -1 (left).
+//! Attacks, hits, health and hit-stop: the rules of a single exchange of blows. Lengths are metres and speeds m/s,
+//! with +y up.
 
 /// An attack the player or an enemy can throw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,12 +20,12 @@ pub struct MoveSpec {
     pub startup: f32,
     pub active: f32,
     pub recovery: f32,
-    /// How far the hitbox extends past the attacker's edge.
+    /// How far the blow reaches past the attacker's edge, metres.
     pub reach: f32,
-    /// Hitbox centre relative to the attacker's centre (punches high, kicks low).
+    /// Where the blow lands, metres above the attacker's centre (punches high, kicks low).
     pub offset_y: f32,
     pub damage: f32,
-    /// Launch velocity given to the target, before applying `facing` to x.
+    /// Launch given to the target, away and up, m/s: the side-view game's, which `aim::launch` scales for the floor.
     pub knockback: (f32, f32),
     /// How long the target loses control.
     pub hitstun: f32,
@@ -42,10 +41,10 @@ impl Move {
                 startup: 0.06,
                 active: 0.08,
                 recovery: 0.14,
-                reach: 34.0,
-                offset_y: 10.0,
+                reach: 1.0625,
+                offset_y: 0.3125,
                 damage: 8.0,
-                knockback: (520.0, 260.0),
+                knockback: (16.25, 8.125),
                 hitstun: 0.25,
                 hitstop: 0.05,
             },
@@ -54,10 +53,10 @@ impl Move {
                 startup: 0.12,
                 active: 0.10,
                 recovery: 0.24,
-                reach: 46.0,
-                offset_y: -14.0,
+                reach: 1.4375,
+                offset_y: -0.4375,
                 damage: 14.0,
-                knockback: (900.0, 420.0),
+                knockback: (28.125, 13.125),
                 hitstun: 0.40,
                 hitstop: 0.09,
             },
@@ -66,10 +65,10 @@ impl Move {
                 startup: 0.0,
                 active: 0.14,
                 recovery: 0.22,
-                reach: 30.0,
-                offset_y: -6.0,
+                reach: 0.9375,
+                offset_y: -0.1875,
                 damage: 12.0,
-                knockback: (1000.0, 360.0),
+                knockback: (31.25, 11.25),
                 hitstun: 0.45,
                 hitstop: 0.08,
             },
@@ -78,10 +77,10 @@ impl Move {
                 startup: 0.1,
                 active: 0.12,
                 recovery: 0.4,
-                reach: 44.0,
-                offset_y: 16.0,
+                reach: 1.375,
+                offset_y: 0.5,
                 damage: 22.0,
-                knockback: (750.0, 480.0),
+                knockback: (23.4375, 15.0),
                 hitstun: 0.5,
                 hitstop: 0.1,
             },
@@ -89,10 +88,10 @@ impl Move {
                 startup: 0.05,
                 active: 0.08,
                 recovery: 0.2,
-                reach: 30.0,
-                offset_y: 6.0,
+                reach: 0.9375,
+                offset_y: 0.1875,
                 damage: 7.0,
-                knockback: (450.0, 200.0),
+                knockback: (14.0625, 6.25),
                 hitstun: 0.25,
                 hitstop: 0.05,
             },

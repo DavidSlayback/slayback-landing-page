@@ -22,7 +22,6 @@ use game_core::climb::{MAX_STEP, Placed, pile_height};
 use game_core::combat::Health;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, Solid};
 use game_core::enemy::Kind;
-use game_core::run::rim_metres;
 
 use crate::arena::Arena;
 use crate::bomb::BombHead;
@@ -315,7 +314,7 @@ const FIRST: f32 = 0.8;
 /// than the last, the top one level with or above the rim.
 fn build_stairs(mut commands: Commands, time: Res<Time>, mut started: MessageReader<BoxStarted>) {
     let Some(BoxStarted(spec)) = started.read().last() else { return };
-    let steps = (rim_metres(spec) / RISE).ceil() as usize;
+    let steps = (spec.rim / RISE).ceil() as usize;
     for i in 0..steps {
         let h = RISE * (i + 1) as f32;
         let at = Vec3::new(FIRST + TREAD * (i as f32 + 0.5), h / 2.0, SPAWN.z);

@@ -13,8 +13,6 @@ pub enum Held {
     Bomb,
 }
 
-/// How far past the player's edge a grab reaches, world units.
-pub const REACH: f32 = 30.0;
 /// The spin before release: the held thing makes one turn around the player, seconds.
 pub const SPIN: f32 = 0.22;
 /// Seconds a thrown thing stays dangerous.
@@ -22,8 +20,8 @@ pub const FLIGHT: f32 = 0.9;
 /// Hit-stop when a thrown thing lands a hit (kept short: a throw can hit a whole crowd).
 pub const HITSTOP: f32 = 0.04;
 
-/// What a thrown thing does to each enemy it hits: damage and knockback (before facing), and the damage the thrown
-/// enemy itself takes on its first impact.
+/// What a thrown thing does to each enemy it hits: damage and knockback (away and up, m/s, scaled as a blow's by
+/// `aim::shove`), and the damage the thrown enemy itself takes on its first impact.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Impact {
     pub damage: f32,
@@ -34,10 +32,10 @@ pub struct Impact {
 pub fn impact(held: Held) -> Impact {
     match held {
         // A whole body: the heaviest thing the player can swing.
-        Held::Enemy => Impact { damage: 16.0, knockback: (700.0, 380.0), self_damage: 10.0 },
-        Held::Debris => Impact { damage: 9.0, knockback: (450.0, 260.0), self_damage: 0.0 },
+        Held::Enemy => Impact { damage: 16.0, knockback: (21.875, 11.875), self_damage: 10.0 },
+        Held::Debris => Impact { damage: 9.0, knockback: (14.0625, 8.125), self_damage: 0.0 },
         // The bomb's real damage is its blast; the throw itself only clips.
-        Held::Bomb => Impact { damage: 4.0, knockback: (250.0, 150.0), self_damage: 0.0 },
+        Held::Bomb => Impact { damage: 4.0, knockback: (7.8125, 4.6875), self_damage: 0.0 },
     }
 }
 
@@ -49,10 +47,10 @@ pub mod flat {
 
     use super::{FLIGHT, Held, impact};
     use crate::aim::{Cone, shove};
-    use crate::plane::{UNITS_PER_METRE, heading, wrap};
+    use crate::plane::{heading, wrap};
 
-    /// How far past the player's edge a grab reaches: the 2.5D reach, about a metre.
-    pub const REACH: f32 = super::REACH / UNITS_PER_METRE;
+    /// How far past the player's edge a grab reaches, metres.
+    pub const REACH: f32 = 0.9375;
     /// Throw speed across the floor, m/s: three-quarters of a dash, flat.
     pub const SPEED: f32 = 12.0;
     /// How far a throw carries in its flight, metres: where aim assist looks for a group.

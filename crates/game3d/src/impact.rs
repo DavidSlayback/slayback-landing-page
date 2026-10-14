@@ -13,7 +13,6 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
 use game_core::impact::{BLAST_BURST, burst_size, pop, squash};
-use game_core::plane::UNITS_PER_METRE;
 
 use crate::bomb::Exploded;
 use crate::camera;
@@ -140,7 +139,7 @@ fn spawn_bursts(
         let turn = facing * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
         commands
             .spawn((
-                Burst { life: BURST_LIFE, size: size / UNITS_PER_METRE },
+                Burst { life: BURST_LIFE, size },
                 Mesh3d(kit.star.clone()),
                 MeshMaterial3d(kit.outer.clone()),
                 Transform::from_translation(at + toward_camera * BURST_LIFT).with_rotation(turn).with_scale(Vec3::ZERO),

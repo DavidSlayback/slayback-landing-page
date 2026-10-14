@@ -43,7 +43,7 @@ pub fn staggers(mv: Move, armour: Armour) -> bool {
 pub struct Style {
     pub kind: Kind,
     pub max_hp: f32,
-    /// Horizontal centre distance at which it stops and starts its telegraph.
+    /// Distance to the player, centre to centre across the floor (metres), at which it stops and starts its telegraph.
     pub range: f32,
     /// Telegraph time before the blow comes out.
     pub windup: f32,
@@ -58,7 +58,7 @@ pub struct Style {
 pub const FODDER: Style = Style {
     kind: Kind::Fodder,
     max_hp: 30.0,
-    range: 52.0,
+    range: 1.625,
     windup: 0.35,
     cooldown: 0.65,
     walk: 0.5,
@@ -70,7 +70,7 @@ pub const FODDER: Style = Style {
 pub const THUG: Style = Style {
     kind: Kind::Thug,
     max_hp: 60.0,
-    range: 66.0,
+    range: 2.0625,
     windup: 0.6,
     cooldown: 1.0,
     walk: 0.3,
@@ -82,7 +82,7 @@ pub const THUG: Style = Style {
 pub const NINJA: Style = Style {
     kind: Kind::Ninja,
     max_hp: 18.0,
-    range: 44.0,
+    range: 1.375,
     windup: 0.2,
     cooldown: 0.0,
     walk: 1.25,
@@ -118,7 +118,7 @@ impl MeleeBrain {
         (self.windup / self.style.windup).clamp(0.0, 1.0)
     }
 
-    /// `dx` is player.x - self.x. `stunned` means a blow staggered it; `busy` means its own swing is under way.
+    /// `dx` is how far away the player is, metres; a walk takes its sign. `stunned` means a blow staggered it; `busy` means its own swing is under way.
     pub fn decide(&mut self, dx: f32, dt: f32, stunned: bool, busy: bool) -> Intent {
         let s = self.style;
         if stunned || busy {
@@ -170,12 +170,12 @@ impl Default for NinjaBrain {
 }
 
 impl NinjaBrain {
-    /// How close the player may be while facing it before it flanks, world units.
-    pub const AVOID: f32 = 170.0;
+    /// How close the player may be while facing it before it flanks, metres.
+    pub const AVOID: f32 = 5.3125;
     /// Seconds it backs off after a strike.
     pub const RETREAT: f32 = 0.8;
 
-    /// `dx` is player.x - self.x; `in_front` means the player is facing it. Otherwise as [`MeleeBrain::decide`].
+    /// `dx` as in [`MeleeBrain::decide`]; `in_front` means the player is facing it. Otherwise as [`MeleeBrain::decide`].
     pub fn decide(&mut self, dx: f32, in_front: bool, dt: f32, stunned: bool, busy: bool) -> Intent {
         let s = NINJA;
         if stunned || busy {
@@ -273,14 +273,14 @@ mod tests {
     #[test]
     fn walks_toward_a_distant_player() {
         let mut b = fodder();
-        assert_eq!(b.decide(300.0, DT, false, false), Intent::Walk(FODDER.walk));
-        assert_eq!(b.decide(-300.0, DT, false, false), Intent::Walk(-FODDER.walk));
+        assert_eq!(b.decide(9.375, DT, false, false), Intent::Walk(FODDER.walk));
+        assert_eq!(b.decide(-9.375, DT, false, false), Intent::Walk(-FODDER.walk));
     }
 
     #[test]
     fn telegraphs_before_punching_a_nearby_player() {
         let mut b = fodder();
-        let frames_before_punch = (0..60).take_while(|_| b.decide(30.0, DT, false, false) == Intent::Hold).count();
+        let frames_before_punch = (0..60).take_while(|_| b.decide(0.9375, DT, false, false) == Intent::Hold).count();
         let expected = (FODDER.windup / DT).ceil() as usize - 1;
         assert!(frames_before_punch.abs_diff(expected) <= 1, "punched after {frames_before_punch} frames");
     }
@@ -290,7 +290,7 @@ mod tests {
         let mut b = fodder();
         let mut punches = 0;
         for _ in 0..(2.0 / DT) as usize {
-            if b.decide(30.0, DT, false, false) == Intent::Attack(Move::Punch) {
+            if b.decide(0.9375, DT, false, false) == Intent::Attack(Move::Punch) {
                 punches += 1;
             }
         }
@@ -302,11 +302,11 @@ mod tests {
     fn a_stunned_or_busy_enemy_does_nothing_and_loses_its_windup() {
         let mut b = fodder();
         for _ in 0..10 {
-            b.decide(30.0, DT, false, false);
+            b.decide(0.9375, DT, false, false);
         }
-        assert_eq!(b.decide(30.0, DT, true, false), Intent::Hold);
+        assert_eq!(b.decide(0.9375, DT, true, false), Intent::Hold);
         assert_eq!(b.windup, 0.0, "getting hit should interrupt the telegraph");
-        assert_eq!(b.decide(30.0, DT, false, true), Intent::Hold);
+        assert_eq!(b.decide(0.9375, DT, false, true), Intent::Hold);
     }
 
     #[test]
@@ -315,9 +315,9 @@ mod tests {
         assert!(thug.walk < fodder.walk && thug.max_hp >= 2.0 * fodder.max_hp);
         assert!(thug.windup > fodder.windup);
         let mut b = MeleeBrain::new(THUG);
-        let frames = (0..120).take_while(|_| b.decide(40.0, DT, false, false) == Intent::Hold).count();
+        let frames = (0..120).take_while(|_| b.decide(1.25, DT, false, false) == Intent::Hold).count();
         assert!(frames as f32 * DT >= 0.55, "a big, readable wind-up: {frames} frames");
-        assert_eq!(b.decide(40.0, DT, false, false), Intent::Hold, "then cools down");
+        assert_eq!(b.decide(1.25, DT, false, false), Intent::Hold, "then cools down");
     }
 
     #[test]
@@ -331,11 +331,11 @@ mod tests {
     fn an_unstaggered_thug_keeps_winding_up() {
         let mut b = MeleeBrain::new(THUG);
         for _ in 0..20 {
-            b.decide(40.0, DT, false, false);
+            b.decide(1.25, DT, false, false);
         }
         // A punch lands but doesn't stagger: the game passes stunned = false, so the telegraph carries on.
         let before = b.telegraph();
-        b.decide(40.0, DT, false, false);
+        b.decide(1.25, DT, false, false);
         assert!(b.telegraph() > before);
     }
 
@@ -350,30 +350,30 @@ mod tests {
     fn a_ninja_approaches_from_behind_then_strikes_and_retreats() {
         let mut b = NinjaBrain::default();
         // Behind the player (not in front), far away: closes in at full speed.
-        assert_eq!(b.decide(200.0, false, DT, false, false), Intent::Walk(NINJA.walk));
+        assert_eq!(b.decide(6.25, false, DT, false, false), Intent::Walk(NINJA.walk));
         // In range: a brief tell, then the slash.
         let mut struck = false;
         for _ in 0..30 {
-            if b.decide(30.0, false, DT, false, false) == Intent::Attack(Move::Slash) {
+            if b.decide(0.9375, false, DT, false, false) == Intent::Attack(Move::Slash) {
                 struck = true;
                 break;
             }
         }
         assert!(struck, "struck within half a second");
         // Then backs off, away from the player.
-        assert_eq!(b.decide(30.0, false, DT, false, false), Intent::Walk(-NINJA.walk));
+        assert_eq!(b.decide(0.9375, false, DT, false, false), Intent::Walk(-NINJA.walk));
         assert!(matches!(b.phase, NinjaPhase::Retreat(_)));
     }
 
     #[test]
     fn a_ninja_never_stands_in_front_of_the_player() {
         let mut b = NinjaBrain::default();
-        // Faced from 100 units: it runs through toward the player's back rather than waiting there.
-        assert_eq!(b.decide(100.0, true, DT, false, false), Intent::Walk(NINJA.walk));
+        // Faced from about 3 m: it runs through toward the player's back rather than waiting there.
+        assert_eq!(b.decide(3.125, true, DT, false, false), Intent::Walk(NINJA.walk));
         assert_eq!(b.phase, NinjaPhase::Flank);
         // Once behind (the player no longer faces it), it attacks as normal.
         for _ in 0..30 {
-            b.decide(-30.0, false, DT, false, false);
+            b.decide(-0.9375, false, DT, false, false);
         }
         assert!(!matches!(b.phase, NinjaPhase::Flank));
     }

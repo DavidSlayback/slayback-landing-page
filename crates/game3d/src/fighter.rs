@@ -174,7 +174,7 @@ fn resolve_hits(
             // Pushed away from the attacker (along the facing if they overlap), struck on the near side of the body.
             let yaw = heading(plane(them - me)).unwrap_or(facing.0.yaw);
             let dir = on_floor([yaw.cos(), yaw.sin()]);
-            let height = swing.mv.spec().offset_y / game_core::plane::UNITS_PER_METRE;
+            let height = swing.mv.spec().offset_y;
             let at = (them - dir * their_body.radius).with_y(me.y + height);
             hits.push((target, swing.mv, dir, at));
         }
