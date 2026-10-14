@@ -1,14 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 12:30 CDT
-In flight: the feel pass (Q65-Q69), steps 1-4 and a smoothness pass done on branch feel-1-camera-look (4d6bc13, unmerged; feel-4-pace merged into it), previewed at https://rc-3.slayback.pages.dev. Waiting for David to play it (Q69: he looks only once animations, figures and pace are in; they now are).
-Done in the feel pass: Rumble Box camera (yawed 30°, swings ±35° away from the wall the player nears, 12 m roaming / 9.5 m fighting, swoop each box, camera-relative controls); thick black edges and tile grid; saturated fighters (no tonemapping); pose.rs attack animations (punch ~0.1 s to full reach and snap back, alternating arms; kick; drop-kick; hold; whirl; throw follow-through; dash lean; snappy walk); loose-part player (ball head and fists) and gapped enemy parts; kill bursts ~0.85 m high; pace (box 1 crowd 3 -> 7 over 40 s, doors called every 1.0 s and in pairs; an idle player dies in ~10 s, Q68).
-Next: David plays rc-3. On sign-off: PR feel-1-camera-look into main, merge, deploy rc-2. Then the playtest (#29).
-Waiting on: David: play rc-3; playtesters (#29), gamepad on hardware (#26), C2 content (#13). Open roster question: Rumble Box sends heavies into box 1 from ~14 s; ours start thugs in box 2 (Q26).
-Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. In a fresh worktree, use CARGO_TARGET_DIR=<main checkout>/target for hooks and builds (a cold target/ failed the pre-push hook: "dlltool.exe: program not found").
-Smoothness pass (David: "still a bit too sudden and jittery"): all rigid bodies interpolated (debris juddered at 64 Hz physics), camera follows interpolated Transform, smoothstep blows, smooth walk curve, parts ease to pose (33 ms).
-Verified: rc-3 from 4d6bc13: harness 13 passed, 2 skipped (one earlier run flaked under load: 2.6 min, stairs timeout; rerun clean); 6,204 KB gzipped; game3d 62 scenarios, camera and pose unit tests, full hook gate green. GPU captures reviewed frame by frame (punch, kick, drop-kick, hold, kill bursts, walls) against the video.
+As of: Wed Oct 14 2026 14:30 CDT
+In flight: nothing running. Branch arch-4-paints (c7a59d3, pushed, unmerged) holds, in order: the feel pass (Q65-Q69, steps 1-4 + smoothness), then three refactors from the architecture ranking: #1 one figure path for every fighter (fixes: the player never flashed when hit), #2 game-core in metres (deleted the 2.5D side-view leftovers and `movement`, -360 net lines, values pinned to old/32), #4 one place for the scheme's colours (paint.rs; fixes: the bomb fuse kept box 1's colour). Previewed at https://rc-3.slayback.pages.dev. Ranking #3 (demo drives the game by faked key presses) and #5 (worktree build friction, saved as a Claude memory) not done.
+Next: David plays rc-3 (feel sign-off, Q69). On sign-off: PR arch-4-paints into main (one PR, or split: feel pass, then refactors), merge, deploy rc-2. Then the playtest (#29). Optional: ranking #3 (demo sends intents, not keys); flatten bomb::space and grab::flat now they have no side-view siblings.
+Waiting on: David: play rc-3; playtesters (#29), gamepad on hardware (#26), C2 content (#13). Open roster question: heavies in box 1 (Rumble Box) vs thugs from box 2 (Q26).
+Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. Fresh worktrees: CARGO_TARGET_DIR=<main checkout>/target (cold target/ fails the pre-push hook: dlltool).
+Verified: rc-3 from c7a59d3: harness 13 passed, 2 skipped; 6,199 KB gzipped; game3d 62 scenarios + 17 render unit tests; game-core 109 tests incl. metre pins; full hook gate green. GPU captures checked: player hit flash, scheme rotation box 1/3/5.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
