@@ -268,16 +268,18 @@ fn animate(
         } else {
             skin
         };
+        let k = pose::follow(dt);
         for &c in children {
             let Ok((mut rig, pieces)) = rigs.get_mut(c) else { continue };
-            rig.translation = lift;
-            rig.rotation = facing.rotation() * lean;
+            rig.translation = rig.translation.lerp(lift, k);
+            rig.rotation = rig.rotation.slerp(facing.rotation() * lean, k);
             for &p in pieces {
                 let Ok((part, mut tf, mut material)) = parts.get_mut(p) else { continue };
                 let mut at = part.rest + pose::part(part.limb, part.reach, part.rest, stride.0, amount, act);
                 if part.limb == Limb::RightArm {
                     at += wind.0.lerp(wind.1, part.reach);
                 }
+                let at = tf.translation.lerp(at, k);
                 if tf.translation != at {
                     tf.translation = at;
                 }

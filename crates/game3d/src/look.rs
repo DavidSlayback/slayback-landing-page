@@ -476,13 +476,15 @@ fn animate(
         if dasher.0.dashing() && matches!(act, Act::None) {
             lean = Quat::from_rotation_z(-0.3);
         }
+        let k = pose::follow(dt);
         for &c in children {
             let Ok((mut rig, pieces)) = rigs.get_mut(c) else { continue };
-            rig.translation = lift;
-            rig.rotation = turn * lean;
+            rig.translation = rig.translation.lerp(lift, k);
+            rig.rotation = rig.rotation.slerp(turn * lean, k);
             for &p in pieces {
                 if let Ok((part, mut tf)) = parts.get_mut(p) {
-                    tf.translation = part.rest + pose::part(part.limb, part.reach, part.rest, m.phase, amount, act);
+                    let to = part.rest + pose::part(part.limb, part.reach, part.rest, m.phase, amount, act);
+                    tf.translation = tf.translation.lerp(to, k);
                 }
             }
         }

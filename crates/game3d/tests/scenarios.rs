@@ -135,6 +135,55 @@ fn with_the_camera_turned_up_on_the_keys_walks_up_the_screen() {
 }
 
 #[test]
+fn walking_at_60_fps_the_player_moves_the_same_distance_every_frame() {
+    // Physics steps at 64 Hz, so at 60 fps most frames take one step and the odd one two. What's drawn (the
+    // interpolated `Transform`) must still move evenly, or the walk judders.
+    let mut app = standing();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 60.0)));
+    press(&mut app, &[KeyCode::KeyD]);
+    step(&mut app, 0.5);
+    let mut last = player(&mut app).0.x;
+    let mut moves = vec![];
+    // Long enough to cross a frame that takes two physics steps (about one in fifteen).
+    for _ in 0..40 {
+        app.update();
+        let x = player(&mut app).0.x;
+        moves.push(x - last);
+        last = x;
+    }
+    let mean = moves.iter().sum::<f32>() / moves.len() as f32;
+    let worst = moves.iter().map(|m| (m - mean).abs()).fold(0.0f32, f32::max);
+    assert!(mean > 0.05, "walking: {mean} m a frame");
+    assert!(worst < 0.1 * mean, "even steps: mean {mean}, worst off by {worst}: {moves:?}");
+}
+
+#[test]
+fn a_flying_piece_of_debris_moves_evenly_at_60_fps() {
+    // A burst piece in the air at 60 fps: drawn where interpolation puts it, it must not judder between the
+    // 64 Hz physics steps.
+    let mut app = standing();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 60.0)));
+    let solid = FODDER[0].solid;
+    let e = app.world_mut().spawn(piece(solid, 0, Vec3::new(-6.0, 9.0, -2.0), Quat::IDENTITY, 0.0)).id();
+    app.world_mut().entity_mut(e).insert(LinearVelocity(Vec3::new(4.0, 0.0, 0.0)));
+    let x = |app: &App| app.world().get::<Transform>(e).unwrap().translation.x;
+    app.update();
+    app.update();
+    let mut last = x(&app);
+    let mut moves = vec![];
+    // Long enough to cross a frame that takes two physics steps (about one in fifteen).
+    for _ in 0..40 {
+        app.update();
+        moves.push(x(&app) - last);
+        last = x(&app);
+    }
+    let mean = moves.iter().sum::<f32>() / moves.len() as f32;
+    let worst = moves.iter().map(|m| (m - mean).abs()).fold(0.0f32, f32::max);
+    assert!(mean > 0.03, "flying: {mean} m a frame");
+    assert!(worst < 0.15 * mean, "even steps: mean {mean}, worst off by {worst}: {moves:?}");
+}
+
+#[test]
 fn the_player_walks_into_a_corner_and_the_walls_stop_it() {
     let mut app = standing();
     // Up and right: toward the back-right corner, across the whole floor.

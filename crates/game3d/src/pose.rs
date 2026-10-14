@@ -51,27 +51,41 @@ fn leg(limb: Limb) -> bool {
 }
 
 /// How far out a blow is, 0 at rest to 1 at full reach: out fast (Rumble Box's punch reaches full extension in ~80
-/// ms), held through the active window, then snapped back early in the recovery.
+/// ms), held through the active window, then pulled back early in the recovery; eased at both ends.
 pub fn extension(swing: &Swing) -> f32 {
     let s = swing.mv.spec();
     let t = swing.elapsed;
     let out = (s.startup + s.active * 0.5).max(1e-3);
     if t < out {
-        let x = t / out;
-        1.0 - (1.0 - x) * (1.0 - x)
+        smooth(t / out)
     } else if t < s.startup + s.active {
         1.0
     } else {
         // Snapped back over the first 60% of the recovery (Rumble Box pulls back within a few frames), then still.
         let x = ((t - s.startup - s.active) / (0.6 * s.recovery).max(1e-3)).clamp(0.0, 1.0);
-        (1.0 - x) * (1.0 - x)
+        1.0 - smooth(x)
     }
 }
 
-/// A walk cycle: big alternating steps, snappier than a sine.
+/// Smoothstep: eases in and out, so a blow starts and stops without a jolt.
+fn smooth(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// How fast a part follows its pose, per second: every part eases toward where `part` puts it (a 33 ms time constant,
+/// two frames), so changes of action, starting and stopping, and the odd long frame never jump.
+pub const FOLLOW: f32 = 30.0;
+
+/// The share of the way to its pose a part moves this frame.
+pub fn follow(dt: f32) -> f32 {
+    1.0 - (-FOLLOW * dt).exp()
+}
+
+/// A walk cycle: big alternating steps that linger at each end of the stride, smooth throughout (a sine with a
+/// little of its third harmonic).
 fn step(phase: f32) -> f32 {
-    let s = phase.sin();
-    s.signum() * s.abs().powf(0.6)
+    (phase.sin() + 0.15 * (3.0 * phase).sin()) / 0.85
 }
 
 /// The figure as a whole: lifted (metres) and turned (lean and twist) on top of its facing. A turn about +z by a

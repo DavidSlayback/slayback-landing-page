@@ -119,14 +119,16 @@ mod view {
         arena: Res<Arena>,
         mut started: MessageReader<BoxStarted>,
         mut view: ResMut<ViewYaw>,
-        player: Query<&GlobalTransform, With<Player>>,
-        foes: Query<&GlobalTransform, With<Brain>>,
+        // `Transform`, not `GlobalTransform`: fighters are top-level, and their transforms are this frame's
+        // interpolated ones, where `GlobalTransform` is still last frame's. Following it made the player wobble.
+        player: Query<&Transform, (With<Player>, Without<Camera3d>)>,
+        foes: Query<&Transform, (With<Brain>, Without<Camera3d>)>,
         mut cameras: Query<(&mut Rig, &mut Transform), With<Camera3d>>,
     ) {
         let swooping = started.read().count() > 0;
         // The player's transform is its capsule's centre.
-        let feet = player.single().map(|t| t.translation() - Vec3::Y * HEIGHT / 2.0).unwrap_or(Vec3::ZERO);
-        let want = targets(&arena, feet, foes.iter().map(|t| t.translation()));
+        let feet = player.single().map(|t| t.translation - Vec3::Y * HEIGHT / 2.0).unwrap_or(Vec3::ZERO);
+        let want = targets(&arena, feet, foes.iter().map(|t| t.translation));
         for (mut rig, mut tf) in &mut cameras {
             rig.0 = if swooping { swoop(want) } else { ease(rig.0, want, real.delta_secs()) };
             *tf = place(rig.0);
