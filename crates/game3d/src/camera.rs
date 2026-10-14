@@ -14,7 +14,8 @@ use crate::arena::Arena;
 /// Vertical field of view, degrees.
 pub const FOV: f32 = 40.0;
 /// The yaw with the player in the middle of the box, and how far it swings either way as the player reaches a side
-/// wall, degrees.
+/// wall, degrees. It swings away from the wall the player nears, so that wall stays behind the player rather than
+/// between the camera and the player.
 const YAW: f32 = 30.0;
 const SWING: f32 = 35.0;
 /// Pitch (down from the horizontal, degrees) and distance from the focus (metres): roaming, and fighting. The box
@@ -50,7 +51,7 @@ pub fn targets(arena: &Arena, feet: Vec3, foes: impl IntoIterator<Item = Vec3>) 
     }
     let across = (feet.x / (arena.floor.x / 2.0)).clamp(-1.0, 1.0);
     let (pitch, distance) = if engaged { FIGHT } else { ROAM };
-    Aim { focus, yaw: (YAW + SWING * across).to_radians(), pitch: pitch.to_radians(), distance }
+    Aim { focus, yaw: (YAW - SWING * across).to_radians(), pitch: pitch.to_radians(), distance }
 }
 
 /// The aim each box opens with: low and close, at the yaw it will settle on.
@@ -176,9 +177,14 @@ mod tests {
         let half = arena.floor.x / 2.0;
         let yaw = |x: f32| targets(&arena, Vec3::new(x, 0.0, 0.0), []).yaw.to_degrees();
         assert!((yaw(0.0) - YAW).abs() < 1e-3, "yawed off the axis in the middle");
-        assert!(yaw(-half) < yaw(0.0) && yaw(0.0) < yaw(half), "it swings as the player crosses");
+        assert!(yaw(-half) > yaw(0.0) && yaw(0.0) > yaw(half), "it swings as the player crosses");
         assert!((yaw(half * 2.0) - yaw(half)).abs() < 1e-3, "and no further than the walls");
-        assert!(yaw(-half).abs() <= 45.0 && yaw(half).abs() <= 70.0, "{} {}", yaw(-half), yaw(half));
+        // Near a side wall, the camera stays on the box's side of it: the wall is behind the player.
+        for x in [-half, half] {
+            let a = targets(&arena, Vec3::new(x, 0.0, 0.0), []);
+            let eye = place(a).translation;
+            assert!(eye.x.signum() != x.signum() || eye.x.abs() < arena.floor.x / 2.0, "at {x}: camera at {eye}");
+        }
     }
 
     #[test]

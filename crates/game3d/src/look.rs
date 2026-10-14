@@ -198,8 +198,8 @@ const EDGE: f32 = 0.14;
 const TILE: f32 = 1.0;
 const LINE: f32 = 0.05;
 
-/// A wall's solid face or one of its tile lines. A wall the camera is behind turns to glass, so it never hides the
-/// fight; its rim bar stays.
+/// A wall's solid face, its rim bar or one of its tile lines. A wall the camera is behind turns to glass and loses
+/// its lines and bar, so it never hides the fight.
 #[derive(Component)]
 struct WallFace {
     /// The wall's centre and its outward normal, on the floor.
@@ -245,7 +245,8 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
                     if along_z { Vec2::Y * at.translation.z.signum() } else { Vec2::X * at.translation.x.signum() };
                 let face = |solid| Some(WallFace { centre: at.translation.xz(), outward, solid });
                 cube(s, Vec3::ZERO, &kit.wall, face(true));
-                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.line, None);
+                // The rim bar goes with the wall when the camera is behind it, or it would slice across the fight.
+                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.line, face(false));
                 // Tile lines on the inner face: across at each metre of height, and up at each metre along.
                 let inward = -Vec3::new(outward.x, 0.0, outward.y) * (WALL / 2.0 + 0.004);
                 let span = if along_z { s.x - 2.0 * WALL } else { s.z };
@@ -280,7 +281,7 @@ fn lines(len: f32) -> impl Iterator<Item = f32> {
     (0..=n).map(move |i| -len / 2.0 + i as f32 * len / n as f32)
 }
 
-/// Turns the walls the camera is behind to glass, and hides their tile lines.
+/// Turns the walls the camera is behind to glass, and hides their tile lines and rim bars.
 fn fade_walls(
     kit: Res<Kit>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
