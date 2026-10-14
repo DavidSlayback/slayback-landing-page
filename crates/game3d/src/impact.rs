@@ -3,7 +3,8 @@
 //! strongest shake, for a bomb's blast), a squash on the fighter who takes it, and each kill's points floating up from
 //! where it fell, with the streak. The finisher's longer freeze is the hit-stop in `fighter`. Rules:
 //! `game_core::impact`. All of it runs on real time, so it plays through hit-stop: the frozen frame is the squashed,
-//! burst-lit, shaking one.
+//! burst-lit, shaking one. Blows and blasts start the shake and the squash in `comfort`, which leaves them out under
+//! reduced motion and thins the bursts (reduced motion, quality scaling).
 
 use std::f32::consts::PI;
 
@@ -11,19 +12,15 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use game_core::impact::{self, BLAST_BURST, BLAST_TRAUMA, SQUASH_TIME, burst_size, pop, squash, trauma};
+use game_core::impact::{BLAST_BURST, burst_size, pop, squash};
 use game_core::plane::UNITS_PER_METRE;
 
 use crate::bomb::Exploded;
 use crate::camera;
+use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
 use crate::fighter::{Hit, Team};
 use crate::look::{Palette, srgb};
 use crate::score::Scored;
-
-/// Screen shake (`game_core::impact::Shake`): blows add trauma, which drains over real time. Reduced motion (G9) turns
-/// it off by not adding any.
-#[derive(Resource, Default, Debug, Deref, DerefMut)]
-pub struct Shake(pub impact::Shake);
 
 /// Shake at full trauma, metres the camera moves across the view.
 const MAX_SHAKE: f32 = 0.3;
@@ -34,10 +31,6 @@ const BURST_LIFT: f32 = 0.45;
 /// A score number's lifetime and how far it rises on screen, pixels.
 const POPUP_LIFE: f32 = 0.9;
 const POPUP_RISE: f32 = 48.0;
-
-/// A struck fighter's squash, seconds remaining.
-#[derive(Component)]
-pub struct Squash(pub f32);
 
 #[derive(Component)]
 struct Burst {
@@ -59,13 +52,9 @@ struct BurstKit {
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Shake>()
-        .add_systems(Startup, load)
+    app.add_systems(Startup, load)
         .add_systems(Update, repaint.run_if(resource_changed::<Palette>))
-        .add_systems(
-            Update,
-            ((add_trauma, spawn_bursts, spawn_popups, start_squash), (grow_bursts, rise_popups, ease_squash)).chain(),
-        )
+        .add_systems(Update, ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain())
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
 
@@ -113,14 +102,6 @@ fn repaint(palette: Res<Palette>, kit: Res<BurstKit>, mut mats: ResMut<Assets<St
     }
 }
 
-fn add_trauma(mut shake: ResMut<Shake>, mut hits: MessageReader<Hit>, mut blasts: MessageReader<Exploded>) {
-    let amount =
-        hits.read().map(|h| trauma(h.mv, h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
-    if amount > 0.0 {
-        shake.add(amount);
-    }
-}
-
 /// Moves the camera off its framing by the shake, across and up the view, after `camera::fit` has placed it.
 fn shake_camera(real: Res<Time<Real>>, mut shake: ResMut<Shake>, mut cameras: Query<&mut Transform, With<Camera3d>>) {
     shake.drain(real.delta_secs());
@@ -134,16 +115,23 @@ fn shake_camera(real: Res<Time<Real>>, mut shake: ResMut<Shake>, mut cameras: Qu
     }
 }
 
+/// A star burst per blow and blast; reduced motion and quality scaling show a share of the blows' (`comfort`), but
+/// always a kill's and a blast's.
+#[allow(clippy::too_many_arguments)]
 fn spawn_bursts(
     mut commands: Commands,
     kit: Res<BurstKit>,
+    comfort: Res<Comfort>,
+    quality: Res<Quality>,
     mut hits: MessageReader<Hit>,
     mut blasts: MessageReader<Exploded>,
     mut seed: Local<u32>,
+    mut thin: Local<Thin>,
 ) {
     let toward_camera = camera::orientation() * Vec3::Z;
+    let share = burst_share(&comfort, &quality);
     // A blast bursts biggest of all, centred on the bomb.
-    let blows = hits.read().map(|h| (h.at, burst_size(h.mv, h.finisher)));
+    let blows = hits.read().filter(|h| h.finisher || thin.keep(share)).map(|h| (h.at, burst_size(h.mv, h.finisher)));
     for (at, size) in blows.chain(blasts.read().map(|b| (b.at, BLAST_BURST))) {
         *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let turn = camera::orientation() * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
@@ -173,13 +161,6 @@ fn grow_bursts(mut commands: Commands, real: Res<Time<Real>>, mut bursts: Query<
         }
 
         tf.scale = Vec3::splat(burst.size * pop(1.0 - burst.life / BURST_LIFE));
-    }
-}
-
-fn start_squash(mut commands: Commands, mut hits: MessageReader<Hit>) {
-    for hit in hits.read() {
-        // The victim may already be gone (a kill bursts it this frame).
-        commands.entity(hit.victim).try_insert(Squash(SQUASH_TIME));
     }
 }
 

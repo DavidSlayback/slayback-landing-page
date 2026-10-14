@@ -1,6 +1,7 @@
 //! One set of actions from every input device: keyboard, mouse and any standard gamepad, through the mapping shared
 //! with the 2.5D game (`game_core::controls`, which has the table). Gameplay reads [`Actions`]; only this module reads
-//! devices. G1 uses the move direction; the verbs are read for the slices that follow.
+//! devices. A standard gamepad needs nothing set up: the left stick or d-pad moves, A or the right trigger dashes,
+//! X punches, Y kicks, B grabs, Start pauses or starts, and Select toggles sound on the pause screen.
 
 use bevy::input::InputSystems;
 use bevy::prelude::*;
@@ -30,11 +31,16 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<Actions>().add_systems(PreUpdate, read.in_set(ReadActions).after(InputSystems));
 }
 
-/// One gamepad's state, as the shared mapping needs it.
+/// One gamepad's state, as the shared mapping needs it. The d-pad is read as buttons (pressed or not), so it works
+/// whether or not the backend also reports them as analog values.
 fn pad(g: &Gamepad) -> Pad {
+    let axis = |plus, minus| (g.pressed(plus) as i8 - g.pressed(minus) as i8) as f32;
     Pad {
         stick: g.left_stick().to_array(),
-        dpad: g.dpad().to_array(),
+        dpad: [
+            axis(GamepadButton::DPadRight, GamepadButton::DPadLeft),
+            axis(GamepadButton::DPadUp, GamepadButton::DPadDown),
+        ],
         south: g.just_pressed(GamepadButton::South),
         east: g.just_pressed(GamepadButton::East),
         north: g.just_pressed(GamepadButton::North),

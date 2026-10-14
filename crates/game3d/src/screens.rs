@@ -31,7 +31,7 @@ const CONTROLS: &str = "WASD / arrows  move      Space / Shift  dash\n\
     J / left click  punch      K / right click  kick\n\
     attack while dashing  drop-kick\n\
     L / middle click  grab      attack while holding  spin-throw\n\
-    Esc  pause\n\n\
+    Esc  pause      gamepad: stick, A dash, X punch, Y kick, B grab, Start pause\n\n\
     Pile the fallen up to the rim to escape the box.";
 
 fn text(s: impl Into<String>, size: f32) -> impl Bundle {
@@ -40,8 +40,11 @@ fn text(s: impl Into<String>, size: f32) -> impl Bundle {
 
 fn spawn(mut commands: Commands) {
     let screens: [(Phase, &[(&str, f32)]); 3] = [
-        (Phase::Start, &[("ESCAPE THE BOX", 46.0), (CONTROLS, 18.0), ("Click or press Enter to start", 22.0)]),
-        (Phase::Paused, &[("PAUSED", 46.0), ("Esc to resume", 22.0)]),
+        (
+            Phase::Start,
+            &[("ESCAPE THE BOX", 46.0), (CONTROLS, 18.0), ("Click or press Enter (Start on a gamepad) to start", 22.0)],
+        ),
+        (Phase::Paused, &[("PAUSED", 46.0), ("Esc or Start to resume", 22.0)]),
         (Phase::Over, &[("GAME OVER", 46.0)]),
     ];
     for (phase, lines) in screens {
@@ -108,7 +111,7 @@ fn write_game_over(last: Res<LastRun>, best: Res<BestScore>, mut text: Query<&mu
 
 fn write_sound(sound: Res<Sound>, mut line: Query<&mut Text, With<SoundLine>>) {
     let Ok(mut t) = line.single_mut() else { return };
-    let lines = format!("M  sound {}", if sound.on { "on" } else { "off" });
+    let lines = format!("M / Select  sound {}", if sound.on { "on" } else { "off" });
     if t.0 != lines {
         t.0 = lines;
     }

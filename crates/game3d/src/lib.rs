@@ -8,6 +8,7 @@
 pub mod arena;
 pub mod bomb;
 pub mod camera;
+pub mod comfort;
 pub mod debris;
 pub mod demo;
 pub mod enemy;
@@ -40,11 +41,12 @@ use bevy::prelude::*;
 pub const GRAVITY: f32 = 15.0;
 
 /// Everything that makes up the game except windowing and rendering: physics, the phases, the box, fighting, the
-/// player, grabbing and throwing, enemies and their bomb-heads, their debris, the run, the score and best, and the
-/// sound setting.
+/// player, grabbing and throwing, enemies and their bomb-heads, their debris, the run, the score and best, the sound
+/// setting, and comfort (reduced motion, quality scaling).
 pub fn plugin(app: &mut App) {
     app.add_plugins(PhysicsPlugins::default()).insert_resource(Gravity(Vec3::NEG_Y * GRAVITY)).add_plugins((
         input::plugin,
+        comfort::plugin,
         flow::plugin,
         arena::plugin,
         fighter::plugin,
