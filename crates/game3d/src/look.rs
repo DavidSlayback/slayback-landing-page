@@ -1,27 +1,48 @@
-//! The 3D look for G1: flat-shaded slabs and cubes under one directional light with no shadow map and no bloom (the
-//! WebGL2 budget, research section 7), in the page's colour scheme. The hybrid look (outlines, muted arena, vivid
-//! fighters, impact bursts) is G4's.
+//! The 3D look: the hybrid of decision Q50. Flat-shaded cubes under one directional light with no shadow map and no
+//! bloom (the WebGL2 budget, research section 7), dark edge outlines (`outline`), and the page's colour scheme by the
+//! rules in `game_core::palette`: the arena muted, live fighters in the vivid accents, the player's ring in the main
+//! accent.
 //!
 //! Gameplay entities carry no visuals; this plugin dresses them when they appear, so the headless scenarios run the
 //! same game without assets or a renderer.
 
 use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
-use game_core::scheme;
+use game_core::palette::{self, Fighter, Rgb};
+use game_core::scheme::{self, Scheme};
 
 use crate::arena::{Kind, Slab};
 use crate::player::{Facing, HEIGHT, Player};
 
-/// The page's colour scheme: four neon accents (`game_core::scheme`), the first one primary.
+/// The page's colour scheme (`game_core::scheme`). Colour things by `game_core::palette`'s rules for
+/// [`Palette::scheme`]: muted tones through [`srgb`], a fighter's lit body through [`vivid`], e.g.
+/// `vivid(palette::fighter_colour(p.scheme, who).body)`. The raw accents are here for effects that want one directly.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct Palette {
+    pub scheme: &'static Scheme,
+    /// The four neon accents, the first one primary.
     pub accents: [Color; 4],
+}
+
+/// A `game_core::palette` colour as a Bevy colour.
+pub fn srgb([r, g, b]: Rgb) -> Color {
+    Color::srgb(r, g, b)
+}
+
+/// How much a vivid colour is dimmed on a lit surface. Lit at full strength, a neon accent overexposes and ACES
+/// washes it toward white; at 0.6 it stays saturated and still outshines the muted arena (checked on the real GPU).
+const VIVID: f32 = 0.6;
+
+/// A live fighter's vivid colour (`game_core::palette`) as the base colour of a lit material.
+pub fn vivid(c: Rgb) -> Color {
+    let l = srgb(c).to_linear();
+    LinearRgba::rgb(l.red * VIVID, l.green * VIVID, l.blue * VIVID).into()
 }
 
 impl Palette {
     pub fn nth(i: usize) -> Self {
-        let s = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
-        Self { accents: s.accents.map(|[r, g, b]| Color::srgb(r, g, b)) }
+        let scheme = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
+        Self { scheme, accents: scheme.accents.map(srgb) }
     }
 
     /// The page's scheme: `?palette=` first, then the visitor's saved pick (the hero's `slayback-scheme`).
@@ -44,7 +65,13 @@ pub fn plugin(app: &mut App) {
     app.insert_resource(ClearColor(Color::srgb(0.035, 0.04, 0.055)))
         .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 900.0, ..default() })
         .insert_resource(Palette::page())
-        .add_plugins((crate::camera::plugin, crate::figure::plugin, crate::impact::plugin, crate::hud::plugin))
+        .add_plugins((
+            crate::camera::plugin,
+            crate::outline::plugin,
+            crate::figure::plugin,
+            crate::impact::plugin,
+            crate::hud::plugin,
+        ))
         .add_systems(Startup, (load_kit, spawn_light))
         .add_systems(Update, (dress_slabs, dress_player, (turn_figures, walk)).chain());
 }
@@ -73,17 +100,20 @@ fn load_kit(
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
 ) {
-    let accent = palette.accents[0];
-    let mut matte = |c: Color| mats.add(StandardMaterial { base_color: c, perceptual_roughness: 0.9, ..default() });
-    let floor = matte(Color::srgb(0.3, 0.32, 0.38).mix(&accent, 0.04));
-    let wall = matte(Color::srgb(0.46, 0.49, 0.57).mix(&accent, 0.06));
-    let body = matte(Color::srgb(0.9, 0.9, 0.93));
+    let arena = palette::arena_tone(palette.scheme);
+    let player = palette::fighter_colour(palette.scheme, Fighter::Player);
+    let mut matte = |c: Rgb| mats.add(StandardMaterial { base_color: srgb(c), perceptual_roughness: 0.9, ..default() });
+    let floor = matte(arena.floor);
+    let wall = matte(arena.wall);
+    let trim = matte(player.trim);
+    let body = mats.add(StandardMaterial { base_color: vivid(player.body), perceptual_roughness: 0.9, ..default() });
     let unlit = |c: Color| StandardMaterial { base_color: c, unlit: true, ..default() };
     let kit = Kit {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         floor,
         wall,
         body,
+        trim,
         // Barely there: the pane's faces stack, and anything more washes out the floor behind it.
         glass: mats.add(StandardMaterial {
             base_color: Color::srgba(0.7, 0.85, 1.0, 0.035),
@@ -91,12 +121,11 @@ fn load_kit(
             unlit: true,
             ..default()
         }),
-        edge: mats.add(unlit(Color::srgb(0.82, 0.86, 0.95))),
-        glass_edge: mats.add(unlit(Color::srgb(0.55, 0.62, 0.72))),
-        trim: mats.add(unlit(accent)),
+        edge: mats.add(unlit(srgb(arena.edge))),
+        glass_edge: mats.add(unlit(srgb(arena.glass))),
         // The player's ring (Q60): flat on the floor under the feet, in the main accent, unlit so it stays bright.
         ring: meshes.add(Annulus::new(0.5, 0.64).mesh().resolution(48)),
-        ring_mat: mats.add(unlit(accent)),
+        ring_mat: mats.add(unlit(srgb(palette::ring(palette.scheme)))),
         // A soft dark disc under the feet stands in for a shadow (no shadow map).
         blob: meshes.add(Circle::new(0.45).mesh().resolution(32)),
         blob_mat: mats.add(StandardMaterial {
