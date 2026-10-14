@@ -1,9 +1,13 @@
-//! The box: a floor about 3:2 (decision Q56) and four walls up to the rim. Every wall collides at full height; the
-//! front one, nearest the camera, is drawn as glass (Q57). How it looks is up to `look`.
+//! The box: a floor about 3:2 (decision Q56) and four walls up to the rim, rebuilt at each box's rim as the run goes
+//! (`run::BoxStarted`). Every wall collides at full height; the front one, nearest the camera, is drawn as glass
+//! (Q57). An invisible fence stands on every wall, so neither the player nor a flung piece leaves over the rim: the
+//! way out is the pile (Q51). How it looks is up to `look`.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::run::box_spec;
+use game_core::run::{BoxSpec, box_spec, rim_metres};
+
+use crate::run::BoxStarted;
 
 /// Floor size, metres: x across the screen, z into it. 3:2, about eight fighters across; a first guess to tune with
 /// the pile (S2, G3).
@@ -12,8 +16,8 @@ pub const FLOOR: Vec2 = Vec2::new(15.0, 10.0);
 pub const WALL: f32 = 0.5;
 /// Floor slab thickness, metres; its top is y = 0.
 pub const SLAB: f32 = 1.0;
-/// The 2.5D game's world units per metre (its physics length unit), for rules shared with it in `game_core::run`.
-pub use game_core::plane::UNITS_PER_METRE;
+/// Height of the invisible fence above the rim, metres: more than a fighter, and more than a burst flings a piece.
+pub const FENCE: f32 = 3.0;
 
 /// The current box's shape.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
@@ -25,13 +29,18 @@ pub struct Arena {
 }
 
 impl Default for Arena {
-    /// Box 1: its rim from the run's rules (4.4 m, about 2.5 fighters tall).
+    /// Box 1.
     fn default() -> Self {
-        Self { floor: FLOOR, rim: box_spec(1).rim / UNITS_PER_METRE }
+        Self::for_box(&box_spec(1))
     }
 }
 
 impl Arena {
+    /// The box for `spec`: the same floor every time, and its rim from the run's rules (`game_core::run::rim_metres`).
+    pub fn for_box(spec: &BoxSpec) -> Self {
+        Self { floor: FLOOR, rim: rim_metres(spec) }
+    }
+
     /// Half the outer footprint (floor plus walls), metres.
     pub fn outer_half(&self) -> Vec2 {
         self.floor / 2.0 + Vec2::splat(WALL)
@@ -54,8 +63,12 @@ pub struct Slab {
     pub size: Vec3,
 }
 
+/// Part of the current box's geometry, rebuilt when the next box starts.
+#[derive(Component)]
+pub struct BoxPiece;
+
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Arena>().add_systems(Startup, build);
+    app.init_resource::<Arena>().add_systems(Update, build);
 }
 
 /// The slabs of `arena`: the floor, the back, left and right walls, and the glass front (+z), with their centres.
@@ -73,14 +86,30 @@ pub fn slabs(arena: &Arena) -> [(&'static str, Slab, Vec3); 5] {
     ]
 }
 
-fn build(mut commands: Commands, arena: Res<Arena>) {
+/// Builds the box for each box that starts, replacing the last one's.
+fn build(
+    mut commands: Commands,
+    mut started: MessageReader<BoxStarted>,
+    mut arena: ResMut<Arena>,
+    old: Query<Entity, With<BoxPiece>>,
+) {
+    let Some(BoxStarted(spec)) = started.read().last() else { return };
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    *arena = Arena::for_box(spec);
     for (name, slab, at) in slabs(&arena) {
-        commands.spawn((
-            Name::new(name),
-            slab,
-            Transform::from_translation(at),
-            RigidBody::Static,
-            Collider::cuboid(slab.size.x, slab.size.y, slab.size.z),
-        ));
+        let collider = Collider::cuboid(slab.size.x, slab.size.y, slab.size.z);
+        commands.spawn((Name::new(name), slab, BoxPiece, Transform::from_translation(at), RigidBody::Static, collider));
+        if slab.kind != Kind::Floor {
+            let fence = slab.size.with_y(FENCE);
+            commands.spawn((
+                Name::new("fence"),
+                BoxPiece,
+                Transform::from_translation(at.with_y(arena.rim + FENCE / 2.0)),
+                RigidBody::Static,
+                Collider::cuboid(fence.x, fence.y, fence.z),
+            ));
+        }
     }
 }

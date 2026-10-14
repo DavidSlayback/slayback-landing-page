@@ -63,6 +63,19 @@ pub fn pick_kind(spec: &BoxSpec, roll: f32) -> Kind {
     }
 }
 
+/// The 3D game's box 1 rim, metres. A heap of about 20 fodder killed in one spot reaches it (25 reach ~1.9 m; the G3
+/// measurements in the README); spread over the floor, the same kills stay under ~1.2 m.
+pub const FIRST_RIM_METRES: f32 = 1.5;
+/// The 3D game's highest rim, metres: about what 50 kills heaped in a corner reach, well inside the frozen-debris cap.
+pub const MAX_RIM_METRES: f32 = 3.0;
+
+/// The 3D game's rim for a box, metres: the 2.5D curve scaled so box 1's is [`FIRST_RIM_METRES`] (about +0.48 m a
+/// box), levelling off at [`MAX_RIM_METRES`]. A 3D pile grows with the cube root of its volume, not the square root of
+/// an area as in the side view, so the 2.5D rims (4.4 m and up at 32 units per metre) would be out of reach.
+pub fn rim_metres(spec: &BoxSpec) -> f32 {
+    (FIRST_RIM_METRES * spec.rim / box_spec(1).rim).min(MAX_RIM_METRES)
+}
+
 /// The escape test: the pile under the player (how high the player stands above the floor) has reached the rim.
 pub fn escaped(standing_height: f32, rim: f32) -> bool {
     standing_height >= rim
@@ -166,6 +179,16 @@ mod tests {
         let rim = box_spec(1).rim;
         assert!(!escaped(rim - 1.0, rim));
         assert!(escaped(rim, rim));
+    }
+
+    #[test]
+    fn the_3d_rim_starts_at_a_metre_and_a_half_rises_each_box_and_levels_off() {
+        assert_eq!(rim_metres(&box_spec(1)), FIRST_RIM_METRES);
+        for n in 1..4 {
+            assert!(rim_metres(&box_spec(n + 1)) > rim_metres(&box_spec(n)), "box {} taller", n + 1);
+        }
+        assert!((rim_metres(&box_spec(2)) - rim_metres(&box_spec(1)) - 0.48).abs() < 0.01);
+        assert_eq!(rim_metres(&box_spec(40)), MAX_RIM_METRES);
     }
 
     #[test]

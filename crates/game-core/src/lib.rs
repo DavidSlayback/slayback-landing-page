@@ -5,6 +5,7 @@
 
 pub mod aim;
 pub mod bomb;
+pub mod climb;
 pub mod combat;
 pub mod controls;
 pub mod debris;

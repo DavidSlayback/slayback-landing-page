@@ -73,7 +73,6 @@ test.describe('/play', () => {
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
     if (process.env.REQUIRE_GAME) expect(built).toBe(true);
     test.skip(!built, 'game not in this build');
-    test.skip(GAME3D, 'the 3D game has no scripted climb yet (G3)');
     const errors = collectErrors(page);
     const logs = [];
     page.on('console', m => logs.push(m.text()));

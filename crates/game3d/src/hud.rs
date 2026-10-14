@@ -1,11 +1,12 @@
 //! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in the scheme's
-//! main accent, and the score with its streak multiplier. Box number, timer and the screens come with the run loop (G3) and the screens ticket.
+//! main accent, then the box number, the box clock, and the score with its streak multiplier. The screens are G8's.
 
 use bevy::prelude::*;
 
 use crate::fighter::Hp;
 use crate::look::Palette;
 use crate::player::Player;
+use crate::run::RunState;
 use crate::score::RunScore;
 
 pub fn plugin(app: &mut App) {
@@ -48,6 +49,7 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
 }
 
 fn update(
+    run: Res<RunState>,
     score: Res<RunScore>,
     player: Query<&Hp, With<Player>>,
     mut fill: Query<&mut Node, With<HealthFill>>,
@@ -61,7 +63,8 @@ fn update(
     }
     if let Ok(mut t) = readout.single_mut() {
         let streak = if score.0.streak > 1 { format!("  x{:.1}", score.0.multiplier()) } else { String::new() };
-        let line = format!("{}{}", score.0.points, streak);
+        let secs = run.0.time_left.ceil().max(0.0) as u32;
+        let line = format!("Box {}   {}:{:02}   {}{}", run.0.spec.number, secs / 60, secs % 60, score.0.points, streak);
         if t.0 != line {
             t.0 = line;
         }
