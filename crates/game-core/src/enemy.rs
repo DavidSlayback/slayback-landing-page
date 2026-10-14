@@ -42,8 +42,6 @@ pub fn staggers(mv: Move, armour: Armour) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
     pub kind: Kind,
-    /// Collider half-size, world units.
-    pub half: (f32, f32),
     pub max_hp: f32,
     /// Horizontal centre distance at which it stops and starts its telegraph.
     pub range: f32,
@@ -59,7 +57,6 @@ pub struct Style {
 /// Walks straight at the player, telegraphs briefly, then punches.
 pub const FODDER: Style = Style {
     kind: Kind::Fodder,
-    half: (15.0, 26.0),
     max_hp: 30.0,
     range: 52.0,
     windup: 0.35,
@@ -72,7 +69,6 @@ pub const FODDER: Style = Style {
 /// Slow, tough and wide: a long, obvious wind-up into an overhead smash that punches can't interrupt.
 pub const THUG: Style = Style {
     kind: Kind::Thug,
-    half: (24.0, 30.0),
     max_hp: 60.0,
     range: 66.0,
     windup: 0.6,
@@ -85,7 +81,6 @@ pub const THUG: Style = Style {
 /// Fast and fragile: closes in quicker than the player runs, strikes after a brief tell, then backs off.
 pub const NINJA: Style = Style {
     kind: Kind::Ninja,
-    half: (13.0, 24.0),
     max_hp: 18.0,
     range: 44.0,
     windup: 0.2,
@@ -317,7 +312,7 @@ mod tests {
     #[test]
     fn a_thug_is_slower_tougher_and_wider_than_fodder_with_a_longer_telegraph() {
         let (thug, fodder) = (Kind::Thug.style(), Kind::Fodder.style());
-        assert!(thug.walk < fodder.walk && thug.max_hp >= 2.0 * fodder.max_hp && thug.half.0 > fodder.half.0);
+        assert!(thug.walk < fodder.walk && thug.max_hp >= 2.0 * fodder.max_hp);
         assert!(thug.windup > fodder.windup);
         let mut b = MeleeBrain::new(THUG);
         let frames = (0..120).take_while(|_| b.decide(40.0, DT, false, false) == Intent::Hold).count();

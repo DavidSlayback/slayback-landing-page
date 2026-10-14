@@ -23,7 +23,6 @@ pub struct MoveSpec {
     pub recovery: f32,
     /// How far the hitbox extends past the attacker's edge.
     pub reach: f32,
-    pub height: f32,
     /// Hitbox centre relative to the attacker's centre (punches high, kicks low).
     pub offset_y: f32,
     pub damage: f32,
@@ -44,7 +43,6 @@ impl Move {
                 active: 0.08,
                 recovery: 0.14,
                 reach: 34.0,
-                height: 24.0,
                 offset_y: 10.0,
                 damage: 8.0,
                 knockback: (520.0, 260.0),
@@ -57,7 +55,6 @@ impl Move {
                 active: 0.10,
                 recovery: 0.24,
                 reach: 46.0,
-                height: 22.0,
                 offset_y: -14.0,
                 damage: 14.0,
                 knockback: (900.0, 420.0),
@@ -70,7 +67,6 @@ impl Move {
                 active: 0.14,
                 recovery: 0.22,
                 reach: 30.0,
-                height: 30.0,
                 offset_y: -6.0,
                 damage: 12.0,
                 knockback: (1000.0, 360.0),
@@ -83,7 +79,6 @@ impl Move {
                 active: 0.12,
                 recovery: 0.4,
                 reach: 44.0,
-                height: 44.0,
                 offset_y: 16.0,
                 damage: 22.0,
                 knockback: (750.0, 480.0),
@@ -95,7 +90,6 @@ impl Move {
                 active: 0.08,
                 recovery: 0.2,
                 reach: 30.0,
-                height: 26.0,
                 offset_y: 6.0,
                 damage: 7.0,
                 knockback: (450.0, 200.0),
@@ -169,33 +163,6 @@ impl Swing {
     }
 }
 
-/// Axis-aligned box in world space.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Aabb {
-    pub min: (f32, f32),
-    pub max: (f32, f32),
-}
-
-impl Aabb {
-    /// A box of half-size `half` around `centre`.
-    pub fn around(centre: (f32, f32), half: (f32, f32)) -> Aabb {
-        Aabb { min: (centre.0 - half.0, centre.1 - half.1), max: (centre.0 + half.0, centre.1 + half.1) }
-    }
-
-    pub fn overlaps(&self, other: &Aabb) -> bool {
-        self.min.0 < other.max.0 && self.max.0 > other.min.0 && self.min.1 < other.max.1 && self.max.1 > other.min.1
-    }
-}
-
-/// The hitbox of `mv` for an attacker centred at `pos` with half-size `half`, facing `facing`.
-pub fn hitbox(mv: Move, pos: (f32, f32), half: (f32, f32), facing: f32) -> Aabb {
-    let s = mv.spec();
-    let edge = pos.0 + facing * half.0;
-    let tip = edge + facing * s.reach;
-    let y = pos.1 + s.offset_y;
-    Aabb { min: (edge.min(tip), y - s.height / 2.0), max: (edge.max(tip), y + s.height / 2.0) }
-}
-
 /// Freeze for a finishing blow: longer than any move's own, so a kill always lands as a beat.
 pub const FINISHER_HITSTOP: f32 = 0.16;
 
@@ -203,12 +170,6 @@ pub const FINISHER_HITSTOP: f32 = 0.16;
 pub fn hitstop(mv: Move, finished: bool) -> f32 {
     let own = mv.spec().hitstop;
     if finished { own.max(FINISHER_HITSTOP) } else { own }
-}
-
-/// Launch velocity for a target hit by `mv` from an attacker facing `facing`.
-pub fn knockback(mv: Move, facing: f32) -> (f32, f32) {
-    let (x, y) = mv.spec().knockback;
-    (x * facing, y)
 }
 
 /// What a hit did to its target.
@@ -279,8 +240,6 @@ impl HitStop {
 mod tests {
     use super::*;
 
-    const HALF: (f32, f32) = (14.0, 28.0);
-
     #[test]
     fn a_finishing_blow_freezes_longer_than_any_ordinary_hit() {
         for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash] {
@@ -347,28 +306,6 @@ mod tests {
         assert!(swing.is_active());
         assert!(swing.advance(0.1) && swing.is_active());
         assert!(Move::DropKick.spec().knockback.0 > Move::Kick.spec().knockback.0, "the hardest launch");
-    }
-
-    #[test]
-    fn hitboxes_point_the_way_the_attacker_faces() {
-        let front = Aabb::around((40.0, 0.0), HALF);
-        let behind = Aabb::around((-40.0, 0.0), HALF);
-        let right = hitbox(Move::Punch, (0.0, 0.0), HALF, 1.0);
-        assert!(right.overlaps(&front) && !right.overlaps(&behind));
-        let left = hitbox(Move::Punch, (0.0, 0.0), HALF, -1.0);
-        assert!(left.overlaps(&behind) && !left.overlaps(&front));
-    }
-
-    #[test]
-    fn a_punch_does_not_reach_across_the_arena() {
-        let far = Aabb::around((200.0, 0.0), HALF);
-        assert!(!hitbox(Move::Punch, (0.0, 0.0), HALF, 1.0).overlaps(&far));
-    }
-
-    #[test]
-    fn knockback_launches_away_from_the_attacker_and_upward() {
-        let (x, y) = knockback(Move::Kick, -1.0);
-        assert!(x < 0.0 && y > 0.0);
     }
 
     #[test]
