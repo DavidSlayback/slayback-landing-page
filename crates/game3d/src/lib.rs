@@ -27,6 +27,7 @@ pub mod look;
 #[cfg(feature = "render")]
 pub mod outline;
 pub mod player;
+pub mod pose;
 pub mod run;
 pub mod score;
 #[cfg(feature = "render")]

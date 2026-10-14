@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
-use game_core::combat::{Move, Phase};
+use game_core::combat::Move;
 use game_core::debris::solid::{Limb, Solid, figure};
 use game_core::enemy::Kind;
 use game_core::palette::{self, DEBRIS_SHADES, Fighter};
@@ -22,6 +22,10 @@ use crate::enemy::{Brain, RADIUS};
 use crate::fighter::{Attack, Body, Flash};
 use crate::look::{Palette, srgb};
 use crate::player::Facing;
+use crate::pose::{self, Act};
+
+/// How much smaller than its solid a live figure's part is drawn.
+const GAP: f32 = 0.86;
 
 /// A figure's colours: live body, the wind-up glow before it strikes, and its debris's shades.
 pub struct Colours {
@@ -188,7 +192,8 @@ fn dress_enemies(
             commands.spawn((
                 Mesh3d(kit.mesh(p.solid, &mut meshes)),
                 MeshMaterial3d(skin.clone()),
-                Transform::from_translation(rest),
+                // Drawn a little smaller than the solid, so the loose parts show gaps between them, Rumble Box style.
+                Transform::from_translation(rest).with_scale(Vec3::splat(GAP)),
                 Part { limb: p.limb, rest, reach: reach(pieces, p.limb, p.at[1]) },
                 ChildOf(rig),
             ));
@@ -211,7 +216,8 @@ fn dress_debris(
     }
 }
 
-/// How far down its arm a piece at height `y` is, 0 at the shoulder to 1 at the hand (a one-piece arm is all of it, 0.5).
+/// How far down its limb a piece at height `y` is, 0 at the shoulder or hip to 1 at the hand or foot (a one-piece
+/// limb is all of it, 0.5).
 fn reach(pieces: &[game_core::debris::solid::Piece], limb: Limb, y: f32) -> f32 {
     let arm: Vec<f32> = pieces.iter().filter(|p| p.limb == limb).map(|p| p.at[1]).collect();
     if arm.len() < 2 {
@@ -220,34 +226,19 @@ fn reach(pieces: &[game_core::debris::solid::Piece], limb: Limb, y: f32) -> f32 
     arm.iter().filter(|&&other| other > y).count() as f32 / (arm.len() - 1) as f32
 }
 
-/// Which side of the body a piece is on (-1 the figure's left, +1 its right, 0 the middle) and whether it is an arm.
-fn side(limb: Limb) -> (f32, bool) {
-    match limb {
-        Limb::LeftArm => (-1.0, true),
-        Limb::RightArm => (1.0, true),
-        Limb::LeftLeg => (-1.0, false),
-        Limb::RightLeg => (1.0, false),
-        Limb::Trunk => (0.0, false),
+/// The striking (right) arm's wind-up before a blow comes out (`telegraph`, 0..=1): pulled back, or for a thug's smash
+/// raised overhead. Returns the offset from rest at the shoulder and at the hand; the pieces between take their share.
+fn windup(mv: Move, telegraph: f32) -> (Vec3, Vec3) {
+    if mv == Move::Smash {
+        (Vec3::new(-0.06, 0.18, 0.0) * telegraph, Vec3::new(-0.12, 0.62, 0.0) * telegraph)
+    } else {
+        let back = Vec3::new(-0.16, 0.04, 0.0) * telegraph;
+        (back, back)
     }
 }
 
-/// Where the striking (right) arm is: pulled back during the wind-up (`telegraph`, 0..=1) or, for a thug's smash,
-/// raised overhead; thrust out while a blow is out, and back on recovery. Returns the offset from rest at the shoulder
-/// and at the hand; the pieces between take their share.
-fn strike(mv: Move, telegraph: f32, swing: Option<Phase>) -> (Vec3, Vec3) {
-    match swing {
-        Some(Phase::Startup | Phase::Active) => (Vec3::new(0.28, 0.08, -0.06), Vec3::new(0.62, 0.32, -0.06)),
-        Some(Phase::Recovery) => (Vec3::new(0.12, 0.0, 0.0), Vec3::new(0.25, 0.12, 0.0)),
-        None if mv == Move::Smash => (Vec3::new(-0.06, 0.18, 0.0) * telegraph, Vec3::new(-0.12, 0.62, 0.0) * telegraph),
-        None => {
-            let back = Vec3::new(-0.16, 0.04, 0.0) * telegraph;
-            (back, back)
-        }
-    }
-}
-
-/// Turns each figure to its facing, swings its limbs with its speed, poses the striking arm, and lights it while it
-/// winds up or flashes from a hit.
+/// Turns each figure to its facing and poses it (`pose`, as the player): the walk, the wind-up, and the blow from the
+/// right arm; lights it while it winds up or flashes from a hit.
 #[allow(clippy::type_complexity)]
 fn animate(
     time: Res<Time>,
@@ -259,10 +250,16 @@ fn animate(
     let dt = time.delta_secs();
     for (brain, facing, v, attack, flash, mut stride, children) in &mut enemies {
         let speed = v.0.with_y(0.0).length();
-        stride.0 = if speed > 0.1 { stride.0 + speed * 3.2 * dt } else { 0.0 };
-        let swing = stride.0.sin() * 0.14 * (speed / game_core::plane::RUN_SPEED * 2.0).min(1.0);
+        stride.0 += speed * 3.2 * dt;
+        // Enemies walk slower than the player; their stride reaches full size at half its speed.
+        let amount = (speed / game_core::plane::RUN_SPEED * 2.0).min(1.0);
         let telegraph = brain.0.telegraph();
-        let pose = strike(brain.0.style().attack, telegraph, attack.swing.and_then(|s| s.phase()));
+        let act = match attack.swing {
+            Some(swing) => Act::Strike { swing, side: 1.0 },
+            None => Act::None,
+        };
+        let wind = windup(brain.0.style().attack, if attack.swing.is_some() { 0.0 } else { telegraph });
+        let (lift, lean) = pose::body(stride.0, amount, act);
         let Some(Mats { skin, windup, .. }) = kit.mats.get(&brain.0.style().kind) else { continue };
         let mat = if flash.0 > 0.0 {
             &kit.flash
@@ -273,15 +270,14 @@ fn animate(
         };
         for &c in children {
             let Ok((mut rig, pieces)) = rigs.get_mut(c) else { continue };
-            rig.rotation = facing.rotation();
+            rig.translation = lift;
+            rig.rotation = facing.rotation() * lean;
             for &p in pieces {
                 let Ok((part, mut tf, mut material)) = parts.get_mut(p) else { continue };
-                let (side, arm) = side(part.limb);
-                let at = if part.limb == Limb::RightArm {
-                    part.rest + pose.0.lerp(pose.1, part.reach)
-                } else {
-                    part.rest + Vec3::X * swing * side * if arm { -1.0 } else { 1.0 }
-                };
+                let mut at = part.rest + pose::part(part.limb, part.reach, part.rest, stride.0, amount, act);
+                if part.limb == Limb::RightArm {
+                    at += wind.0.lerp(wind.1, part.reach);
+                }
                 if tf.translation != at {
                     tf.translation = at;
                 }

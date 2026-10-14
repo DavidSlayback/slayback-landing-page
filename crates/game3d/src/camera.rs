@@ -19,8 +19,8 @@ const YAW: f32 = 30.0;
 const SWING: f32 = 35.0;
 /// Pitch (down from the horizontal, degrees) and distance from the focus (metres): roaming, and fighting. The box
 /// stays filling the frame either way; a fight only drops and closes the view a little.
-const ROAM: (f32, f32) = (38.0, 14.0);
-const FIGHT: (f32, f32) = (30.0, 11.5);
+const ROAM: (f32, f32) = (38.0, 12.0);
+const FIGHT: (f32, f32) = (30.0, 9.5);
 /// Where a box's swoop starts: down among the debris, close in.
 const SWOOP: (f32, f32) = (6.0, 3.0);
 /// The focus's height above the player's feet, metres: about the fighters' chests.
