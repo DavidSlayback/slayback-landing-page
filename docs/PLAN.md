@@ -1,13 +1,13 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 18:10 CDT (paused for a reboot)
-In flight: nothing running. Branch chain, all pushed, none merged: feel-6-more (946f697: feel pass Q65-Q73 + refactors #1 #2 #4) -> env-retro (7993477: retro guardrails). rc-3 serves feel-6-more.
-Done in env-retro: .gitattributes LF; scripts/target-dir.sh (worktrees share the main target); deploy.sh retries the harness once; hooks+CI run game3d render unit tests; pre-commit colour guard (paint.rs only); tests/e2e/shaders.spec.js (no shader link after "warm-up drawn"; mutation-checked); AGENTS.md pointers (feel work, warm-up).
-Next: (1) retro #4: tests/e2e/tools/{capture,frametime,trace-shaders}.mjs replacing the throwaway zz-*.spec.js captures, plus an AGENTS.md pointer. (2) Global and david-brain placements David approved (see the session's last answer: feel-done criterion and LF .gitattributes default in ~/agent-contracts/CODING.md; WebGL shader-variant and full-frame-reference lessons in david-brain). (3) David plays rc-3; on sign-off PR env-retro (or feel-6-more, then env-retro) into main, merge, deploy rc-2; then the playtest (#29).
+As of: Wed Oct 14 2026 18:25 CDT
+In flight: nothing running. Branch chain, all pushed, none merged: feel-6-more (946f697: feel pass Q65-Q73 + refactors #1 #2 #4) -> env-retro (c89d88f: retro guardrails + review tools). rc-3 serves feel-6-more.
+Done in env-retro: .gitattributes LF; scripts/target-dir.sh (worktrees share the main target); deploy.sh retries the harness once; hooks+CI run game3d render unit tests; pre-commit colour guard (paint.rs only); tests/e2e/shaders.spec.js (no shader link after "warm-up drawn"; mutation-checked); tests/e2e/tools/{capture,frametime,trace-shaders}.mjs (checked against a bad and a good build); AGENTS.md pointers. Global lessons merged in david-brain #39 and synced live: CODING.md feel-done rule and LF .gitattributes rule; memories webgl-shader-variant-stalls, reference-footage-review; per-agent CARGO_TARGET_DIR in local-resource-safety.
+Next: David plays rc-3. On sign-off: PR env-retro into main (it contains feel-6-more), merge, deploy rc-2; then the playtest (#29). Optional: a flat-shaded material instead of Bevy's PBR StandardMaterial to cut the ~3 s load-time shader link; ranking #3 (demo sends intents, not keys); flatten bomb::space and grab::flat.
 Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13). Roster question: heavies in box 1 vs Q26.
-Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1 (the new CI apt step is unrun).
-Verified: env-retro 7993477: all hooks pass with no CARGO_TARGET_DIR set; shaders.spec.js passes on the real build and fails (1 link) with an unwarmed, UV-less star. rc-3 from 946f697: harness 13 passed, 2 skipped; play frames max 36 ms.
+Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1 (the new CI apt step and render-test step are unrun).
+Verified: env-retro: all hooks pass with no CARGO_TARGET_DIR set; shaders.spec.js passes on the real build and fails (1 link) with an unwarmed UV-less star; frametime on the real build max 36.5 ms, p99 12.2 ms; trace-shaders 7 links, one ~3 s stall at load. rc-3 from 946f697: harness 13 passed, 2 skipped.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
