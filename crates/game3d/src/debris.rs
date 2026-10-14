@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use game_core::debris::solid::{FODDER, Settle, Solid, at_rest, frozen_over_cap, moving_over_cap};
 use game_core::grab::Held;
 
+use crate::bomb::{BombHead, lit_bomb};
 use crate::enemy::Brain;
 use crate::fighter::{Combat, Defeated, Layer, Team};
 use crate::grab::Grabbable;
@@ -62,10 +63,10 @@ fn burst(
     mut commands: Commands,
     time: Res<Time>,
     mut defeated: MessageReader<Defeated>,
-    enemies: Query<(&Transform, &Facing, &LinearVelocity), With<Brain>>,
+    enemies: Query<(&Transform, &Facing, &LinearVelocity, Has<BombHead>), With<Brain>>,
 ) {
     for d in defeated.read().filter(|d| d.team == Team::Enemy) {
-        let Ok((transform, facing, velocity)) = enemies.get(d.entity) else { continue };
+        let Ok((transform, facing, velocity, bomb_head)) = enemies.get(d.entity) else { continue };
         let centre = transform.translation;
         let turn = facing.rotation();
         commands.entity(d.entity).despawn();
@@ -73,6 +74,11 @@ fn burst(
             let offset = turn * Vec3::from_array(p.at);
             let out = offset.with_y(offset.y * 0.5).normalize_or_zero();
             let fling = velocity.0 * CARRY + out * BURST_OUT + Vec3::Y * BURST_UP;
+            // A bomb-head's head doesn't join the pile: it drops free as a lit bomb.
+            if bomb_head && matches!(p.solid, Solid::Ball(_)) {
+                commands.spawn(lit_bomb(centre + offset, fling));
+                continue;
+            }
             // Alternating, uneven spins about varied axes, so the blocks tumble rather than turn in step. The ball head
             // gets none: spun, it would roll on across the floor long after the blocks have settled.
             let axis = Vec3::new(1.0 + (i % 3) as f32, 0.5 * (i % 2) as f32, 1.0 - (i % 4) as f32 * 0.6).normalize();

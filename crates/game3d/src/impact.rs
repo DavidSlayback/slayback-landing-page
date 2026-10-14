@@ -1,8 +1,9 @@
 //! Hit impact, after Rumble Box's comic punch (spec #58, carried over from the 2.5D game): trauma screen shake, a star
-//! burst where a blow lands (scheme-coloured with a white-hot core, bigger for heavy moves and kills), a squash on the
-//! fighter who takes it, and each kill's points floating up from where it fell, with the streak. The finisher's longer
-//! freeze is the hit-stop in `fighter`. Rules: `game_core::impact`. All of it runs on real time, so it plays through
-//! hit-stop: the frozen frame is the squashed, burst-lit, shaking one.
+//! burst where a blow lands (scheme-coloured with a white-hot core, bigger for heavy moves and kills; biggest, with the
+//! strongest shake, for a bomb's blast), a squash on the fighter who takes it, and each kill's points floating up from
+//! where it fell, with the streak. The finisher's longer freeze is the hit-stop in `fighter`. Rules:
+//! `game_core::impact`. All of it runs on real time, so it plays through hit-stop: the frozen frame is the squashed,
+//! burst-lit, shaking one.
 
 use std::f32::consts::PI;
 
@@ -10,9 +11,10 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use game_core::impact::{self, SQUASH_TIME, burst_size, pop, squash, trauma};
+use game_core::impact::{self, BLAST_BURST, BLAST_TRAUMA, SQUASH_TIME, burst_size, pop, squash, trauma};
 use game_core::plane::UNITS_PER_METRE;
 
+use crate::bomb::Exploded;
 use crate::camera;
 use crate::fighter::{Hit, Team};
 use crate::look::Palette;
@@ -98,8 +100,9 @@ fn load(
     });
 }
 
-fn add_trauma(mut shake: ResMut<Shake>, mut hits: MessageReader<Hit>) {
-    let amount: f32 = hits.read().map(|h| trauma(h.mv, h.finisher)).sum();
+fn add_trauma(mut shake: ResMut<Shake>, mut hits: MessageReader<Hit>, mut blasts: MessageReader<Exploded>) {
+    let amount =
+        hits.read().map(|h| trauma(h.mv, h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
     if amount > 0.0 {
         shake.add(amount);
     }
@@ -118,19 +121,25 @@ fn shake_camera(real: Res<Time<Real>>, mut shake: ResMut<Shake>, mut cameras: Qu
     }
 }
 
-fn spawn_bursts(mut commands: Commands, kit: Res<BurstKit>, mut hits: MessageReader<Hit>, mut seed: Local<u32>) {
+fn spawn_bursts(
+    mut commands: Commands,
+    kit: Res<BurstKit>,
+    mut hits: MessageReader<Hit>,
+    mut blasts: MessageReader<Exploded>,
+    mut seed: Local<u32>,
+) {
     let toward_camera = camera::orientation() * Vec3::Z;
-    for hit in hits.read() {
+    // A blast bursts biggest of all, centred on the bomb.
+    let blows = hits.read().map(|h| (h.at, burst_size(h.mv, h.finisher)));
+    for (at, size) in blows.chain(blasts.read().map(|b| (b.at, BLAST_BURST))) {
         *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let turn = camera::orientation() * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
         commands
             .spawn((
-                Burst { life: BURST_LIFE, size: burst_size(hit.mv, hit.finisher) / UNITS_PER_METRE },
+                Burst { life: BURST_LIFE, size: size / UNITS_PER_METRE },
                 Mesh3d(kit.star.clone()),
                 MeshMaterial3d(kit.outer.clone()),
-                Transform::from_translation(hit.at + toward_camera * BURST_LIFT)
-                    .with_rotation(turn)
-                    .with_scale(Vec3::ZERO),
+                Transform::from_translation(at + toward_camera * BURST_LIFT).with_rotation(turn).with_scale(Vec3::ZERO),
             ))
             .with_child((
                 Mesh3d(kit.star.clone()),

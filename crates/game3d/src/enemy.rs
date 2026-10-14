@@ -15,9 +15,11 @@ use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading}
 use game_core::steer::steer;
 
 use crate::arena::Arena;
+use crate::bomb::BombHead;
 use crate::fighter::{Attack, Combat, Hp, Team, body};
 use crate::grab::{Carried, Grabbable};
 use crate::player::{Facing, Player};
+use crate::run::RunState;
 use crate::{on_floor, plane};
 
 #[derive(Component)]
@@ -36,6 +38,8 @@ pub struct WallDoor {
     pub face: Vec3,
     pub inward: Vec3,
     pub next: Kind,
+    /// Whether that enemy carries a bomb for a head.
+    pub bomb: bool,
 }
 
 impl WallDoor {
@@ -53,11 +57,13 @@ pub struct Waves {
     /// Keep this many enemies in the box; ask a door for one more every `timer` while below it.
     pub crowd: usize,
     pub timer: Timer,
+    /// The share of entries that are bomb-heads, overriding the box spec's (the demo's `bombs=1` makes it 1).
+    pub bombs: Option<f32>,
 }
 
 impl Default for Waves {
     fn default() -> Self {
-        Self { enabled: true, crowd: 3, timer: Timer::from_seconds(2.0, TimerMode::Repeating) }
+        Self { enabled: true, crowd: 3, timer: Timer::from_seconds(2.0, TimerMode::Repeating), bombs: None }
     }
 }
 
@@ -97,7 +103,7 @@ fn spawn_doors(mut commands: Commands, arena: Res<Arena>) {
     for (face, inward) in door_spots(&arena) {
         commands.spawn((
             Name::new("door"),
-            WallDoor { door: Door::Closed, face, inward, next: Kind::Fodder },
+            WallDoor { door: Door::Closed, face, inward, next: Kind::Fodder, bomb: false },
             Transform::from_translation(face),
         ));
     }
@@ -130,10 +136,12 @@ pub fn fodder(at: Vec3, yaw: f32) -> impl Bundle {
 
 fn request_entries(
     time: Res<Time>,
+    run: Res<RunState>,
     mut waves: ResMut<Waves>,
     enemies: Query<(), With<Brain>>,
     mut doors: Query<&mut WallDoor>,
     mut turn: Local<usize>,
+    mut seed: Local<u32>,
 ) {
     if !waves.enabled || !waves.timer.tick(time.delta()).just_finished() {
         return;
@@ -150,6 +158,13 @@ fn request_entries(
     *turn += 1;
     let i = *turn % free.len();
     free[i].next = Kind::Fodder;
+    // xorshift (as in the 2.5D game): the box's share of bomb-heads without a rand dependency.
+    *seed = seed.wrapping_add(0x9E37_79B9);
+    let mut s = *seed;
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    free[i].bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
     free[i].door.request();
 }
 
@@ -157,7 +172,10 @@ fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut Wal
     for mut d in &mut doors {
         if d.door.tick(time.delta_secs()) {
             let yaw = heading(plane(d.inward)).unwrap_or(0.0);
-            commands.spawn(enemy(d.next, d.entry(d.next), yaw));
+            let mut e = commands.spawn(enemy(d.next, d.entry(d.next), yaw));
+            if d.bomb {
+                e.insert(BombHead);
+            }
         }
     }
 }

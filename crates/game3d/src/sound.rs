@@ -1,5 +1,5 @@
 //! Sound effects, as in the 2.5D game: its generated retro set (`tools/sfx/generate.py`, embedded from
-//! `crates/game/assets/sfx/`) for hits, heavy hits, kills and doors. Muted by default; M (or Select) on the pause
+//! `crates/game/assets/sfx/`) for hits, heavy hits, kills, doors and bomb blasts. Muted by default; M (or Select) on the pause
 //! screen toggles it, and the choice is kept under the 2.5D game's key (`slayback-sound`, see [`Store`]).
 //!
 //! The setting and its toggle are gameplay (headless scenarios test them); playing the effects needs the renderer's
@@ -48,6 +48,7 @@ mod effects {
     use game_core::combat::Move;
 
     use super::Sound;
+    use crate::bomb::Exploded;
     use crate::enemy::WallDoor;
     use crate::fighter::{Defeated, Hit, Team};
 
@@ -57,6 +58,7 @@ mod effects {
         heavy: Handle<AudioSource>,
         shatter: Handle<AudioSource>,
         door: Handle<AudioSource>,
+        boom: Handle<AudioSource>,
     }
 
     /// Plays the effects (the window's audio output; not in headless runs).
@@ -71,15 +73,18 @@ mod effects {
             heavy: add(include_bytes!("../../game/assets/sfx/heavy.wav")),
             shatter: add(include_bytes!("../../game/assets/sfx/shatter.wav")),
             door: add(include_bytes!("../../game/assets/sfx/door.wav")),
+            boom: add(include_bytes!("../../game/assets/sfx/boom.wav")),
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn play(
         mut commands: Commands,
         sound: Res<Sound>,
         effects: Res<Effects>,
         mut hits: MessageReader<Hit>,
         mut defeats: MessageReader<Defeated>,
+        mut blasts: MessageReader<Exploded>,
         doors: Query<(Entity, &WallDoor)>,
         mut warned: Local<Vec<Entity>>,
     ) {
@@ -107,6 +112,10 @@ mod effects {
         }
         if door {
             queue.push((&effects.door, 0.35));
+        }
+        // A bomb going off (once a frame, however many chain).
+        if blasts.read().last().is_some() {
+            queue.push((&effects.boom, 0.8));
         }
         if !sound.on {
             return;

@@ -181,6 +181,13 @@ pub mod flat {
         shove(impact(held).knockback, heading)
     }
 
+    /// Whether a thrown `held` thing stops at the first enemy it hits instead of flying on through the crowd. A lit
+    /// bomb does: in the 2.5D game it bounced off the first body, so it lies in the group it was thrown at until its
+    /// fuse runs out. It still goes off only on its fuse.
+    pub fn stops(held: Held) -> bool {
+        held == Held::Bomb
+    }
+
     /// Whether a thrown thing that moved from `from` to `to` this frame passed within `reach` of `target` (on the
     /// floor), so a fast throw on a slow frame can't skip over an enemy.
     pub fn passes(from: [f32; 2], to: [f32; 2], target: [f32; 2], reach: f32) -> bool {

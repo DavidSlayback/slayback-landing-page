@@ -1,6 +1,6 @@
 //! Cube-built enemy figures and their debris, Rumble Box style (Q61): the fodder's eleven pieces
 //! (`game_core::debris::solid::FODDER`) in a vivid colour, walking, winding up and punching; and the same pieces as
-//! debris in a muted one once they burst apart.
+//! debris in a muted one once they burst apart. A bomb-head wears a bomb (`bomb::view`) in place of the ball head.
 //!
 //! Gameplay entities carry no visuals; this plugin dresses them when they appear. Colours come from [`colours`] alone,
 //! so the look (G4) can restyle figures in one place.
@@ -13,6 +13,7 @@ use game_core::combat::Phase;
 use game_core::debris::solid::{FODDER, Solid};
 use game_core::enemy::Kind;
 
+use crate::bomb::{self, BombHead};
 use crate::debris::Piece;
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
@@ -115,15 +116,17 @@ fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dress_enemies(
     mut commands: Commands,
     mut kit: ResMut<Kit>,
+    bombs: Res<bomb::view::Kit>,
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
-    enemies: Query<(Entity, &Brain, &Body), Added<Brain>>,
+    enemies: Query<(Entity, &Brain, &Body, Has<BombHead>), Added<Brain>>,
 ) {
-    for (e, brain, body) in &enemies {
+    for (e, brain, body, bomb_head) in &enemies {
         let [skin, ..] = kit.mats(brain.0.style().kind, &palette, &mut mats);
         commands.entity(e).insert((Visibility::default(), Stride::default()));
         commands.spawn((
@@ -137,6 +140,11 @@ fn dress_enemies(
         // G5 gives thugs and ninjas their own builds; until then every enemy wears the fodder's.
         for (index, p) in FODDER.iter().enumerate() {
             let rest = Vec3::from_array(p.at);
+            if bomb_head && matches!(p.solid, Solid::Ball(_)) {
+                // A bomb for a head (a shape cue, Q35): its own dark shell and fuse, untouched by the flash.
+                commands.spawn((bomb::view::head(&bombs), Transform::from_translation(rest), ChildOf(rig)));
+                continue;
+            }
             commands.spawn((
                 Mesh3d(kit.mesh(p.solid, &mut meshes)),
                 MeshMaterial3d(skin.clone()),

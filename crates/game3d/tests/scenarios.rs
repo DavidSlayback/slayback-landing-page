@@ -6,12 +6,14 @@ use std::time::Duration;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
+use game_core::bomb::{CHAIN, DAMAGE, FUSE};
 use game_core::climb::{Placed, pile_height};
 use game_core::combat::Move;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid};
 use game_core::grab::{Held, impact};
 use game_core::plane::RUN_SPEED;
 use game3d::arena::{Arena, Slab};
+use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
 use game3d::debris::{Piece, piece};
 use game3d::enemy::{Brain, Waves, fodder};
 use game3d::fighter::{Defeated, Hp, Team};
@@ -1002,4 +1004,253 @@ fn sound_is_off_until_m_on_the_pause_screen_turns_it_on_and_the_choice_is_kept()
     tap(&mut next, KeyCode::KeyM);
     assert!(!on(&next));
     assert_eq!(store.get(SOUND_KEY).as_deref(), Some("off"), "and muting is kept too");
+}
+
+// Bomb-heads (G7).
+
+/// A lit bomb on the floor at `offset` (a plane vector, metres) from the player, with `fuse` seconds left.
+fn bomb_at(app: &mut App, offset: [f32; 2], fuse: f32) -> Entity {
+    let at = player(app).0.with_y(BOMB_RADIUS + 0.01) + game3d::on_floor(offset);
+    let e = app.world_mut().spawn(lit_bomb(at, Vec3::ZERO)).id();
+    app.world_mut().get_mut::<LitBomb>(e).unwrap().fuse.left = fuse;
+    e
+}
+
+fn lit_bombs(app: &mut App) -> Vec<Entity> {
+    app.world_mut().query_filtered::<Entity, With<LitBomb>>().iter(app.world()).collect()
+}
+
+fn gone(app: &App, e: Entity) -> bool {
+    app.world().get_entity(e).is_err()
+}
+
+#[test]
+fn a_blast_hurts_and_launches_fighters_nearby_more_the_nearer_and_not_distant_ones() {
+    let mut app = standing();
+    let lit = bomb_at(&mut app, [4.5, 0.0], 0.05);
+    let near = fodder_at(&mut app, [5.3, 0.0]);
+    let farther = fodder_at(&mut app, [4.5, -2.2]);
+    let distant = fodder_at(&mut app, [4.5, 4.0]);
+    for e in [near, farther, distant] {
+        stun(&mut app, e);
+    }
+    let starts = [near, farther, distant].map(|e| at_of(&app, e));
+    let mut highest = starts.map(|s| s.y);
+    for _ in 0..(0.5 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        for (i, e) in [near, farther, distant].into_iter().enumerate() {
+            highest[i] = highest[i].max(at_of(&app, e).y);
+        }
+    }
+    assert!(gone(&app, lit), "the bomb went off");
+    let lost = |app: &App, e: Entity| FULL - hp(app, e);
+    assert!(
+        lost(&app, near) > lost(&app, farther),
+        "hurt more nearer: {} vs {}",
+        lost(&app, near),
+        lost(&app, farther)
+    );
+    assert!(lost(&app, farther) >= DAMAGE.1, "and hurt at 2.2 m");
+    assert_eq!(hp(&app, distant), FULL, "out of range: untouched");
+    let moved = |i: usize, e: Entity| at_of(&app, e).xz().distance(starts[i].xz());
+    assert!(at_of(&app, near).x > starts[0].x + 0.5, "launched away from the blast: {}", at_of(&app, near));
+    assert!(at_of(&app, farther).z > starts[1].z + 0.3, "the other one too, its own way: {}", at_of(&app, farther));
+    assert!(moved(0, near) > moved(1, farther), "harder nearer");
+    assert!(highest[0] > starts[0].y + 0.2, "and up: {} from {}", highest[0], starts[0].y);
+    assert!(moved(2, distant) < 0.05, "the distant one didn't move");
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "the player, 4.5 m away, is out of range");
+}
+
+#[test]
+fn standing_too_close_to_a_blast_hurts_the_player_and_knocks_them_back() {
+    let mut app = standing();
+    let start = player(&mut app).0;
+    bomb_at(&mut app, [1.0, 0.0], 0.05);
+    step(&mut app, 0.1);
+    let (hp, full) = player_hp(&mut app);
+    assert!(full - hp > DAMAGE.1 * 2.0, "hurt badly a metre off: {hp} of {full}");
+    step(&mut app, 0.4);
+    let at = player(&mut app).0;
+    assert!(at.x < start.x - 0.5, "knocked away from it: {at} from {start}");
+}
+
+#[test]
+fn a_blast_sets_off_lit_bombs_in_range_a_moment_later_and_not_those_out_of_it() {
+    let mut app = standing();
+    // A row behind the player (over 4 m from it): the first two 2 m apart, the third 6 m on.
+    let first = bomb_at(&mut app, [-4.0, 3.5], 0.05);
+    let second = bomb_at(&mut app, [-2.0, 3.5], FUSE);
+    let third = bomb_at(&mut app, [4.0, 3.5], FUSE);
+    while !gone(&app, first) {
+        step(&mut app, 1.0 / FPS);
+    }
+    assert!(!gone(&app, second), "the second doesn't go off in the same frame");
+    let left = app.world().get::<LitBomb>(second).unwrap().fuse.left;
+    assert!(left <= CHAIN + 1e-4, "but its fuse is cut short: {left}");
+    // Through the first blast's hit-stop and the chain delay.
+    let mut blasts = 0;
+    for _ in 0..(0.5 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        blasts += app.world().resource::<Messages<Exploded>>().iter_current_update_messages().count();
+    }
+    assert!(gone(&app, second), "the second went off");
+    assert_eq!(blasts, 1, "once, after the first");
+    assert!(!gone(&app, third), "the third, out of range, is still lit");
+    let left = app.world().get::<LitBomb>(third).unwrap().fuse.left;
+    assert!(left > FUSE - 0.5, "on its own fuse: {left}");
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "the player stood clear");
+}
+
+#[test]
+fn a_defeated_bomb_head_drops_its_head_as_a_lit_bomb_which_blows_without_deleting_debris() {
+    let mut app = standing();
+    let target = fodder_at(&mut app, [1.1, 0.0]);
+    app.world_mut().entity_mut(target).insert(BombHead);
+    app.world_mut().get_mut::<Hp>(target).unwrap().0.hp = 1.0;
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyJ);
+    step(&mut app, 0.3);
+    assert!(gone(&app, target));
+    assert_eq!(pieces(&mut app).len(), FODDER.len() - 1, "every part but the head joins the debris");
+    assert_eq!(lit_bombs(&mut app).len(), 1, "and the head is a lit bomb");
+    // Run away from it before it blows.
+    hold(&mut app, &[KeyCode::KeyA], 0.8);
+    step(&mut app, FUSE);
+    assert!(lit_bombs(&mut app).is_empty(), "it went off");
+    assert_eq!(pieces(&mut app).len(), FODDER.len() - 1, "and the debris it blew about is all still there");
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "the player got clear");
+}
+
+#[test]
+fn a_blast_thaws_and_flings_frozen_debris_in_range_within_the_moving_cap() {
+    let mut app = standing();
+    // Three layers of small frozen cubes in a 2.2 m disc round the bomb (over the moving cap), with room for the bomb
+    // in the middle, and one more piece well out of range.
+    let centre = player(&mut app).0.with_y(0.0) + Vec3::new(3.0, 0.0, -4.0);
+    let mut heap = Vec::new();
+    for layer in 0..3 {
+        for i in -8..=8 {
+            for j in -8..=8 {
+                let across = Vec3::new(i as f32 * 0.28, 0.0, j as f32 * 0.28);
+                if (0.5..2.2).contains(&across.length()) {
+                    let at = centre + across + Vec3::Y * (0.125 + 0.26 * layer as f32);
+                    heap.push(block(&mut app, [0.25; 3], at, 0.0));
+                }
+            }
+        }
+    }
+    assert!(heap.len() > MAX_MOVING + 50, "{} pieces", heap.len());
+    let far = block(&mut app, [0.25; 3], centre + Vec3::new(-6.0, 0.125, 0.0), 0.0);
+    let total = pieces(&mut app).len();
+    let lit = app.world_mut().spawn(lit_bomb(centre + Vec3::Y * (BOMB_RADIUS + 0.01), Vec3::ZERO)).id();
+    app.world_mut().get_mut::<LitBomb>(lit).unwrap().fuse.left = 0.03;
+    step(&mut app, 0.05);
+    assert!(gone(&app, lit), "it went off");
+    let moving = |app: &mut App| pieces(app).iter().filter(|(_, b)| *b == RigidBody::Dynamic).count();
+    let n = moving(&mut app);
+    assert!(n <= MAX_MOVING, "no more than the cap move: {n}");
+    assert!(n > MAX_MOVING / 2, "but the blast knocked plenty loose: {n}");
+    assert_eq!(pieces(&mut app).len(), total, "none deleted");
+    // The nearest pieces fly; past the cap, the farthest in range froze again where they were.
+    let dist = |e: &Entity| at_of(&app, *e).distance(centre);
+    let nearest = *heap.iter().min_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
+    let farthest = *heap.iter().max_by(|a, b| dist(a).total_cmp(&dist(b))).unwrap();
+    assert_eq!(body_of(&app, nearest), RigidBody::Dynamic, "the nearest flies");
+    assert_eq!(body_of(&app, farthest), RigidBody::Static, "the farthest froze again");
+    assert_eq!(body_of(&app, far), RigidBody::Static, "out of range: still frozen");
+    let was = at_of(&app, nearest);
+    step(&mut app, 0.5);
+    let now = at_of(&app, nearest);
+    // Packed in by its neighbours (and the refrozen ring outside them), it still shoves its way out.
+    assert!(now.distance(was) > 0.25, "and was flung: {was} to {now}");
+}
+
+#[test]
+fn a_thrown_bomb_stops_in_the_group_it_hits_and_its_blast_hurts_them_all() {
+    let mut app = standing();
+    let lit = bomb_at(&mut app, [0.9, 0.0], FUSE);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, lit), "grabbed the lit bomb");
+    // Cooked in hand a while (the fuse burns on), so it blows soon after it lands.
+    step(&mut app, 0.5);
+    let group: Vec<Entity> =
+        [[4.5, 0.0], [5.0, 0.7], [5.1, -0.6]].into_iter().map(|p| fodder_at(&mut app, p)).collect();
+    for &e in &group {
+        stun(&mut app, e);
+    }
+    let first = at_of(&app, group[0]);
+    tap(&mut app, KeyCode::KeyJ);
+    // Where its flight ended, and where it was when it blew.
+    let (mut landed, mut last) = (None, Vec3::ZERO);
+    for _ in 0..(2.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if gone(&app, lit) {
+            break;
+        }
+        last = at_of(&app, lit);
+        if landed.is_none() && !carried(&app, lit) && app.world().get::<Thrown>(lit).is_none() {
+            landed = Some(last);
+        }
+    }
+    assert!(gone(&app, lit), "it went off");
+    let landed = landed.expect("its flight ended before it blew");
+    assert!(landed.xz().distance(first.xz()) < 1.0, "it stopped at the first one it hit: {landed}, fodder at {first}");
+    assert!(last.xz().distance(first.xz()) < 1.0 && last.y < 0.5, "and lay there on the floor: {last}");
+    for (i, &e) in group.iter().enumerate() {
+        let hurt = gone(&app, e) || FULL - hp(&app, e) >= DAMAGE.1;
+        assert!(hurt, "fodder {i} of the group was caught in the blast");
+    }
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "the thrower stood clear");
+}
+
+#[test]
+fn a_grabbed_bomb_head_thrown_to_its_defeat_drops_its_lit_bomb_where_it_broke() {
+    let mut app = standing();
+    let held = fodder_at(&mut app, [0.9, 0.0]);
+    app.world_mut().entity_mut(held).insert(BombHead);
+    stun(&mut app, held);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, held), "a stunned bomb-head can be grabbed");
+    // Weak enough that its first impact finishes it.
+    app.world_mut().get_mut::<Hp>(held).unwrap().0.hp = 1.0;
+    let target = fodder_at(&mut app, [4.0, 0.0]);
+    stun(&mut app, target);
+    tap(&mut app, KeyCode::KeyJ);
+    step(&mut app, 0.6);
+    assert!(gone(&app, held), "it broke on impact");
+    let bombs = lit_bombs(&mut app);
+    assert_eq!(bombs.len(), 1, "and dropped its head as a lit bomb");
+    let at = at_of(&app, bombs[0]);
+    assert!(at.x > player(&mut app).0.x + 2.5, "out where it broke: {at}");
+}
+
+#[test]
+fn box_1_sends_no_bomb_heads_and_the_demo_knob_makes_every_entry_one() {
+    let heads = |bombs: Option<f32>| {
+        let mut app = headless();
+        app.insert_resource(Waves { bombs, ..default() });
+        step(&mut app, 6.0);
+        let mut q = app.world_mut().query_filtered::<Has<BombHead>, With<Brain>>();
+        q.iter(app.world()).collect::<Vec<bool>>()
+    };
+    let plain = heads(None);
+    assert!(!plain.is_empty() && plain.iter().all(|h| !h), "box 1: {plain:?}");
+    let all = heads(Some(1.0));
+    assert!(!all.is_empty() && all.iter().all(|h| *h), "bombs=1: {all:?}");
+}
+
+#[test]
+fn a_blast_on_the_last_of_the_players_health_ends_the_run_on_the_game_over_screen() {
+    let mut app = standing();
+    set_player_hp(&mut app, 5.0);
+    let lit = bomb_at(&mut app, [1.0, 0.0], 0.05);
+    assert!(play_until_over(&mut app, 0.5), "the blast ended the run");
+    assert!(gone(&app, lit));
+    assert_eq!(last_run(&app).reached, 1);
 }
