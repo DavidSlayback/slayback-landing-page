@@ -1,5 +1,6 @@
 //! The camera, as Rumble Box's (decision Q65, `docs/research/rumble-box-reference.md`): yawed off the box's axis so a
-//! back corner is in view, swinging round as the player crosses the box, and pushing in low when enemies close in.
+//! back corner is in view, swinging round as the player crosses the box, and dropping a little closer when enemies
+//! close in.
 //! Each box opens with it down among the debris, swooping up and out.
 //!
 //! [`targets`] says where the camera wants to be and [`place`] puts it there; both are plain functions, so tests
@@ -15,10 +16,11 @@ pub const FOV: f32 = 40.0;
 /// The yaw with the player in the middle of the box, and how far it swings either way as the player reaches a side
 /// wall, degrees.
 const YAW: f32 = 30.0;
-const SWING: f32 = 25.0;
-/// Pitch (down from the horizontal, degrees) and distance from the focus (metres): roaming, and fighting.
-const ROAM: (f32, f32) = (40.0, 13.0);
-const FIGHT: (f32, f32) = (24.0, 6.5);
+const SWING: f32 = 35.0;
+/// Pitch (down from the horizontal, degrees) and distance from the focus (metres): roaming, and fighting. The box
+/// stays filling the frame either way; a fight only drops and closes the view a little.
+const ROAM: (f32, f32) = (38.0, 14.0);
+const FIGHT: (f32, f32) = (30.0, 11.5);
 /// Where a box's swoop starts: down among the debris, close in.
 const SWOOP: (f32, f32) = (6.0, 3.0);
 /// The focus's height above the player's feet, metres: about the fighters' chests.
@@ -169,13 +171,14 @@ mod tests {
     }
 
     #[test]
-    fn the_camera_swings_with_the_player_across_the_box_and_shows_a_back_corner() {
+    fn the_camera_swings_with_the_player_across_the_box() {
         let arena = Arena::default();
         let half = arena.floor.x / 2.0;
         let yaw = |x: f32| targets(&arena, Vec3::new(x, 0.0, 0.0), []).yaw.to_degrees();
         assert!((yaw(0.0) - YAW).abs() < 1e-3, "yawed off the axis in the middle");
         assert!(yaw(-half) < yaw(0.0) && yaw(0.0) < yaw(half), "it swings as the player crosses");
-        assert!(yaw(-half) > 0.0, "a back corner stays in view: {}", yaw(-half));
+        assert!((yaw(half * 2.0) - yaw(half)).abs() < 1e-3, "and no further than the walls");
+        assert!(yaw(-half).abs() <= 45.0 && yaw(half).abs() <= 70.0, "{} {}", yaw(-half), yaw(half));
     }
 
     #[test]

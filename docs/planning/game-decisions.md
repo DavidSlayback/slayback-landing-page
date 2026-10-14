@@ -119,6 +119,6 @@ David, after playing rc-2 with G1-G10: "this plays like absolute shit. It feels 
 
 | # | Decision | Answer | Notes |
 |---|---|---|---|
-| Q65 | Camera | **Match Rumble Box:** a camera yawed off the box's axis that swings round and pushes in low during fights. | Reverses Q48. Movement becomes camera-relative, so the arrow keys stay "up the screen". |
+| Q65 | Camera | **Match Rumble Box:** a camera yawed off the box's axis that swings round as the player moves, the box filling the frame. | Reverses Q48. The question described a camera that "pushes in low during fights", from 2x crops of the video; full frames show only a slight drop, so the build follows the full frames. Movement becomes camera-relative, so the arrow keys stay "up the screen". |
 | Q66 | Look | **Keep the schemes, but thick black edges and saturated figures.** | Amends Q50: outlines bolder and black; fighters' colours no longer dimmed or washed out. |
 | Q67 | Order and review | **Camera and look, then the player's attack animations, then loose-part figures and kill bursts, then the pace.** Each step is played by David on a preview before it merges. | Proposed by Claude; David answered Q65 and Q66 without changing it. The playtest (#29) waits for his sign-off on feel. |

@@ -7,12 +7,13 @@ This replaces the screenshot-only reading in `game-research.md` section 1 wherev
 
 ## Camera
 
-- **It moves.** The yaw changes between frames half a second apart; the camera swings round the box as the
-  player moves, and pushes in and down during a fight. It never holds the square-on, whole-box framing we built.
+- **It moves.** The yaw changes between frames half a second apart, swinging up to ~45° either way as the player
+  moves. The distance barely changes: the box fills the frame throughout. It never holds the square-on framing we
+  built.
 - **Default framing:** yawed ~25-35° off the box's axis, so a back corner sits in view; pitch ~35-40°; close enough
   that the near wall falls off the bottom of the screen. The box fills the width of the frame.
-- **In a fight** (0:20.4-0:21.6): low, ~15-25° pitch, a few metres from the player, at shoulder height to the
-  fighters. Fighters fill about a third of the frame's height.
+- **In a fight** (0:19-0:28, full frames): pitch ~30-35°, a little lower than roaming; fighters are 1/7 to 1/5 of
+  the frame's height. (An earlier reading of "low and close" came from 2x crops and was wrong.)
 - **Intro:** each box opens with the camera at floor level among debris, swooping up and out to the default view
   (~2.5 s), while the player's parts fly together to assemble it.
 
