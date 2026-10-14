@@ -85,4 +85,30 @@ Informed by `docs/research/game-research.md`.
 
 ## Status
 
-The decision tree is complete; grilling is finished. Next: `docs/planning/game-plan.md`, then the spec, then GitHub issues.
+The 2.5D decision tree (rounds 1–4) is complete. Round 5 reopens the game's form for 3D.
+
+## Round 5: 3D (2026-10-13)
+
+David, after the look and impact passes: "Take inspiration from rumble box for the visuals. We may need to go to 3d", then "We should properly plan 3d first." Evidence: research §1 (Rumble Box's camera and look, verified from its official screenshots) and §7 (the full-3D spike: 60 fps at 500 resting cubes on the integrated GPU, bloom off, no wasm size cost). Answers are David's letter picks for the options as asked.
+
+| # | Decision | Answer | Notes |
+|---|---|---|---|
+| Q46 | 3D versus the playtest | **A: 3D is v1.** The cohort playtest waits until 3D matches the current game's feature set. | Supersedes the 2.5D path to the playtest (Q38 still gates release). |
+| Q47 | Code structure | **A: a new `game3d` crate beside `game`, sharing `game-core`.** rc-1 keeps the 2.5D game; `game` is deleted once 3D matches it. | Each 3D slice lands on `main` and deploys to rc-2. |
+| Q48 | Camera | **C: a fixed 3/4 view of the whole box now;** gentle follow and zoom later only if boxes outgrow one screen. | |
+| Q49 | Movement, facing, aim | **B: 8-direction movement, facing the last move direction, blows hit a cone in front, plus light aim assist** toward the nearest enemy in the cone. | No twin-stick. |
+| Q50 | Look | **C: hybrid.** Flat-shaded saturated cubes with outlines and comic impact bursts, coloured from the site's three schemes: arena and debris in the scheme's muted tone, live fighters in its vivid accents. | Bloom is out (research §7). Outlines need an edge-detection pass, as an early spike ticket. |
+| Q51 | Escape rule | **A: escape when the pile under the player reaches the rim;** the rim rises each box, the floor stays the same size. | |
+| Q52 | Debris budget | **A: settled debris freezes after ~1.5 s; at most 300 moving pieces; frozen pieces kept up to a measured cap (target ~1,500).** | The frozen cap needs a measurement spike. |
+| Q53 | Testing | **A: game-core rules tests, plus the 26 headless scenarios ported to 3D, plus the browser harness on rc-2.** | |
+| Q54 | 3D v1 scope | **A: everything the game has today:** three enemy types, grab and spin-throw, bomb-heads, doors, sound, gamepad, comfort, score/HUD/screens, demo mode. | Tickets still land the core loop first. |
+| Q55 | Phones | **A: unchanged.** Phones get the clip page and never download the game. | |
+| Q56 | Box shape | **B: a wide rectangle, about 3:2.** | Fills a 16:9 screen without much more floor to pile on. |
+| Q57 | Front wall | **A: solid, drawn as a see-through glass outline.** | Keeps the action and the rim's height visible. |
+| Q58 | Doors | **A: in the back wall and both side walls,** none in the front. | The 2.5D warning pulse carries over. |
+| Q59 | Jump | **A: still no jump.** Climb by walking up the pile, with an automatic step-up of about half a cube. | Step height is tuned in the controller ticket. |
+| Q60 | Finding yourself | **A: a bright ring on the floor under the player,** in the scheme's main accent. | David chose the ring alone, over the recommended ring plus unique colour and outline. |
+| Q61 | Figures | **A: several cubes per limb, Rumble Box style:** fodder ~11 parts, thugs ~14, ninjas ~9. | |
+| Q62 | Throws | **A: flat along the facing, with aim assist toward the biggest enemy group within ~30°.** | Same assist rule as Q49. |
+| Q63 | Enemy movement | **A: steering:** seek the player, separate from each other, avoid walls. Ninjas circle to flank; thugs plough straight in. | No pathfinding. |
+| Q64 | Retiring 2.5D | **A: delete `game`, and `/play` serves 3D with no fallback.** rc-1 stays up as an archive of the 2.5D game. | |
