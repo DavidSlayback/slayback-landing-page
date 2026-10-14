@@ -2,7 +2,7 @@
 
 ```text
 As of: Tue Oct 13 2026 20:23 CDT
-In flight: 3D build started. Spec #58 (docs/planning/spec-3d.md), decisions Q46-Q64, tickets #59-#70 (S1 outlines spike, S2 frozen-cap spike, G1-G10). Frontier: S1 #59, S2 #60, G1 #61.
+In flight: 3D build started. Spec #58 (docs/planning/spec-3d.md), decisions Q46-Q64, tickets #59-#70. Two background agents (they die with the session): S1+S2 spikes on branch spike/3d-measure (report numbers; measure only on a quiet machine), G1 #61 on branch g1-3d-box (a draft PR for review; the supervisor merges and deploys rc-2).
 Next: work the frontier AFK (/agent-workflow-conductor): spikes on spike branches, G-tickets as PRs into main merged on green hooks, each merge deployed to rc-2 with `bash scripts/deploy.sh rc 2`. rc-1 keeps the 2.5D game. The playtest (#29) now waits for G10 #70 (Q46). Then the release switch on main. Until Actions minutes return (account at 2,123/2,000 for October): merge on green pre-commit hooks, then deploy from this machine right after each merge: `bash scripts/deploy.sh` (prod), `bash scripts/deploy.sh rc <n>` (preview).
 Waiting on: David: playtesters (#29), gamepad check (#26), C2 content; optionally an Actions spending limit or a self-hosted runner to bring CI back before Nov 1. Q43: no permission asks.
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
