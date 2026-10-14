@@ -41,6 +41,10 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.position.xy * px;
     let col = textureLoad(screen, p, 0);
     let c = d(uv);
+    // Cost probe: the pass with one depth read and no edge detection.
+    if (o.debug > 2.5) {
+        return vec4(col.rgb + vec3(c * 1e-6), col.a);
+    }
     var edge: f32;
     if (o.silhouette > 0.0) {
         let thin = smoothstep(o.threshold, 2.0 * o.threshold, rel_lap(uv, c, px, 1.0));

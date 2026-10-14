@@ -11,7 +11,7 @@
 //! - `outline=W`  inverted-hull outline thickness per side (default 0.05, 0 = off); `bloom=1` HDR + bloom like the 2.5D game; `msaa=1|4`; `substeps=N`
 //! - `edge=W`     S1: post-process edge outlines sampling W px out (lines ~2W px; forces MSAA off); `et=T` edge
 //!                threshold; `es=T` draws only edges above T (silhouettes) at W px and creases at 1 px;
-//!                `edbg=1` shows the edge mask (2: depth); `fxaa=1` adds FXAA after the outline pass
+//!                `edbg=1` shows the edge mask (2: depth; 3: pass cost probe, no edges); `fxaa=1` adds FXAA after the outline pass
 //! - `freeze=S`   S2: debris at rest for S seconds becomes `RigidBody::Static`; the heap (`cubes=N`) is then dropped in
 //!                batches of at most 300 dynamic pieces. `movers=M` adds M never-frozen pieces once the heap is frozen;
 //!                with `burst=1` every burst throws all of them in a cluster over a random spot of the heap
