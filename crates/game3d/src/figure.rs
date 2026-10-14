@@ -18,6 +18,7 @@ use game_core::debris::solid::{Limb, Solid, figure};
 use game_core::palette::{DEBRIS_SHADES, Fighter};
 
 use crate::bomb::{self, BombHead};
+use crate::camera::Warm;
 use crate::comfort::Comfort;
 use crate::debris::Piece;
 use crate::enemy::Brain;
@@ -27,9 +28,12 @@ use crate::paint::{Paint, Paints, Role};
 use crate::player::{Dasher, Facing, Holding, Player};
 use crate::pose::{self, Act};
 
-/// How much smaller than its solid an enemy's part is drawn, so the loose parts show gaps between them. The player's
-/// parts are sized with gaps already.
-const GAP: f32 = 0.86;
+/// How much smaller than its solid each part is drawn, and how far its limbs spread sideways from the middle, so the
+/// loose parts show clear gaps between them, Rumble Box style (Q71). The player's table is sized with gaps already,
+/// so it shrinks less. Parts spread only sideways, so the feet stay on the floor.
+const GAP: f32 = 0.74;
+const PLAYER_GAP: f32 = 0.88;
+const SPREAD: Vec3 = Vec3::new(1.15, 1.0, 1.15);
 
 /// What a part looks like this frame: a hit's flash over everything, then the wind-up glow, then its own paint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -146,6 +150,7 @@ pub fn plugin(app: &mut App) {
 }
 
 fn load(
+    mut commands: Commands,
     mut kit: ResMut<Kit>,
     comfort: Res<Comfort>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -157,6 +162,9 @@ fn load(
     } else {
         StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }
     });
+    // The flash is built while the page loads, not on the first hit (`camera::Warm`).
+    let cube = kit.mesh(Solid::Cube([0.2; 3]), &mut meshes);
+    commands.spawn((Warm, Mesh3d(cube), MeshMaterial3d(kit.flash.clone())));
     // A soft dark disc under the feet stands in for a shadow (no shadow map).
     kit.blob = meshes.add(Circle::new(0.42).mesh().resolution(24));
     kit.blob_mat = mats.add(StandardMaterial {
@@ -186,11 +194,11 @@ fn parts(who: Fighter) -> Vec<Build> {
             .iter()
             .map(|&(solid, at, limb, reach, paint)| Build {
                 solid,
-                rest: Vec3::from_array(at),
+                rest: Vec3::from_array(at) * SPREAD,
                 limb,
                 reach,
                 paint,
-                scale: 1.0,
+                scale: PLAYER_GAP,
             })
             .collect(),
         Fighter::Enemy(kind) => {
@@ -199,7 +207,7 @@ fn parts(who: Fighter) -> Vec<Build> {
                 .iter()
                 .map(|p| Build {
                     solid: p.solid,
-                    rest: Vec3::from_array(p.at),
+                    rest: Vec3::from_array(p.at) * SPREAD,
                     limb: p.limb,
                     reach: reach(pieces, p.limb, p.at[1]),
                     paint: Paint::Body,
@@ -387,7 +395,8 @@ fn animate(
         };
         for &c in children {
             let Ok((mut rig, pieces)) = rigs.get_mut(c) else { continue };
-            rig.translation = rig.translation.lerp(lift, k);
+            // The lift is in figure space (a lunge goes forward), so it turns with the figure.
+            rig.translation = rig.translation.lerp(turn * lift, k);
             rig.rotation = rig.rotation.slerp(turn * lean, k);
             for &p in pieces {
                 let Ok((part, mut tf, mut material)) = parts.get_mut(p) else { continue };

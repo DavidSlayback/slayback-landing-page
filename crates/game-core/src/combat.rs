@@ -12,6 +12,8 @@ pub enum Move {
     Smash,
     /// The ninja's quick cut.
     Slash,
+    /// The fodder's punch: the player's before Q70 lengthened it.
+    Jab,
 }
 
 /// Timing (seconds), reach and effect of a move.
@@ -41,19 +43,21 @@ impl Move {
                 startup: 0.06,
                 active: 0.08,
                 recovery: 0.14,
-                reach: 1.0625,
+                // Q70: +35% for more range (the fodder's `Jab` keeps the old reach).
+                reach: 1.45,
                 offset_y: 0.3125,
                 damage: 8.0,
                 knockback: (16.25, 8.125),
                 hitstun: 0.25,
                 hitstop: 0.05,
             },
+            Move::Jab => MoveSpec { reach: 1.0625, ..Move::Punch.spec() },
             // Slow and far: launches bodies across the box.
             Move::Kick => MoveSpec {
                 startup: 0.12,
                 active: 0.10,
                 recovery: 0.24,
-                reach: 1.4375,
+                reach: 1.95, // Q70: +35% for more range
                 offset_y: -0.4375,
                 damage: 14.0,
                 knockback: (28.125, 13.125),
@@ -65,7 +69,7 @@ impl Move {
                 startup: 0.0,
                 active: 0.14,
                 recovery: 0.22,
-                reach: 0.9375,
+                reach: 1.25, // Q70: +35% for more range
                 offset_y: -0.1875,
                 damage: 12.0,
                 knockback: (31.25, 11.25),
@@ -241,7 +245,7 @@ mod tests {
 
     #[test]
     fn a_finishing_blow_freezes_longer_than_any_ordinary_hit() {
-        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash] {
+        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash, Move::Jab] {
             assert_eq!(hitstop(mv, false), mv.spec().hitstop);
             assert!(FINISHER_HITSTOP > mv.spec().hitstop, "{mv:?} must not out-freeze a kill");
             assert_eq!(hitstop(mv, true), FINISHER_HITSTOP);

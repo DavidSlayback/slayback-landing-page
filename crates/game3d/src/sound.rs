@@ -91,7 +91,7 @@ mod effects {
         let mut queue: Vec<(&Handle<AudioSource>, f32)> = Vec::new();
         // At most one of each per frame: a crowd going down at once shouldn't stack ten identical clicks.
         if let Some(h) = hits.read().last() {
-            let light = matches!(h.mv, Move::Punch | Move::Slash);
+            let light = matches!(h.mv, Move::Punch | Move::Jab | Move::Slash);
             queue.push(if light { (&effects.hit, 0.5) } else { (&effects.heavy, 0.6) });
         }
         // A kill: the figure breaks into its pieces.

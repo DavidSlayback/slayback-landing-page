@@ -77,7 +77,7 @@ pub fn ease(from: Aim, to: Aim, dt: f32) -> Aim {
 }
 
 #[cfg(feature = "render")]
-pub use view::{fit, plugin};
+pub use view::{Warm, fit, plugin};
 
 #[cfg(feature = "render")]
 mod view {
@@ -92,12 +92,25 @@ mod view {
     use crate::player::{HEIGHT, Player};
     use crate::run::BoxStarted;
 
+    /// Something drawn once while the page loads, so its render pipeline is built then rather than mid-fight. On
+    /// WebGL, Bevy builds a pipeline the first time a new kind of material is drawn and blocks the frame while it does:
+    /// the first punch (burst, flash, popup) froze the game for 3.6 s. Modules that own such a material spawn one tiny
+    /// instance with this; it rides just in front of the camera for [`WARM_FRAMES`] frames, then goes.
+    #[derive(Component)]
+    pub struct Warm;
+
+    /// How many frames the warm-up instances are drawn.
+    const WARM_FRAMES: u32 = 4;
+
     /// Where the camera is aiming now, easing toward [`targets`].
     #[derive(Component)]
     pub struct Rig(Aim);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(PostUpdate, fit.before(TransformSystems::Propagate));
+        app.add_systems(Startup, spawn)
+            .add_systems(PostStartup, hold_warm)
+            .add_systems(Update, drop_warm)
+            .add_systems(PostUpdate, fit.before(TransformSystems::Propagate));
     }
 
     fn spawn(mut commands: Commands) {
@@ -110,6 +123,30 @@ mod view {
             Rig(swoop(aim)),
             place(swoop(aim)),
         ));
+    }
+
+    /// Puts every warm-up mesh just in front of the camera, tiny, so it is drawn (and its pipeline built) but not seen.
+    fn hold_warm(
+        mut commands: Commands,
+        cameras: Query<Entity, With<Camera3d>>,
+        warm: Query<Entity, (With<Warm>, With<Mesh3d>)>,
+    ) {
+        let Ok(camera) = cameras.single() else { return };
+        for e in &warm {
+            commands
+                .entity(e)
+                .insert((Transform::from_xyz(0.0, 0.0, -1.0).with_scale(Vec3::splat(1e-3)), ChildOf(camera)));
+        }
+    }
+
+    /// Removes the warm-up instances once they have been drawn a few times.
+    fn drop_warm(mut commands: Commands, mut frames: Local<u32>, warm: Query<Entity, With<Warm>>) {
+        *frames += 1;
+        if *frames == WARM_FRAMES {
+            for e in &warm {
+                commands.entity(e).despawn();
+            }
+        }
     }
 
     /// Follows the player on real time (so it keeps moving through hit-stop), and turns the move keys with it.

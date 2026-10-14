@@ -62,7 +62,7 @@ pub const FODDER: Style = Style {
     windup: 0.35,
     cooldown: 0.65,
     walk: 0.5,
-    attack: Move::Punch,
+    attack: Move::Jab,
     armour: Armour::None,
 };
 
@@ -290,7 +290,7 @@ mod tests {
         let mut b = fodder();
         let mut punches = 0;
         for _ in 0..(2.0 / DT) as usize {
-            if b.decide(0.9375, DT, false, false) == Intent::Attack(Move::Punch) {
+            if b.decide(0.9375, DT, false, false) == Intent::Attack(Move::Jab) {
                 punches += 1;
             }
         }

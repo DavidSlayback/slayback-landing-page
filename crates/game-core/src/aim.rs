@@ -93,10 +93,11 @@ mod tests {
     }
 
     #[test]
-    fn a_punch_reaches_about_a_metre_past_the_body_and_a_kick_further() {
+    fn a_punch_reaches_about_a_metre_and_a_half_past_the_body_and_a_kick_further() {
         let punch = Cone::of(Move::Punch, [0.0, 0.0], 0.0, R);
         let kick = Cone::of(Move::Kick, [0.0, 0.0], 0.0, R);
-        assert!((1.2..1.6).contains(&punch.reach), "punch {}", punch.reach);
+        // Q70 lengthened it from about a metre.
+        assert!((1.6..2.0).contains(&punch.reach), "punch {}", punch.reach);
         assert!(kick.reach > punch.reach);
     }
 

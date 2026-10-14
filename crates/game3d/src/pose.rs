@@ -88,22 +88,32 @@ fn step(phase: f32) -> f32 {
     (phase.sin() + 0.15 * (3.0 * phase).sin()) / 0.85
 }
 
-/// The figure as a whole: lifted (metres) and turned (lean and twist) on top of its facing. A turn about +z by a
-/// positive angle tips the head back (toward -x); about +y, it brings the right side (+z) forward.
+/// The twist of a punch at extension `e`: first a little away from the blow (the wind-up), then into it, smoothly.
+fn twist(e: f32) -> f32 {
+    e - 0.6 * (std::f32::consts::PI * e).sin() * (1.0 - e)
+}
+
+/// The figure as a whole, in figure space: shifted (metres; +x is forward, so the caller turns it with the facing)
+/// and turned (lean and twist). A turn about +z by a positive angle tips the head back (toward -x); about +y, it
+/// brings the right side (+z) forward. Blows carry the body into them (Q70): a lunge forward, the torso twisting away
+/// first and then through.
 pub fn body(phase: f32, amount: f32, act: Act) -> (Vec3, Quat) {
     let bob = Vec3::Y * 0.06 * amount * phase.sin().abs();
     match act {
         Act::Strike { swing, side } => {
             let e = extension(&swing);
             match swing.mv {
-                // Laid back with both feet out, off the floor.
-                Move::DropKick => (bob + Vec3::Y * 0.25 * e, Quat::from_rotation_z(1.0 * e)),
-                // Leaning back from the kicking leg.
-                Move::Kick => (bob, Quat::from_rotation_z(0.25 * e)),
+                // Laid back with both feet out, off the floor, flying forward.
+                Move::DropKick => (bob + Vec3::new(0.25 * e, 0.25 * e, 0.0), Quat::from_rotation_z(1.0 * e)),
+                // Leaning back from the kicking leg, hips forward.
+                Move::Kick => (bob + Vec3::X * 0.15 * e, Quat::from_rotation_z(0.25 * e)),
                 // A thug's overhead blow comes down from a lean back into a lean forward.
-                Move::Smash => (bob, Quat::from_rotation_z(-0.35 * e)),
-                // Punches and slashes twist into the blow and lean into it.
-                _ => (bob, Quat::from_rotation_y(0.35 * side * e) * Quat::from_rotation_z(-0.12 * e)),
+                Move::Smash => (bob + Vec3::X * 0.1 * e, Quat::from_rotation_z(-0.35 * e)),
+                // Punches and slashes lunge, twist into the blow and lean into it.
+                _ => (
+                    bob + Vec3::X * 0.18 * e,
+                    Quat::from_rotation_y(0.4 * side * twist(e)) * Quat::from_rotation_z(-0.12 * e),
+                ),
             }
         }
         _ => (bob, Quat::IDENTITY),
@@ -127,21 +137,27 @@ pub fn part(limb: Limb, reach: f32, rest: Vec3, phase: f32, amount: f32, act: Ac
     };
     let line = |e: f32, x: f32, y: f32| {
         // Toward the line through the figure's middle, up to its height `y`, out to `x` ahead, by how far down the
-        // limb the part is: the parts spread out evenly along the arm or leg.
-        Vec3::new(x * (0.3 + 0.7 * reach), (y - rest.y) * reach, -rest.z * 0.5 * reach) * e
+        // limb the part is: the parts spread out evenly along the arm or leg. On the way the far end rises a little
+        // and comes back down, so it travels in an arc rather than a straight line.
+        let arc = Vec3::Y * 0.1 * reach * (std::f32::consts::PI * e).sin();
+        Vec3::new(x * (0.3 + 0.7 * reach), (y - rest.y) * reach, -rest.z * 0.5 * reach) * e + arc
     };
     match act {
         Act::Strike { swing, side: hits } => {
             let e = extension(&swing);
             let mine = s == hits;
             match swing.mv {
-                Move::Punch | Move::Slash if arm(limb) && mine => line(e, 0.75, 0.2),
+                // The player's punch reaches furthest (Q70); enemies' jabs and slashes less.
+                Move::Punch if arm(limb) && mine => line(e, 1.1, 0.2),
+                Move::Jab | Move::Slash if arm(limb) && mine => line(e, 0.75, 0.2),
                 // The other arm pulls back to guard.
-                Move::Punch | Move::Slash if arm(limb) => walk * (1.0 - e) + Vec3::new(-0.12, 0.06, 0.0) * e,
-                Move::Kick if leg(limb) && mine => line(e, 0.7, -0.35),
+                Move::Punch | Move::Jab | Move::Slash if arm(limb) => {
+                    walk * (1.0 - e) + Vec3::new(-0.12, 0.06, 0.0) * e
+                }
+                Move::Kick if leg(limb) && mine => line(e, 1.0, -0.35),
                 Move::Kick if arm(limb) => walk * (1.0 - e) + Vec3::new(-0.15, 0.12, 0.0) * e,
                 // Both feet out, both arms flung back.
-                Move::DropKick if leg(limb) => line(e, 0.6, -0.45),
+                Move::DropKick if leg(limb) => line(e, 0.8, -0.45),
                 Move::DropKick if arm(limb) => Vec3::new(-0.25, 0.15, 0.0) * e,
                 // Overhead and down: up past the head, then ahead at chest height.
                 Move::Smash if arm(limb) && mine => line(e, 0.6, 0.35) + Vec3::Y * 0.4 * reach * (1.0 - e),
@@ -189,7 +205,7 @@ mod tests {
         let act = Act::Strike { swing: at(Move::Punch, s.startup + s.active / 2.0), side: 1.0 };
         let fist = FIST + part(Limb::RightArm, 1.0, FIST, 0.0, 0.0, act);
         let shoulder = SHOULDER + part(Limb::RightArm, 0.35, SHOULDER, 0.0, 0.0, act);
-        assert!(fist.x > 0.6 && fist.x > shoulder.x + 0.3, "fist out ahead of the shoulder: {fist} {shoulder}");
+        assert!(fist.x > 1.0 && fist.x > shoulder.x + 0.5, "fist out ahead of the shoulder: {fist} {shoulder}");
         assert!(fist.z.abs() < FIST.z.abs(), "toward the middle: {fist}");
         let guard = part(Limb::LeftArm, 1.0, FIST * Vec3::new(1.0, 1.0, -1.0), 0.0, 0.0, act);
         assert!(guard.x < 0.0, "the left fist pulls back: {guard}");
@@ -220,8 +236,18 @@ mod tests {
     #[test]
     fn a_punch_twists_its_shoulder_forward() {
         let s = Move::Punch.spec();
-        let (_, turn) = body(0.0, 0.0, Act::Strike { swing: at(Move::Punch, s.startup), side: 1.0 });
+        // At full reach, where the blow lands.
+        let (_, turn) = body(0.0, 0.0, Act::Strike { swing: at(Move::Punch, s.startup + s.active / 2.0), side: 1.0 });
         assert!((turn * SHOULDER).x > SHOULDER.x + 0.1, "{}", turn * SHOULDER);
+    }
+
+    #[test]
+    fn a_punch_winds_up_away_from_the_blow_then_lunges_into_it() {
+        assert!(twist(0.15) < 0.0, "first away: {}", twist(0.15));
+        assert!((twist(1.0) - 1.0).abs() < 1e-6 && twist(0.0).abs() < 1e-6);
+        let s = Move::Punch.spec();
+        let (lunge, _) = body(0.0, 0.0, Act::Strike { swing: at(Move::Punch, s.startup + s.active / 2.0), side: 1.0 });
+        assert!(lunge.x > 0.15, "the body carries forward into it: {lunge}");
     }
 
     #[test]

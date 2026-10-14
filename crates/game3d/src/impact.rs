@@ -15,7 +15,7 @@ use bevy::transform::TransformSystems;
 use game_core::impact::{BLAST_BURST, burst_size, pop, squash};
 
 use crate::bomb::Exploded;
-use crate::camera;
+use crate::camera::{self, Warm};
 use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
 use crate::fighter::{Hit, Team};
 use crate::look::Palette;
@@ -83,11 +83,26 @@ fn load(
 ) {
     // Unlit, so they read at full strength with no bloom (research section 7); the outer star in the signal paint.
     let core = StandardMaterial { base_color: Color::srgb(1.0, 0.97, 0.85), unlit: true, cull_mode: None, ..default() };
-    commands.insert_resource(BurstKit {
+    let kit = BurstKit {
         star: meshes.add(star(8, 0.42)),
         outer: paints.get(Role::Signal, &palette, &mut mats),
         core: mats.add(core),
-    });
+    };
+    // Built while the page loads, not on the first hit (`camera::Warm`): the burst's stars, and the popup's text at
+    // every size a streak gives it.
+    for mat in [&kit.outer, &kit.core] {
+        commands.spawn((Warm, Mesh3d(kit.star.clone()), MeshMaterial3d(mat.clone())));
+    }
+    for streak in 0..=5 {
+        commands.spawn((
+            Warm,
+            Text::new("+0123456789 x"),
+            TextFont::from_font_size(22.0 + 3.0 * streak as f32),
+            TextColor(Color::NONE),
+            Node { position_type: PositionType::Absolute, ..default() },
+        ));
+    }
+    commands.insert_resource(kit);
 }
 
 /// Moves the camera off its framing by the shake, across and up the view, after `camera::fit` has placed it.

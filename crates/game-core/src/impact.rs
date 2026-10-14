@@ -16,7 +16,7 @@ const DRAIN: f32 = 1.8;
 /// A burst's radius for one blow, metres.
 pub fn burst_size(mv: Move, finisher: bool) -> f32 {
     let base = match mv {
-        Move::Punch | Move::Slash => 0.5625,
+        Move::Punch | Move::Jab | Move::Slash => 0.5625,
         Move::Kick => 0.8125,
         Move::DropKick => 0.9375,
         Move::Smash => 1.0,
@@ -40,7 +40,7 @@ pub fn squash(left: f32) -> [f32; 3] {
 /// Trauma from one blow: heavier moves shake more, and a finishing blow most of all.
 pub fn trauma(mv: Move, finisher: bool) -> f32 {
     let base = match mv {
-        Move::Punch => 0.18,
+        Move::Punch | Move::Jab => 0.18,
         Move::Slash => 0.2,
         Move::Kick => 0.3,
         Move::DropKick => 0.38,
