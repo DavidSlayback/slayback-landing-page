@@ -13,8 +13,10 @@ use game_core::scheme::{self, Scheme};
 
 use crate::arena::{Kind, Slab};
 use crate::player::{Facing, HEIGHT, Player};
+use crate::run::BoxStarted;
 
-/// The page's colour scheme (`game_core::scheme`). Colour things by `game_core::palette`'s rules for
+/// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
+/// It changes as each box starts, so whatever is coloured from it repaints when it changes. Colour things by `game_core::palette`'s rules for
 /// [`Palette::scheme`]: muted tones through [`srgb`], a fighter's lit body through [`vivid`], e.g.
 /// `vivid(palette::fighter_colour(p.scheme, who).body)`. The raw accents are here for effects that want one directly.
 #[derive(Resource, Clone, Copy, Debug)]
@@ -44,27 +46,35 @@ impl Palette {
         let scheme = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
         Self { scheme, accents: scheme.accents.map(srgb) }
     }
+}
 
-    /// The page's scheme: `?palette=` first, then the visitor's saved pick (the hero's `slayback-scheme`).
-    fn page() -> Self {
+/// The page's scheme, which the boxes rotate from: `?palette=` first, then the visitor's saved pick (the hero's
+/// `slayback-scheme`).
+#[derive(Resource)]
+struct PageScheme(usize);
+
+impl PageScheme {
+    fn read() -> Self {
         #[cfg(target_arch = "wasm32")]
         {
             let window = web_sys::window();
             let query = window.as_ref().and_then(|w| w.location().search().ok()).unwrap_or_default();
             let saved = window.as_ref().and_then(|w| w.local_storage().ok()??.get_item("slayback-scheme").ok()?);
-            Self::nth(scheme::page_choice(&query, saved.as_deref()))
+            Self(scheme::page_choice(&query, saved.as_deref()))
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            Self::nth(0)
+            Self(0)
         }
     }
 }
 
 pub fn plugin(app: &mut App) {
+    let page = PageScheme::read();
     app.insert_resource(ClearColor(Color::srgb(0.035, 0.04, 0.055)))
         .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 900.0, ..default() })
-        .insert_resource(Palette::page())
+        .insert_resource(Palette::nth(page.0))
+        .insert_resource(page)
         .add_plugins((
             crate::camera::plugin,
             crate::outline::plugin,
@@ -73,7 +83,39 @@ pub fn plugin(app: &mut App) {
             crate::hud::plugin,
         ))
         .add_systems(Startup, (load_kit, spawn_light))
-        .add_systems(Update, (dress_slabs, dress_player, (turn_figures, walk)).chain());
+        .add_systems(
+            Update,
+            (rotate_scheme, repaint.run_if(resource_changed::<Palette>), dress_slabs, dress_player, turn_figures, walk)
+                .chain(),
+        );
+}
+
+/// Each box takes the next scheme, starting from the page's (Q31).
+fn rotate_scheme(mut started: MessageReader<BoxStarted>, page: Res<PageScheme>, mut palette: ResMut<Palette>) {
+    let Some(BoxStarted(spec)) = started.read().last() else { return };
+    let next = Palette::nth(page.0 + spec.scheme);
+    if palette.scheme.key != next.scheme.key {
+        *palette = next;
+    }
+}
+
+/// Paints the kit's materials from the palette: once at the start, then whenever a box changes the scheme.
+fn repaint(palette: Res<Palette>, kit: Res<Kit>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    let arena = palette::arena_tone(palette.scheme);
+    let player = palette::fighter_colour(palette.scheme, Fighter::Player);
+    for (mat, colour) in [
+        (&kit.floor, srgb(arena.floor)),
+        (&kit.wall, srgb(arena.wall)),
+        (&kit.edge, srgb(arena.edge)),
+        (&kit.glass_edge, srgb(arena.glass)),
+        (&kit.body, vivid(player.body)),
+        (&kit.trim, srgb(player.trim)),
+        (&kit.ring_mat, srgb(palette::ring(palette.scheme))),
+    ] {
+        if let Some(mut m) = mats.get_mut(mat) {
+            m.base_color = colour;
+        }
+    }
 }
 
 /// Shared meshes and materials, so every cube batches.
@@ -94,20 +136,11 @@ struct Kit {
     blob_mat: Handle<StandardMaterial>,
 }
 
-fn load_kit(
-    mut commands: Commands,
-    palette: Res<Palette>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
-) {
-    let arena = palette::arena_tone(palette.scheme);
-    let player = palette::fighter_colour(palette.scheme, Fighter::Player);
-    let mut matte = |c: Rgb| mats.add(StandardMaterial { base_color: srgb(c), perceptual_roughness: 0.9, ..default() });
-    let floor = matte(arena.floor);
-    let wall = matte(arena.wall);
-    let trim = matte(player.trim);
-    let body = mats.add(StandardMaterial { base_color: vivid(player.body), perceptual_roughness: 0.9, ..default() });
-    let unlit = |c: Color| StandardMaterial { base_color: c, unlit: true, ..default() };
+/// Makes the kit; [`repaint`] colours it.
+fn load_kit(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    let mut matte = || mats.add(StandardMaterial { perceptual_roughness: 0.9, ..default() });
+    let (floor, wall, body, trim) = (matte(), matte(), matte(), matte());
+    let unlit = || StandardMaterial { unlit: true, ..default() };
     let kit = Kit {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         floor,
@@ -121,11 +154,11 @@ fn load_kit(
             unlit: true,
             ..default()
         }),
-        edge: mats.add(unlit(srgb(arena.edge))),
-        glass_edge: mats.add(unlit(srgb(arena.glass))),
+        edge: mats.add(unlit()),
+        glass_edge: mats.add(unlit()),
         // The player's ring (Q60): flat on the floor under the feet, in the main accent, unlit so it stays bright.
         ring: meshes.add(Annulus::new(0.5, 0.64).mesh().resolution(48)),
-        ring_mat: mats.add(unlit(srgb(palette::ring(palette.scheme)))),
+        ring_mat: mats.add(unlit()),
         // A soft dark disc under the feet stands in for a shadow (no shadow map).
         blob: meshes.add(Circle::new(0.45).mesh().resolution(32)),
         blob_mat: mats.add(StandardMaterial {

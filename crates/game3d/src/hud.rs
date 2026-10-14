@@ -11,7 +11,7 @@ use crate::run::RunState;
 use crate::score::RunScore;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, update);
+    app.add_systems(Startup, spawn).add_systems(Update, (update, repaint.run_if(resource_changed::<Palette>)));
 }
 
 #[derive(Component)]
@@ -48,6 +48,13 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             ));
             hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), TextShadow::default()));
         });
+}
+
+/// The bar follows the scheme as boxes rotate it.
+fn repaint(palette: Res<Palette>, mut fill: Query<&mut BackgroundColor, With<HealthFill>>) {
+    for mut bg in &mut fill {
+        bg.0 = palette.accents[0];
+    }
 }
 
 fn update(

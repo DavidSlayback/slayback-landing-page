@@ -61,6 +61,7 @@ struct BurstKit {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Shake>()
         .add_systems(Startup, load)
+        .add_systems(Update, repaint.run_if(resource_changed::<Palette>))
         .add_systems(
             Update,
             ((add_trauma, spawn_bursts, spawn_popups, start_squash), (grow_bursts, rise_popups, ease_squash)).chain(),
@@ -95,9 +96,21 @@ fn load(
     let flat = |c: Color| StandardMaterial { base_color: c, unlit: true, cull_mode: None, ..default() };
     commands.insert_resource(BurstKit {
         star: meshes.add(star(8, 0.42)),
-        outer: mats.add(flat(srgb(game_core::palette::signal(palette.scheme)))),
+        outer: mats.add(flat(signal(&palette))),
         core: mats.add(flat(Color::srgb(1.0, 0.97, 0.85))),
     });
+}
+
+/// The bursts' and popups' colour: the palette's signal accent.
+fn signal(palette: &Palette) -> Color {
+    srgb(game_core::palette::signal(palette.scheme))
+}
+
+/// Recolours the bursts when a box changes the scheme.
+fn repaint(palette: Res<Palette>, kit: Res<BurstKit>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    if let Some(mut m) = mats.get_mut(&kit.outer) {
+        m.base_color = signal(&palette);
+    }
 }
 
 fn add_trauma(mut shake: ResMut<Shake>, mut hits: MessageReader<Hit>, mut blasts: MessageReader<Exploded>) {
@@ -199,7 +212,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Popup { life: POPUP_LIFE, at: s.at + Vec3::Y * 1.0 },
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
-            TextColor(srgb(game_core::palette::signal(palette.scheme))),
+            TextColor(signal(&palette)),
             TextShadow::default(),
             Node { position_type: PositionType::Absolute, ..default() },
         ));

@@ -109,7 +109,10 @@ impl Kit {
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Kit>().add_systems(Startup, load).add_systems(Update, (dress_enemies, dress_debris, animate));
+    app.init_resource::<Kit>().add_systems(Startup, load).add_systems(
+        Update,
+        (repaint.run_if(resource_changed::<Palette>), dress_enemies, dress_debris, animate).chain(),
+    );
 }
 
 fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut<Assets<StandardMaterial>>) {
@@ -122,6 +125,19 @@ fn load(mut kit: ResMut<Kit>, mut meshes: ResMut<Assets<Mesh>>, mut mats: ResMut
         unlit: true,
         ..default()
     });
+}
+
+/// Repaints every kind's materials when a box changes the scheme (live figures and their debris alike).
+fn repaint(kit: Res<Kit>, palette: Res<Palette>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    for (&kind, m) in &kit.mats {
+        let c = colours(kind, &palette);
+        let paints = [(&m.skin, c.body), (&m.windup, c.windup)].into_iter();
+        for (mat, colour) in paints.chain(m.debris.iter().zip(c.debris)) {
+            if let Some(mut mat) = mats.get_mut(mat) {
+                mat.base_color = colour;
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
