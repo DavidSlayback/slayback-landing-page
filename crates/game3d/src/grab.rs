@@ -12,8 +12,8 @@ use bevy::prelude::*;
 use game_core::aim::level;
 use game_core::combat::{FINISHER_HITSTOP, HitOutcome, Move};
 use game_core::debris::solid::{Settle, Solid};
-use game_core::grab::flat::{knock, passes, pick, stops, swing, throw_velocity};
 use game_core::grab::{FLIGHT, HITSTOP, Held, SPIN, impact};
+use game_core::grab::{knock, passes, pick, stops, swing, throw_velocity};
 
 use crate::arena::Arena;
 use crate::bomb;

@@ -26,7 +26,7 @@ pub mod steer;
 #[cfg(test)]
 mod metres {
     use crate::combat::Move;
-    use crate::grab::{Held, flat, impact};
+    use crate::grab::{Held, impact};
 
     const UNITS_PER_METRE: f32 = 32.0;
 
@@ -61,14 +61,14 @@ mod metres {
 
     #[test]
     fn grabs_throws_and_bursts_keep_the_old_units_over_32() {
-        assert!(close(flat::REACH, 30.0));
+        assert!(close(crate::grab::REACH, 30.0));
         for (held, knockback) in
             [(Held::Enemy, (700.0, 380.0)), (Held::Debris, (450.0, 260.0)), (Held::Bomb, (250.0, 150.0))]
         {
             let k = impact(held).knockback;
             assert!(close(k.0, knockback.0) && close(k.1, knockback.1), "{held:?}");
         }
-        let (across, up) = flat::knock(Held::Enemy, 0.0);
+        let (across, up) = crate::grab::knock(Held::Enemy, 0.0);
         assert!((across[0] - 700.0 * (0.35 / 32.0)).abs() < 1e-5 && (up - 380.0 * (0.4 / 32.0)).abs() < 1e-5);
         assert!(close(crate::impact::BLAST_BURST, 108.0));
         for (mv, base) in
@@ -88,10 +88,10 @@ mod metres {
         // falling off to a third, a level body lifted at 0.35 of that, all scaled as a blow's.
         let k = 1.0 - (140.0 / 3.0) / 140.0;
         let speed = 1100.0 * (1.0 / 3.0 + 2.0 / 3.0 * k);
-        let (across, up) = crate::bomb::space::push([1.0, 0.0], 0.0).unwrap();
+        let (across, up) = crate::bomb::push([1.0, 0.0], 0.0).unwrap();
         assert!((across[0] - speed * (0.35 / 32.0)).abs() < 1e-5, "{across:?}");
         assert!((up - 0.35 * speed * (0.4 / 32.0)).abs() < 1e-5, "{up}");
-        let (across, up) = crate::bomb::space::push([0.0, 0.0], 0.0).unwrap();
+        let (across, up) = crate::bomb::push([0.0, 0.0], 0.0).unwrap();
         assert!(across == [0.0, 0.0] && (up - 1.35 * 1100.0 * (0.4 / 32.0)).abs() < 1e-4, "dead centre: {up}");
         // The rims: 1.5 m scaled by the old curve (140 units, +45 a box, to 600), capped at 3 m.
         for n in 1..=12 {

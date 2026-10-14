@@ -8,8 +8,8 @@
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use game_core::bomb::space::{damage, push};
 use game_core::bomb::{Fuse, HITSTOP};
+use game_core::bomb::{damage, push};
 use game_core::combat::HitOutcome;
 use game_core::debris::solid::Settle;
 use game_core::grab::Held;
