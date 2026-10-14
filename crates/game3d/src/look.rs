@@ -15,9 +15,9 @@ use crate::paint::{Paints, Role};
 use crate::run::BoxStarted;
 
 /// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
-/// It changes as each box starts, so whatever is coloured from it repaints when it changes. Colour things by
-/// `game_core::palette`'s rules for [`Palette::scheme`] through [`srgb`], e.g.
-/// `srgb(palette::fighter_colour(p.scheme, who).body)`; `paint::colour` holds every rule the game uses.
+/// It changes as each box starts. Colour things through `paint`: `paint::colour(role, &palette)` for a colour, and
+/// `Paints::get` for a shared material that repaints with the scheme. Only `paint` reads the scheme's rules (a
+/// pre-commit check keeps it that way).
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct Palette {
     pub scheme: &'static Scheme,

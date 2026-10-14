@@ -1,0 +1,8 @@
+# Text is LF everywhere, in the index and in every checkout, whatever core.autocrlf says (Windows checkouts were a mix
+# of CRLF and LF, which broke scripted edits and warned on every commit).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.wav binary
+*.wasm binary

@@ -18,6 +18,14 @@ repos:
         args: [--markdown-linebreak-ext=md]
   - repo: local
     hooks:
+      # One place for the scheme's colours (refactor #4): every colour rule lives in game3d's paint.rs. Elsewhere,
+      # reading the scheme's rules or raw accents gave colours that drifted (a bomb fuse stuck in box 1's scheme).
+      - id: colours-through-paint
+        name: game3d colours come from paint.rs
+        entry: 'palette::(signal|ring|fighter_colour|arena_tone|debris_tone)\b|\.accents\b'
+        language: pygrep
+        files: ^crates/game3d/src/.*\.rs$
+        exclude: ^crates/game3d/src/paint\.rs$
       - id: cargo-fmt
         name: cargo fmt
         entry: cargo fmt --all --check
@@ -47,6 +55,15 @@ repos:
       - id: test-game3d-headless
         name: tests (game3d scenarios, headless)
         entry: bash scripts/native.sh test -p game3d --no-default-features --locked -q
+        language: system
+        files: ^(crates/game3d|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]
+      # The unit tests behind the `render` feature (figure, paint): game3d is not a default member and the scenarios
+      # run without `render`, so nothing else runs them.
+      - id: test-game3d-render
+        name: tests (game3d unit tests, with render)
+        entry: bash scripts/native.sh test -p game3d --lib --locked -q
         language: system
         files: ^(crates/game3d|crates/game-core)/|^Cargo\.(toml|lock)$
         pass_filenames: false

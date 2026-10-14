@@ -146,6 +146,8 @@ mod view {
             for e in &warm {
                 commands.entity(e).despawn();
             }
+            // The browser harness (shaders.spec.js) marks this moment: no shader may be linked after it.
+            info!("warm-up drawn");
         }
     }
 

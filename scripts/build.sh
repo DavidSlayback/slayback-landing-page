@@ -7,6 +7,7 @@
 #                   clip page. Off by default; it needs the game, so it refuses SKIP_GAME=1. Deploys never set it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. scripts/target-dir.sh
 export PATH="$HOME/.cargo/bin:$PATH"
 target="${CARGO_TARGET_DIR:-target}"
 release="${GAME_RELEASE:-0}"
