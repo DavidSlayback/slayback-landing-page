@@ -12,7 +12,7 @@ use game_core::palette::{self, Fighter, Rgb};
 use game_core::scheme::{self, Scheme};
 
 use crate::arena::{Kind, Slab};
-use crate::player::{Facing, HEIGHT, Player};
+use crate::player::{Facing, HEIGHT, Holding, Player};
 use crate::run::BoxStarted;
 
 /// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
@@ -224,7 +224,11 @@ pub(crate) struct Rig;
 struct Limb {
     rest: Vec3,
     sign: f32,
+    arm: bool,
 }
+
+/// How far the arms rise while the player holds something overhead or whirls it, metres.
+const ARMS_UP: f32 = 0.5;
 
 /// Walk cycle phase, radians.
 #[derive(Component, Default)]
@@ -261,13 +265,14 @@ fn dress_player(mut commands: Commands, kit: Res<Kit>, players: Query<Entity, Ad
             ChildOf(e),
         ));
         let rig = commands.spawn((Rig, Transform::default(), Visibility::default(), ChildOf(e))).id();
-        for (size, at, sign, trim) in FIGURE {
+        for (i, (size, at, sign, trim)) in FIGURE.into_iter().enumerate() {
             let mat = if trim { kit.trim.clone() } else { kit.body.clone() };
             commands.spawn((
                 Mesh3d(kit.cube.clone()),
                 MeshMaterial3d(mat),
                 Transform::from_translation(at).with_scale(size),
-                Limb { rest: at, sign },
+                // FIGURE's fourth and fifth cubes are the arms.
+                Limb { rest: at, sign, arm: matches!(i, 3 | 4) },
                 ChildOf(rig),
             ));
         }
@@ -284,22 +289,27 @@ fn turn_figures(fighters: Query<(&Facing, &Children)>, mut rigs: Query<&mut Tran
     }
 }
 
-/// Legs and arms swing with ground speed; standing still settles them back.
+/// Legs and arms swing with ground speed; standing still settles them back. While the player holds something, its
+/// arms are up, holding it overhead.
 fn walk(
     time: Res<Time>,
-    mut fighters: Query<(&LinearVelocity, &mut Stride, &Children)>,
+    mut fighters: Query<(&LinearVelocity, &mut Stride, &Children, Has<Holding>)>,
     rigs: Query<&Children, With<Rig>>,
     mut limbs: Query<(&Limb, &mut Transform)>,
 ) {
     let dt = time.delta_secs();
-    for (v, mut stride, children) in &mut fighters {
+    for (v, mut stride, children, holding) in &mut fighters {
         let speed = v.0.with_y(0.0).length();
         stride.0 = if speed > 0.1 { stride.0 + speed * 2.2 * dt } else { 0.0 };
         let swing = stride.0.sin() * 0.16 * (speed / game_core::plane::RUN_SPEED).min(1.0);
         for rig in children.iter().filter_map(|c| rigs.get(c).ok()) {
             for &c in rig {
                 if let Ok((limb, mut tf)) = limbs.get_mut(c) {
-                    tf.translation = limb.rest + Vec3::X * swing * limb.sign;
+                    tf.translation = if holding && limb.arm {
+                        limb.rest + Vec3::Y * ARMS_UP
+                    } else {
+                        limb.rest + Vec3::X * swing * limb.sign
+                    };
                 }
             }
         }
