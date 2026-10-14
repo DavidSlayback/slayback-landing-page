@@ -2,17 +2,19 @@
 //! toward the player while keeping apart and off the walls (Q63), telegraph and strike.
 //!
 //! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game, fed distances in its
-//! world units), steering from `game_core::steer`, and door timing from `game_core::doors`; this module turns them
-//! into entities, velocity, facing and swings. G2 sends fodder only; thugs and ninjas are G5's.
+//! world units), steering from `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the
+//! box (`game_core::run::pick_kind`); this module turns them into entities, velocity, facing and swings. Fodder seek
+//! and keep apart; thugs plough straight in, ignoring the crowd; a ninja the player faces circles round to its back.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::debris::solid::FODDER_HEIGHT;
+use game_core::debris::solid::height;
 use game_core::doors::Door;
-use game_core::enemy::{Intent, Kind, Mind};
+use game_core::enemy::{Intent, Kind, Mind, NinjaPhase};
 use game_core::grab::Held;
 use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading};
-use game_core::steer::steer;
+use game_core::run::pick_kind;
+use game_core::steer::{circle, steer};
 
 use crate::arena::Arena;
 use crate::bomb::BombHead;
@@ -27,6 +29,9 @@ pub struct Brain(pub Mind);
 
 /// The fodder's capsule radius, metres (its height is `game_core::debris::solid::FODDER_HEIGHT`, the figure's).
 pub const RADIUS: f32 = 0.35;
+/// The thug's and the ninja's: the 2.5D bodies' widths converted as the fodder's was, so their arms just fit inside.
+pub const THUG_RADIUS: f32 = 0.55;
+pub const NINJA_RADIUS: f32 = 0.3;
 /// The player counts as in front of an enemy when its facing is within this angle of the enemy (cos 60°).
 const IN_FRONT: f32 = 0.5;
 
@@ -75,16 +80,14 @@ pub fn plugin(app: &mut App) {
     app.add_plugins(view::plugin);
 }
 
-/// An enemy's capsule radius and height, metres.
+/// An enemy's capsule radius and height (its figure's, `game_core::debris::solid::height`), metres.
 pub fn size(kind: Kind) -> (f32, f32) {
-    match kind {
-        Kind::Fodder => (RADIUS, FODDER_HEIGHT),
-        // Until G5 builds their figures: the 2.5D bodies, converted.
-        _ => {
-            let s = kind.style();
-            (s.half.0 * 0.75 / UNITS_PER_METRE, s.half.1 * 2.0 / UNITS_PER_METRE)
-        }
-    }
+    let radius = match kind {
+        Kind::Fodder => RADIUS,
+        Kind::Thug => THUG_RADIUS,
+        Kind::Ninja => NINJA_RADIUS,
+    };
+    (radius, height(kind))
 }
 
 /// The doors' feet on the walls' inner faces and their inward directions: two in the back wall, one in each side.
@@ -157,13 +160,13 @@ fn request_entries(
     }
     *turn += 1;
     let i = *turn % free.len();
-    free[i].next = Kind::Fodder;
-    // xorshift (as in the 2.5D game): the box's share of bomb-heads without a rand dependency.
+    // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
     *seed = seed.wrapping_add(0x9E37_79B9);
     let mut s = *seed;
     s ^= s << 13;
     s ^= s >> 17;
     s ^= s << 5;
+    free[i].next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
     free[i].bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
     free[i].door.request();
 }
@@ -212,7 +215,14 @@ fn think(
         match intent {
             Intent::Walk(pace) => {
                 let others: Vec<[f32; 2]> = crowd.iter().filter(|(o, _)| *o != e).map(|(_, p)| *p).collect();
-                let dir = steer(me, goal, pace, &others, [half.x, half.y]);
+                let half = [half.x, half.y];
+                let dir = match brain.0 {
+                    // Faced at close range: round to the player's back, not through it (the 2.5D ninja ran through).
+                    Mind::Ninja(b) if b.phase == NinjaPhase::Flank => circle(me, goal, forward, &others, half),
+                    // A thug ploughs a straight line; the others give way to it.
+                    Mind::Melee(b) if b.style.kind == Kind::Thug => steer(me, goal, pace, &[], half),
+                    _ => steer(me, goal, pace, &others, half),
+                };
                 want = [dir[0] * pace.abs() * RUN_SPEED, dir[1] * pace.abs() * RUN_SPEED];
                 facing.0.step(dir, dt);
             }
