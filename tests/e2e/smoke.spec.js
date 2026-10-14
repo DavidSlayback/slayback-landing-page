@@ -6,6 +6,10 @@ import { join } from 'node:path';
 import { DIST } from './playwright.config.js';
 import { HOME, collectErrors, hasGl, litFraction } from './helpers.js';
 
+// Which game the build serves at /play (scripts/build.sh's GAME). The 3D port (spec #58) brings the 2.5D game's
+// checks over slice by slice; until then those are skipped on a 3D build.
+const GAME3D = process.env.GAME === 'game3d';
+
 test.describe('homepage', () => {
   test('hero renders WebGL text and animates with no console errors', async ({ page }) => {
     const errors = collectErrors(page);
@@ -69,6 +73,7 @@ test.describe('/play', () => {
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
     if (process.env.REQUIRE_GAME) expect(built).toBe(true);
     test.skip(!built, 'game not in this build');
+    test.skip(GAME3D, 'the 3D game has no scripted climb yet (G3)');
     const errors = collectErrors(page);
     const logs = [];
     page.on('console', m => logs.push(m.text()));
@@ -86,6 +91,7 @@ test.describe('/play', () => {
       const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
       if (process.env.REQUIRE_GAME) expect(built).toBe(true);
       test.skip(!built, 'game not in this build');
+      test.skip(GAME3D, 'the 3D game has no comfort settings yet (G9)');
       const logs = [];
       page.on('console', m => logs.push(m.text()));
       await page.goto('/play/');

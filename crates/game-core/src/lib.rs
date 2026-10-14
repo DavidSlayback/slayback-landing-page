@@ -1,16 +1,19 @@
 //! Engine-free rules for the escape-the-box game.
 //!
-//! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game`
-//! wires it into ECS systems.
+//! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game` (2.5D) and
+//! `crates/game3d` wire it into ECS systems.
 
 pub mod bomb;
 pub mod combat;
+pub mod controls;
 pub mod debris;
 pub mod doors;
 pub mod enemy;
 pub mod grab;
+pub mod plane;
 pub mod quality;
 pub mod run;
+pub mod scheme;
 pub mod score;
 
 /// Player movement: run and dash (there is no jump; the player climbs by walking up debris).

@@ -8,11 +8,12 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 |---|---|
 | `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield). Native tests. |
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
-| `crates/game-core` | Engine-free game rules (movement, later combat and waves). Native tests. |
+| `crates/game-core` | Engine-free game rules shared by both games (movement, combat, waves, run, the input mapping in `controls`, colour `scheme`s, and the 3D floor movement in `plane`). Native tests. |
 | `crates/game` | The game at `/play`: Bevy 0.19 + avian2d 0.7, a thin shell over `game-core`. The library's `plugin` is the gameplay (physics stays 2D); `look::plugin` dresses it as 2.5D lit primitives with bloom in the page's colour scheme; `main.rs` adds window and renderer. `tests/scenarios.rs` steps it headless with scripted input. The window, renderer and UI sit behind the default `render` feature, so the scenarios build without them: `cargo test -p game --no-default-features` (CI's `check` job). |
+| `crates/game3d` | The 3D port that replaces `game` (spec #58, decisions Q46–Q64): Bevy 0.19 + avian3d 0.7, on the same `game-core`, with the same split (gameplay `plugin`; `look::plugin` and `camera::plugin` behind the default `render` feature; `main.rs` adds the window). `tests/scenarios.rs` steps it headless: `cargo test -p game3d --no-default-features`. See "The 3D game" below. Not a default member, like `game`. |
 | `site/` | The static page: `index.html` and `hero.js` (WebGL2 renderer + WASM glue); `site/play/` hosts the game and `site/play/watch/` its touch-device clip page. |
 | `tests/e2e` | Playwright browser smoke checks against the built `dist/` (see Browser tests), plus the clip recorder. |
-| `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME_RELEASE=1` for the release switch). |
+| `scripts/build.sh` | Builds `dist/`: site, `hero.wasm`, and the game (`SKIP_GAME=1` to skip the slow Bevy build; `GAME=game3d` to serve the 3D game at `/play`; `GAME_RELEASE=1` for the release switch). |
 
 ## CI
 
@@ -20,7 +21,7 @@ Pull requests get one cheap `check` job: tests (including the headless game), cl
 
 Locally, pre-commit hooks are the gate (Q45). Install them once per clone: `uv tool install pre-commit && pre-commit install -t pre-commit -t pre-push`. Commits run hygiene checks, rustfmt and clippy; pushes add the tests, the wasm lint of the renderer modules and the hero size budget.
 
-Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n>` ships a preview of the full game at `https://rc-<n>.slayback.pages.dev`. Each one runs the browser harness on exactly the build it ships and refuses to deploy on a failure. Production takes about 20 s; a preview takes as long as the game build. Both need wrangler logged in, or credentials in `.env.local`. While CI is unavailable, merge once the local hooks pass and deploy right after.
+Deploying from this machine (when CI can't): `bash scripts/deploy.sh` ships production, hero only. `bash scripts/deploy.sh rc <n> [game|game3d]` ships a preview of a full game at `https://rc-<n>.slayback.pages.dev`. Without the crate, rc-1 ships the 2.5D `game` (its archive, Q64) and any other preview the 3D `game3d`, so `bash scripts/deploy.sh rc 2` is the 3D preview. Each one runs the browser harness on exactly the build it ships and refuses to deploy on a failure. Production takes about 20 s; a preview takes as long as the game build. Both need wrangler logged in, or credentials in `.env.local`. While CI is unavailable, merge once the local hooks pass and deploy right after.
 
 ## Develop
 
@@ -35,6 +36,7 @@ python -m http.server -d dist 8080      # preview at http://localhost:8080 (add 
 
 ```sh
 cd crates/game && trunk serve          # http://127.0.0.1:8090, rebuilds and reloads on save
+cd crates/game3d && trunk serve        # the 3D game: http://127.0.0.1:8091
 ```
 
 Uses the fast `dev` profile: no LTO, no debug info, our crates at `-O1`, dependencies at `-O2`. Measured on this machine: the first build takes ~6 min. After that, an edit reaches a reloaded tab in **~14 s** (game crate) to **~16 s** (`game-core`). The size-optimised `game` profile (~10 min cold) is used only by `scripts/build.sh`, CI and deploys. `trunk` 0.21.14 comes from its prebuilt release; it fetches a matching `wasm-bindgen` if needed.
@@ -43,6 +45,7 @@ For feel-tuning, the game also runs natively in a desktop window:
 
 ```sh
 bash scripts/native.sh                  # cargo run -p game; other args go to cargo: native.sh test -p game
+bash scripts/native.sh run -p game3d    # the 3D game
 ```
 
 On a Windows GNU-host toolchain the only install is `rustup component add llvm-tools`. The script copies the toolchain's own `rust-lld` (as `ld`) and `llvm-dlltool` into `target/native-tools/` and links with LLD. This is needed because GNU ld mislinks the `raw-dylib` import libraries that Bevy's Windows crates need, and the exe crashes at startup. No MSVC, nothing global, and wasm and CI builds are unchanged. On other hosts it is plain `cargo`. Measured: the first build takes ~7.5 min; rebuilds take ~17 s after a game-crate edit and ~6 s after a `game-core` edit.
@@ -68,7 +71,7 @@ The first game build takes about 10 minutes (fat LTO for size); the web build is
 | Spin-throw | attack while holding; it hurts every enemy it passes through |
 | Set down | L again |
 
-Gamepads work too, with nothing to set up: left stick or d-pad to run, A or the right trigger to dash, X punch, Y kick, B grab, Start to pause or start (`crates/game/src/input.rs` maps every device to the same actions; +0.03 MB gzipped).
+Gamepads work too, with nothing to set up: left stick or d-pad to run, A or the right trigger to dash, X punch, Y kick, B grab, Start to pause or start (`crates/game/src/input.rs` maps every device to the same actions through the table in `game-core::controls`, shared with the 3D game; +0.03 MB gzipped).
 
 There is no jump: you climb by walking up debris.
 
@@ -106,6 +109,20 @@ A run starts from an overlay that lists the controls. Esc pauses, and so does th
 - **Sound:** off by default; M on the pause screen toggles it, and the choice is kept (`slayback-sound`). Effects (hit, heavy hit, shatter, boom) are synthesised by `python tools/sfx/generate.py`, which is deterministic, and embedded in the game. Audio added about 0.09 MB gzipped.
 - **Size:** the UI (`bevy_ui` + text) added 0.41 MB gzipped. `game_bg.wasm` is 6.42 MB gz (Q34 estimated +0.38 MB).
 
+### The 3D game
+
+`crates/game3d` rebuilds the game in full 3D, Rumble Box style (spec #58, tickets #61–#70), beside the 2.5D game until it reaches parity (G10 retires `game`). Each slice lands on `main` and is previewed on rc-2; rc-1 keeps the 2.5D game.
+
+- **Build:** `GAME=game3d bash scripts/build.sh` puts the 3D game at `dist/play/` under the same file names (`game.js`, `game_bg.wasm`), so `site/play/` hosts either. Without `GAME`, `/play` stays the 2.5D game.
+- **Preview:** `bash scripts/deploy.sh rc 2` builds it with the release switch on, runs the browser harness on that build with `GAME=game3d`, and ships `https://rc-2.slayback.pages.dev`. Production is unchanged: hero only, switch off.
+- **G1 (now):**
+  - **The box:** a 15 × 10 m floor (3:2, Q56; about eight fighters across) with walls up to box 1's rim (4.4 m, `game-core::run` converted at the 2.5D game's 32 units per metre). Every wall collides at full height; the front one is drawn as glass, a faint pane with a thin outline (Q57).
+  - **The camera:** fixed at a 3/4 view, 50° down with a 34° field of view, placed to frame the whole box for the window's shape (`camera::frame`, an exact fit, Q48).
+  - **The player:** moves in eight directions at 6 m/s (WASD or arrows, or the left stick or d-pad, through the shared mapping in `game-core::controls`). It turns smoothly to face its last move and has a ring on the floor in the scheme's main accent (Q49, Q60). For now the body is a dynamic capsule whose floor velocity follows the input; G3 replaces it with a move-and-slide controller that steps up onto the pile.
+  - **The look:** one directional light with no shadow map and no bloom, ACES tonemapping, MSAA. Flat-shaded slabs and cubes, with a dark disc under the player standing in for a shadow (research §7). The hybrid look is G4.
+- **Headless scenarios** (`crates/game3d/tests/scenarios.rs`) cover landing, walking into a corner against the walls, no way out in any of eight directions (glass included), full speed on diagonals, smooth turning, and the gamepad stick with its deadzone.
+- **Size:** `game_bg.wasm` is 15.7 MB, or 4.85 MB gzipped, against the 2.5D game's 6.6 MB gzipped. It has no UI, audio or fighting yet.
+
 ## Game release switch
 
 Visitors can't find the game until it ships. `GAME_RELEASE=1 bash scripts/build.sh` turns on its entry points:
@@ -132,4 +149,4 @@ SKIP_GAME=1 bash scripts/build.sh       # or a full build to cover /play
 cd tests/e2e && npm ci && npx playwright test
 ```
 
-Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. CI's `browser` job runs on `main` and `rc/` branches (not on PRs): it tests the full switch-on build and the hero-only `dist` that main deploys.
+Locally it uses the installed Chrome (`PW_CHANNEL=` to use a Playwright-managed browser) with SwiftShader WebGL, so no GPU is needed; `DIST=<dir>` tests another build. Set `GAME_RELEASE=1` when testing a switch-on build: the switch-off checks (no Play link, no clip page, an inert easter egg) run otherwise. Set `GAME=game3d` when testing a 3D build: the 2.5D game's scripted climb and reduced-motion checks are skipped until the 3D port brings them over (G3, G9); the load check runs on both. CI's `browser` job runs on `main` and `rc/` branches (not on PRs): it tests the full switch-on build and the hero-only `dist` that main deploys.

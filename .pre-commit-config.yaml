@@ -37,6 +37,12 @@ repos:
         language: system
         files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
         pass_filenames: false
+      - id: clippy-game3d-headless
+        name: clippy (game3d, headless)
+        entry: bash scripts/native.sh clippy -p game3d --no-default-features --all-targets --locked -q -- -D warnings
+        language: system
+        files: ^(crates/game3d|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
       - id: test
         name: tests (sim, hero, game rules)
         entry: bash scripts/native.sh test --locked -q
@@ -51,6 +57,13 @@ repos:
         files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
         pass_filenames: false
         stages: [pre-push]
+      - id: test-game3d-headless
+        name: tests (game3d scenarios, headless)
+        entry: bash scripts/native.sh test -p game3d --no-default-features --locked -q
+        language: system
+        files: ^(crates/game3d|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]
       # The renderer-side modules (look, ui, sound, comfort) only compile with `render`; CI lints them for wasm on
       # main only, so lint them here before they land.
       - id: clippy-game-wasm
@@ -58,6 +71,13 @@ repos:
         entry: bash scripts/native.sh clippy -p game --target wasm32-unknown-unknown --locked -q -- -D warnings
         language: system
         files: ^(crates/game|crates/game-core)/|^Cargo\.(toml|lock)$
+        pass_filenames: false
+        stages: [pre-push]
+      - id: clippy-game3d-wasm
+        name: clippy (game3d, wasm with render)
+        entry: bash scripts/native.sh clippy -p game3d --target wasm32-unknown-unknown --locked -q -- -D warnings
+        language: system
+        files: ^(crates/game3d|crates/game-core)/|^Cargo\.(toml|lock)$
         pass_filenames: false
         stages: [pre-push]
       - id: hero-budget

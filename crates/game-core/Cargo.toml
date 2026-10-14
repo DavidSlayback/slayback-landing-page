@@ -3,4 +3,4 @@ name = "game-core"
 version = "0.1.0"
 edition.workspace = true
 publish.workspace = true
-description = "Engine-free rules for the escape-the-box game (movement, combat, waves), tested natively; the Bevy crate is a thin shell over it."
+description = "Engine-free rules for the escape-the-box game (movement, combat, waves, controls, schemes), tested natively; the Bevy crates (2.5D and 3D) are thin shells over it."

@@ -1,0 +1,36 @@
+[package]
+name = "game3d"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Escape the box in 3D (Bevy + avian3d): the Rumble Box-style port that replaces the 2.5D game at /play (spec #58)."
+
+[features]
+default = ["render"]
+# Everything the window needs and the headless scenarios don't: windowing, rendering and the look. The scenarios run
+# with `--no-default-features`, so a change to these doesn't rebuild Bevy's renderer for them.
+render = [
+    "bevy/bevy_winit", "bevy/web", "bevy/webgl2", "bevy/x11",
+    # 3D: PBR meshes under one directional light, no shadow map, no bloom (research section 7). ACES tonemapping comes
+    # with bevy_core_pipeline; no tonemapping LUTs (+0.57 MB).
+    "bevy/bevy_render", "bevy/bevy_core_pipeline", "bevy/bevy_pbr",
+    # Gamepads: the gilrs backend, which uses the browser's Gamepad API on the web. Input mapping is base.
+    "bevy/bevy_gilrs",
+]
+
+[[bin]]
+name = "game3d"
+path = "src/main.rs"
+required-features = ["render"]
+
+[dependencies]
+game-core = { path = "../game-core" }
+# Pinned pair: avian3d 0.7 targets Bevy 0.19 (as avian2d does for the 2.5D game). Upgrade all of them together.
+# Explicit features instead of Bevy's "3d" bundle (no scenes, glTF, animation, picking or UI yet: megabytes of wasm
+# the game doesn't use). The base set is the 2.5D game's; `render` adds the rest.
+bevy = { version = "=0.19.1", default-features = false, features = ["std", "async_executor", "bevy_asset", "bevy_log", "bevy_state", "bevy_window", "keyboard", "mouse", "gamepad"] }
+avian3d = { version = "=0.7.0", default-features = false, features = ["3d", "f32", "parry-f32", "default-collider", "xpbd_joints"] }
+
+# The page's colour scheme (the hero saves the visitor's pick in localStorage; ?palette= overrides it).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location", "Storage"] }

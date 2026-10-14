@@ -20,6 +20,7 @@ use game_core::debris::Shape;
 use game_core::doors::Door;
 use game_core::enemy::Kind;
 use game_core::movement::RUN_SPEED;
+use game_core::scheme;
 
 use crate::ARENA;
 use crate::arena::{WALL, Wall};
@@ -55,67 +56,42 @@ fn debris_tone(accent: Color) -> Color {
     Color::srgb(0.2, 0.21, 0.25).mix(&accent, 0.08)
 }
 
-/// A colour scheme shared with the homepage hero (`site/hero.js`): four neon accents, the first one primary.
+/// A colour scheme shared with the homepage hero (`game_core::scheme`): four neon accents, the first one primary.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct Scheme {
     pub key: &'static str,
     pub accents: [Color; 4],
 }
 
-pub const SCHEMES: [Scheme; 3] = [
-    Scheme {
-        key: "netrunner",
-        accents: [
-            Color::srgb(0.62, 1.0, 0.0),
-            Color::srgb(0.15, 1.0, 0.2),
-            Color::srgb(0.0, 1.0, 0.72),
-            Color::srgb(0.88, 1.0, 0.12),
-        ],
-    },
-    Scheme {
-        key: "synthwave",
-        accents: [
-            Color::srgb(1.0, 0.08, 0.72),
-            Color::srgb(0.0, 0.9, 1.0),
-            Color::srgb(1.0, 0.92, 0.05),
-            Color::srgb(0.5, 0.15, 1.0),
-        ],
-    },
-    Scheme {
-        key: "gold",
-        accents: [
-            Color::srgb(1.0, 0.55, 0.04),
-            Color::srgb(1.0, 0.82, 0.2),
-            Color::srgb(1.0, 0.3, 0.0),
-            Color::srgb(1.0, 0.95, 0.65),
-        ],
-    },
-];
-
 impl Scheme {
-    pub fn by_key(key: &str) -> Option<Scheme> {
-        SCHEMES.iter().copied().find(|s| s.key == key)
+    /// Scheme `i` of `game_core::scheme::SCHEMES`, wrapping round.
+    pub fn nth(i: usize) -> Scheme {
+        let s = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
+        Scheme { key: s.key, accents: s.accents.map(|[r, g, b]| Color::srgb(r, g, b)) }
     }
 
-    /// Index in [`SCHEMES`] of the page's scheme: `?palette=` first, then the visitor's saved pick (the hero's
+    pub fn by_key(key: &str) -> Option<Scheme> {
+        scheme::index(key).map(Scheme::nth)
+    }
+
+    /// Index of the page's scheme: `?palette=` first, then the visitor's saved pick (the hero's
     /// `slayback-scheme`), else Netrunner.
     fn page_index() -> usize {
         #[cfg(target_arch = "wasm32")]
         {
             let window = web_sys::window();
             let query = window.as_ref().and_then(|w| w.location().search().ok()).unwrap_or_default();
-            let from_query =
-                query.trim_start_matches('?').split('&').find_map(|kv| kv.strip_prefix("palette=")).map(str::to_owned);
-            let saved = || window.as_ref()?.local_storage().ok()??.get_item("slayback-scheme").ok()?;
-            if let Some(i) = from_query.or_else(saved).and_then(|k| SCHEMES.iter().position(|s| s.key == k)) {
-                return i;
-            }
+            let saved = window.as_ref().and_then(|w| w.local_storage().ok()??.get_item("slayback-scheme").ok()?);
+            scheme::page_choice(&query, saved.as_deref())
         }
-        0
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            0
+        }
     }
 }
 
-/// The page's scheme (index in [`SCHEMES`]); box `n` uses the one `n - 1` steps after it.
+/// The page's scheme (index in `game_core::scheme::SCHEMES`); box `n` uses the one `n - 1` steps after it.
 #[derive(Resource)]
 struct BaseScheme(usize);
 
@@ -124,7 +100,7 @@ pub fn plugin(app: &mut App) {
         .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 350.0, ..default() })
         .add_plugins((crate::comfort::plugin, camera::plugin, crate::impact::plugin))
         .insert_resource(BaseScheme(Scheme::page_index()))
-        .insert_resource(SCHEMES[Scheme::page_index()])
+        .insert_resource(Scheme::nth(Scheme::page_index()))
         .add_systems(Startup, (load_kit, (spawn_stage, spawn_embers)).chain())
         // Before anything is dressed for the new box.
         .add_systems(PreUpdate, (rotate_scheme, build_frame))
@@ -343,7 +319,7 @@ fn rotate_scheme(
     players: Query<(), With<Player>>,
 ) {
     let Some(BoxStarted(spec)) = started.read().last() else { return };
-    *scheme = SCHEMES[(base.0 + spec.scheme) % SCHEMES.len()];
+    *scheme = Scheme::nth(base.0 + spec.scheme);
     if let Some(mut m) = mats.get_mut(&kit.rim) {
         m.base_color = scheme.accents[0];
         m.emissive = scheme.accents[0].to_linear() * 4.0;
