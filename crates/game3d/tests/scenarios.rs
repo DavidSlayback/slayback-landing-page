@@ -22,7 +22,7 @@ use game3d::enemy::{Brain, Waves, enemy, fodder, size};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::grab::{Carried, Thrown};
-use game3d::input::Actions;
+use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
@@ -114,6 +114,24 @@ fn the_player_lands_on_the_floor_and_stands_still() {
     assert!((pos.y - HEIGHT / 2.0).abs() < 0.05, "stands on the floor: y {}", pos.y);
     assert!(vel.length() < 0.05, "at rest: {vel}");
     assert!(pos.xz().distance(SPAWN.xz()) < 0.01, "lands where it spawned: {pos}");
+}
+
+#[test]
+fn with_the_camera_turned_up_on_the_keys_walks_up_the_screen() {
+    // A camera yawed 90° looks along -x, so up the screen is -x on the floor and right is -z (Q65).
+    let mut app = standing();
+    app.world_mut().resource_mut::<ViewYaw>().0 = std::f32::consts::FRAC_PI_2;
+    let (start, _, _) = player(&mut app);
+    hold(&mut app, &[KeyCode::KeyW], 0.5);
+    let (up, _, _) = player(&mut app);
+    let moved = (up - start).xz();
+    assert!(moved.x < -1.0 && moved.y.abs() < 0.05, "up the screen is -x: moved {moved}");
+    step(&mut app, 0.5);
+    let (up, _, _) = player(&mut app);
+    hold(&mut app, &[KeyCode::KeyD], 0.5);
+    let (right, _, _) = player(&mut app);
+    let moved = (right - up).xz();
+    assert!(moved.y < -1.0 && moved.x.abs() < 0.05, "right on the screen is -z: moved {moved}");
 }
 
 #[test]

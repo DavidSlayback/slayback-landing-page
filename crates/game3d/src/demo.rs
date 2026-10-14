@@ -30,7 +30,7 @@ use crate::debris::{Piece, piece};
 use crate::enemy::{Brain, RADIUS, Waves, enemy};
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
-use crate::input::{GRAB_KEY, KICK_KEY, PUNCH_KEY, ReadActions};
+use crate::input::{GRAB_KEY, KICK_KEY, PUNCH_KEY, ReadActions, WorldControls};
 use crate::player::{Facing, Player, SPAWN};
 use crate::run::{BoxStarted, RunState};
 
@@ -58,7 +58,9 @@ pub fn plugin(app: &mut App) {
         return;
     }
     // After the screens' Startup, which puts a fresh page on the start overlay.
+    // Its key presses mean world directions (D is +x), not the camera's.
     app.insert_resource(PauseOnBlur(false))
+        .init_resource::<WorldControls>()
         .add_systems(PostStartup, |mut next: ResMut<NextState<Phase>>| next.set(Phase::Playing))
         .add_plugins(Demo::page());
 }

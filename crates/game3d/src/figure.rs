@@ -20,7 +20,7 @@ use crate::comfort::Comfort;
 use crate::debris::Piece;
 use crate::enemy::{Brain, RADIUS};
 use crate::fighter::{Attack, Body, Flash};
-use crate::look::{Palette, srgb, vivid};
+use crate::look::{Palette, srgb};
 use crate::player::Facing;
 
 /// A figure's colours: live body, the wind-up glow before it strikes, and its debris's shades.
@@ -35,7 +35,7 @@ pub struct Colours {
 pub fn colours(kind: Kind, palette: &Palette) -> Colours {
     let body = palette::fighter_colour(palette.scheme, Fighter::Enemy(kind)).body;
     Colours {
-        body: vivid(body),
+        body: srgb(body),
         windup: srgb(body).mix(&Color::WHITE, 0.6),
         debris: std::array::from_fn(|i| srgb(palette::debris_tone(palette.scheme, i))),
     }

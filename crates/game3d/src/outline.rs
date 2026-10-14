@@ -3,7 +3,7 @@
 //! A fullscreen pass after the main pass reads the camera's own depth texture and darkens pixels where depth is not
 //! locally planar. Reverse-Z NDC depth is affine in screen space across any plane, so its second difference is ~0
 //! inside a face and large at silhouettes (depth jumps) and creases (slope changes): every edge of a flat-shaded
-//! cube, from one depth texture and no prepass. At 720p, silhouettes come out ~4 px wide and creases ~2 px.
+//! cube, from one depth texture and no prepass. The widths are set in [`EdgeOutline`].
 //!
 //! What WebGL2 forces (Bevy 0.19.1):
 //! - Bevy's depth prepass is unusable: it copies depth with `copy_texture_to_texture`, which WebGL2 can't do
@@ -39,16 +39,18 @@ pub struct EdgeOutline {
     pub color: Vec4,
     /// How far out silhouettes are sampled, whole pixels (lines come out ~2x that wide).
     pub width: f32,
-    /// Edges above this are creases, drawn 1 px out.
+    /// Edges above this are creases, drawn `crease_width` px out.
     pub crease: f32,
     /// Edges above this are silhouettes, drawn `width` px out.
     pub silhouette: f32,
+    /// How far out creases are sampled, whole pixels.
+    pub crease_width: f32,
 }
 
 impl Default for EdgeOutline {
-    /// S1's chosen look: near-black, ~4 px silhouettes and ~2 px creases at 720p.
+    /// Rumble Box's thick black edges (Q66): ~6 px silhouettes and ~4 px creases at 720p.
     fn default() -> Self {
-        Self { color: Vec4::new(0.03, 0.03, 0.05, 1.0), width: 2.0, crease: 0.0008, silhouette: 0.008 }
+        Self { color: Vec4::new(0.0, 0.0, 0.0, 1.0), width: 3.0, crease: 0.0008, silhouette: 0.008, crease_width: 2.0 }
     }
 }
 

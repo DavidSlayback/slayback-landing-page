@@ -251,7 +251,7 @@ mod view {
     use super::WallDoor;
     use crate::look::{Palette, srgb};
 
-    /// Door panel size, metres: about a fighter and a half tall.
+    /// Door panel size, metres: about a fighter and a half tall (taller than box 1's walls, as in Rumble Box).
     const PANEL: Vec3 = Vec3::new(1.2, 2.1, 0.08);
 
     /// Each door's own material, recoloured as it warns.
@@ -259,7 +259,7 @@ mod view {
     struct Panel(Handle<StandardMaterial>);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Update, (dress, pulse).chain());
+        app.add_systems(Update, (dress, pulse, fade).chain());
     }
 
     fn closed(palette: &Palette) -> Color {
@@ -302,6 +302,21 @@ mod view {
                 && m.base_color != colour
             {
                 m.base_color = colour;
+            }
+        }
+    }
+
+    /// A door in a wall the camera is behind goes with the wall (`look`), so it never hides the fight.
+    fn fade(
+        cameras: Query<&GlobalTransform, With<Camera3d>>,
+        mut doors: Query<(&WallDoor, &GlobalTransform, &mut Visibility)>,
+    ) {
+        let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
+        for (door, at, mut shown) in &mut doors {
+            let behind = (eye - at.translation()).with_y(0.0).dot(-door.inward) > 0.0;
+            let want = if behind { Visibility::Hidden } else { Visibility::Inherited };
+            if *shown != want {
+                *shown = want;
             }
         }
     }

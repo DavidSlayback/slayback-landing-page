@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use game_core::palette::{self, Fighter, Rgb};
 use game_core::scheme::{self, Scheme};
 
-use crate::arena::{Kind, Slab};
+use crate::arena::{Kind, Slab, WALL};
 use crate::player::{Facing, HEIGHT, Holding, Player};
 use crate::run::BoxStarted;
 
@@ -29,16 +29,6 @@ pub struct Palette {
 /// A `game_core::palette` colour as a Bevy colour.
 pub fn srgb([r, g, b]: Rgb) -> Color {
     Color::srgb(r, g, b)
-}
-
-/// How much a vivid colour is dimmed on a lit surface. Lit at full strength, a neon accent overexposes and ACES
-/// washes it toward white; at 0.6 it stays saturated and still outshines the muted arena (checked on the real GPU).
-const VIVID: f32 = 0.6;
-
-/// A live fighter's vivid colour (`game_core::palette`) as the base colour of a lit material.
-pub fn vivid(c: Rgb) -> Color {
-    let l = srgb(c).to_linear();
-    LinearRgba::rgb(l.red * VIVID, l.green * VIVID, l.blue * VIVID).into()
 }
 
 impl Palette {
@@ -85,7 +75,15 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, (load_kit, spawn_light))
         .add_systems(
             Update,
-            (rotate_scheme, repaint.run_if(resource_changed::<Palette>), dress_slabs, dress_player, turn_figures, walk)
+            (
+                rotate_scheme,
+                repaint.run_if(resource_changed::<Palette>),
+                dress_slabs,
+                fade_walls,
+                dress_player,
+                turn_figures,
+                walk,
+            )
                 .chain(),
         );
 }
@@ -106,9 +104,7 @@ fn repaint(palette: Res<Palette>, kit: Res<Kit>, mut mats: ResMut<Assets<Standar
     for (mat, colour) in [
         (&kit.floor, srgb(arena.floor)),
         (&kit.wall, srgb(arena.wall)),
-        (&kit.edge, srgb(arena.edge)),
-        (&kit.glass_edge, srgb(arena.glass)),
-        (&kit.body, vivid(player.body)),
+        (&kit.body, srgb(player.body)),
         (&kit.trim, srgb(player.trim)),
         (&kit.ring_mat, srgb(palette::ring(palette.scheme))),
     ] {
@@ -125,9 +121,8 @@ struct Kit {
     floor: Handle<StandardMaterial>,
     wall: Handle<StandardMaterial>,
     glass: Handle<StandardMaterial>,
-    /// The bright edge along the rim, and the dimmer one round the glass.
-    edge: Handle<StandardMaterial>,
-    glass_edge: Handle<StandardMaterial>,
+    /// Black, unlit: the rim and glass bars and the tile lines.
+    line: Handle<StandardMaterial>,
     body: Handle<StandardMaterial>,
     trim: Handle<StandardMaterial>,
     ring: Handle<Mesh>,
@@ -154,8 +149,7 @@ fn load_kit(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mats: 
             unlit: true,
             ..default()
         }),
-        edge: mats.add(unlit()),
-        glass_edge: mats.add(unlit()),
+        line: mats.add(StandardMaterial { base_color: Color::BLACK, ..unlit() }),
         // The player's ring (Q60): flat on the floor under the feet, in the main accent, unlit so it stays bright.
         ring: meshes.add(Annulus::new(0.5, 0.64).mesh().resolution(48)),
         ring_mat: mats.add(unlit()),
@@ -180,36 +174,112 @@ fn spawn_light(mut commands: Commands) {
     ));
 }
 
-/// Edge bars, metres thick.
-const EDGE: f32 = 0.07;
+/// The black bars along the rim and round the glass, metres thick (Rumble Box's thick black edges, Q66).
+const EDGE: f32 = 0.14;
+/// Rumble Box's tiles: a black line every metre across the floor and up the walls, this thick.
+const TILE: f32 = 1.0;
+const LINE: f32 = 0.05;
+
+/// A wall's solid face or one of its tile lines. A wall the camera is behind turns to glass, so it never hides the
+/// fight; its rim bar stays.
+#[derive(Component)]
+struct WallFace {
+    /// The wall's centre and its outward normal, on the floor.
+    centre: Vec2,
+    outward: Vec2,
+    solid: bool,
+}
 
 /// Dresses each slab in scaled unit cubes (children, so the slab's own transform stays unscaled for its collider).
-fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Slab), Added<Slab>>) {
-    for (e, slab) in &slabs {
+fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Slab, &Transform), Added<Slab>>) {
+    for (e, slab, at) in &slabs {
         let s = slab.size;
         commands.entity(e).insert(Visibility::default());
-        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<StandardMaterial>| {
-            commands.spawn((
+        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<StandardMaterial>, face: Option<WallFace>| {
+            let mut c = commands.spawn((
                 Mesh3d(kit.cube.clone()),
                 MeshMaterial3d(mat.clone()),
                 Transform::from_translation(at).with_scale(size),
                 ChildOf(e),
             ));
+            if let Some(face) = face {
+                c.insert(face);
+            }
         };
         match slab.kind {
-            Kind::Floor => cube(s, Vec3::ZERO, &kit.floor),
-            // A bright line along the rim.
-            Kind::Wall => {
-                cube(s, Vec3::ZERO, &kit.wall);
-                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.edge);
-            }
-            // The glass is a faint pane drawn by its outline: a thin rail along the rim and the two corner posts.
-            Kind::Glass => {
-                cube(s, Vec3::ZERO, &kit.glass);
-                cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.glass_edge);
-                for x in [-1.0, 1.0] {
-                    cube(Vec3::new(EDGE, s.y, EDGE), Vec3::X * x * (s.x - EDGE) / 2.0, &kit.glass_edge);
+            Kind::Floor => {
+                cube(s, Vec3::ZERO, &kit.floor, None);
+                // Tile lines over the inner floor, just proud of it.
+                let inner = Vec2::new(s.x, s.z) - Vec2::splat(2.0 * WALL);
+                let y = s.y / 2.0 + 0.004;
+                for x in lines(inner.x) {
+                    cube(Vec3::new(LINE, 0.008, inner.y), Vec3::new(x, y, 0.0), &kit.line, None);
                 }
+                for z in lines(inner.y) {
+                    cube(Vec3::new(inner.x, 0.008, LINE), Vec3::new(0.0, y, z), &kit.line, None);
+                }
+            }
+            Kind::Wall => {
+                // Which way the wall faces: along z for the back wall, x for the side walls. The back wall spans the
+                // corners; the side walls only the floor between them.
+                let along_z = s.z < s.x;
+                let outward =
+                    if along_z { Vec2::Y * at.translation.z.signum() } else { Vec2::X * at.translation.x.signum() };
+                let face = |solid| Some(WallFace { centre: at.translation.xz(), outward, solid });
+                cube(s, Vec3::ZERO, &kit.wall, face(true));
+                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.line, None);
+                // Tile lines on the inner face: across at each metre of height, and up at each metre along.
+                let inward = -Vec3::new(outward.x, 0.0, outward.y) * (WALL / 2.0 + 0.004);
+                let span = if along_z { s.x - 2.0 * WALL } else { s.z };
+                let bar = |along: f32, up: f32| {
+                    if along_z { Vec3::new(along, up, 0.008) } else { Vec3::new(0.008, up, along) }
+                };
+                let mut y = TILE;
+                while y < s.y - TILE / 2.0 {
+                    cube(bar(span, LINE), Vec3::Y * (y - s.y / 2.0) + inward, &kit.line, face(false));
+                    y += TILE;
+                }
+                for a in lines(span) {
+                    let at = if along_z { Vec3::X * a } else { Vec3::Z * a };
+                    cube(bar(LINE, s.y), at + inward, &kit.line, face(false));
+                }
+            }
+            // The glass is a faint pane drawn by its edges: a bar along the rim and the two corner posts.
+            Kind::Glass => {
+                cube(s, Vec3::ZERO, &kit.glass, None);
+                cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.line, None);
+                for x in [-1.0, 1.0] {
+                    cube(Vec3::new(EDGE, s.y, EDGE), Vec3::X * x * (s.x - EDGE) / 2.0, &kit.line, None);
+                }
+            }
+        }
+    }
+}
+
+/// Positions of the tile lines across a span `len` metres long, centred on zero: every [`TILE`], ends included.
+fn lines(len: f32) -> impl Iterator<Item = f32> {
+    let n = (len / TILE).round() as i32;
+    (0..=n).map(move |i| -len / 2.0 + i as f32 * len / n as f32)
+}
+
+/// Turns the walls the camera is behind to glass, and hides their tile lines.
+fn fade_walls(
+    kit: Res<Kit>,
+    cameras: Query<&GlobalTransform, With<Camera3d>>,
+    mut faces: Query<(&WallFace, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+) {
+    let Some(eye) = cameras.iter().next().map(|c| c.translation().xz()) else { return };
+    for (face, mut mat, mut shown) in &mut faces {
+        let behind = (eye - face.centre).dot(face.outward) > 0.0;
+        if face.solid {
+            let want = if behind { &kit.glass } else { &kit.wall };
+            if mat.0 != *want {
+                mat.0 = want.clone();
+            }
+        } else {
+            let want = if behind { Visibility::Hidden } else { Visibility::Inherited };
+            if *shown != want {
+                *shown = want;
             }
         }
     }

@@ -112,3 +112,13 @@ David, after the look and impact passes: "Take inspiration from rumble box for t
 | Q62 | Throws | **A: flat along the facing, with aim assist toward the biggest enemy group within ~30°.** | Same assist rule as Q49. |
 | Q63 | Enemy movement | **A: steering:** seek the player, separate from each other, avoid walls. Ninjas circle to flank; thugs plough straight in. | No pathfinding. |
 | Q64 | Retiring 2.5D | **A: delete `game`, and `/play` serves 3D with no fallback.** rc-1 stays up as an archive of the 2.5D game. | |
+
+## Round 6: feel pass (2026-10-14)
+
+David, after playing rc-2 with G1-G10: "this plays like absolute shit. It feels nothing like Rumble Box. The main character doesn't even have a punch animation. The camera angle is wrong. The animations that are there are really stilted. Did you even look at how that game plays?" Evidence: DigiPen's gameplay video, studied frame by frame (`docs/research/rumble-box-reference.md`).
+
+| # | Decision | Answer | Notes |
+|---|---|---|---|
+| Q65 | Camera | **Match Rumble Box:** a camera yawed off the box's axis that swings round and pushes in low during fights. | Reverses Q48. Movement becomes camera-relative, so the arrow keys stay "up the screen". |
+| Q66 | Look | **Keep the schemes, but thick black edges and saturated figures.** | Amends Q50: outlines bolder and black; fighters' colours no longer dimmed or washed out. |
+| Q67 | Order and review | **Camera and look, then the player's attack animations, then loose-part figures and kill bursts, then the pace.** Each step is played by David on a preview before it merges. | Proposed by Claude; David answered Q65 and Q66 without changing it. The playtest (#29) waits for his sign-off on feel. |

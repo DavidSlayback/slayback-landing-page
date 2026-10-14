@@ -127,14 +127,17 @@ fn spawn_bursts(
     mut blasts: MessageReader<Exploded>,
     mut seed: Local<u32>,
     mut thin: Local<Thin>,
+    cameras: Query<&Transform, With<Camera3d>>,
 ) {
-    let toward_camera = camera::orientation() * Vec3::Z;
+    // Bursts face the camera as it is when they go off; they're gone before it has turned far.
+    let facing = cameras.iter().next().map_or(Quat::IDENTITY, |t| t.rotation);
+    let toward_camera = facing * Vec3::Z;
     let share = burst_share(&comfort, &quality);
     // A blast bursts biggest of all, centred on the bomb.
     let blows = hits.read().filter(|h| h.finisher || thin.keep(share)).map(|h| (h.at, burst_size(h.mv, h.finisher)));
     for (at, size) in blows.chain(blasts.read().map(|b| (b.at, BLAST_BURST))) {
         *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let turn = camera::orientation() * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
+        let turn = facing * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
         commands
             .spawn((
                 Burst { life: BURST_LIFE, size: size / UNITS_PER_METRE },
