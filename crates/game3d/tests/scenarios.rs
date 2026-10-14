@@ -1778,3 +1778,70 @@ fn fodder_enter_through_a_door_only_after_its_warning() {
     let warning = game_core::doors::WARNING;
     assert!(warned_for >= warning - 0.05, "a door warned for {warned_for} s of its {warning} before anyone came in");
 }
+
+/// Doors warning right now.
+fn warning_doors(app: &mut App) -> usize {
+    let mut q = app.world_mut().query::<&game3d::enemy::WallDoor>();
+    q.iter(app.world()).filter(|d| d.door.warning()).count()
+}
+
+/// Steps `seconds` with the waves on and the player out of harm's way (health topped up each frame); the most doors
+/// that warned at once and the most enemies inside at once.
+fn waves_for(app: &mut App, seconds: f32) -> (usize, usize) {
+    let (mut doors, mut most) = (0, 0);
+    for _ in 0..(seconds * FPS) as usize {
+        set_player_hp(app, game3d::player::MAX_HP);
+        step(app, 1.0 / FPS);
+        doors = doors.max(warning_doors(app));
+        most = most.max(enemies(app).len());
+    }
+    (doors, most)
+}
+
+#[test]
+fn box_1_fills_through_doors_opening_in_pairs_and_ramps_to_seven() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    // Rumble Box: 3-5 inside for the first half-minute, two doors often opening together.
+    let (doors, most) = waves_for(&mut app, 3.0);
+    assert!(doors >= 2, "two doors warned at once: {doors}");
+    assert_eq!((enemies(&mut app).len(), most), (3, 3), "three inside by 3 s, and no more yet");
+    // Defeated, they are replaced within seconds.
+    let mut q = app.world_mut().query_filtered::<Entity, With<Brain>>();
+    for e in q.iter(app.world()).collect::<Vec<_>>() {
+        app.world_mut().despawn(e);
+    }
+    waves_for(&mut app, 3.0);
+    assert_eq!(enemies(&mut app).len(), 3, "topped up again within 3 s");
+    // About 45 s in, Rumble Box holds 6-8.
+    app.world_mut().resource_mut::<RunState>().0.elapsed = game_core::run::RAMP;
+    let (_, most) = waves_for(&mut app, 5.0);
+    assert_eq!((enemies(&mut app).len(), most), (7, 7), "seven inside 5 s after the ramp tops out");
+}
+
+/// Seconds an idle player lasts in box `number` with the waves on.
+fn idle_until_dead(number: usize) -> Option<f32> {
+    let mut app = standing();
+    for _ in 1..number {
+        app.world_mut().resource_mut::<RunState>().0.escape(100.0, 100.0);
+    }
+    let every = app.world().resource::<RunState>().0.spec.interval;
+    app.insert_resource(Waves { timer: Timer::from_seconds(every, TimerMode::Repeating), ..default() });
+    let limit = 30.0;
+    for frame in 0..(limit * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if phase(&app) == Phase::Over {
+            return Some(frame as f32 / FPS);
+        }
+    }
+    None
+}
+
+#[test]
+fn standing_still_is_lethal_within_12_s_and_no_less_so_in_later_boxes() {
+    let first = idle_until_dead(1);
+    let third = idle_until_dead(3);
+    // About 10 s in box 1 (three fodder alone took about 12 s) and a little less in box 3.
+    assert!(first.is_some_and(|t| t < 12.0), "box 1 kills an idle player within 12 s (Q68): {first:?}");
+    assert!(third.is_some_and(|t| t <= first.unwrap()), "box 3 no slower: {third:?} against {first:?}");
+}

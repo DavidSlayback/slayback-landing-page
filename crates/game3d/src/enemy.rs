@@ -1,5 +1,6 @@
 //! Enemies enter through doors in the back and side walls (none in the front, Q58), which warn first; then they steer
-//! toward the player while keeping apart and off the walls (Q63), telegraph and strike.
+//! toward the player while keeping apart and off the walls (Q63), telegraph and strike. The box keeps its crowd topped
+//! up, calling at several doors at once (`game_core::run::BoxSpec`: crowd ramp, interval, burst), at Rumble Box's pace.
 //!
 //! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game, fed distances in its
 //! world units), steering from `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the
@@ -13,7 +14,7 @@ use game_core::doors::Door;
 use game_core::enemy::{Intent, Kind, Mind, NinjaPhase};
 use game_core::grab::Held;
 use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading};
-use game_core::run::pick_kind;
+use game_core::run::{box_spec, pick_kind};
 use game_core::steer::{circle, steer};
 
 use crate::arena::Arena;
@@ -59,8 +60,8 @@ impl WallDoor {
 #[derive(Resource)]
 pub struct Waves {
     pub enabled: bool,
-    /// Keep this many enemies in the box; ask a door for one more every `timer` while below it.
-    pub crowd: usize,
+    /// Each time it finishes, while the box holds fewer than its crowd (`Run::crowd`, counting enemies on their way in
+    /// through a door), call at up to the box's `burst` free doors. Each box sets it to its spec's `interval`.
     pub timer: Timer,
     /// The share of entries that are bomb-heads, overriding the box spec's (the demo's `bombs=1` makes it 1).
     pub bombs: Option<f32>,
@@ -68,7 +69,8 @@ pub struct Waves {
 
 impl Default for Waves {
     fn default() -> Self {
-        Self { enabled: true, crowd: 3, timer: Timer::from_seconds(2.0, TimerMode::Repeating), bombs: None }
+        let every = box_spec(1).interval;
+        Self { enabled: true, timer: Timer::from_seconds(every, TimerMode::Repeating), bombs: None }
     }
 }
 
@@ -150,25 +152,28 @@ fn request_entries(
         return;
     }
     let pending = doors.iter().filter(|d| d.door != Door::Closed).count();
-    if enemies.iter().count() + pending >= waves.crowd {
-        return;
-    }
+    let short = run.0.crowd().saturating_sub(enemies.iter().count() + pending);
     // Round the doors in turn, skipping busy ones.
     let mut free: Vec<_> = doors.iter_mut().filter(|d| d.door == Door::Closed).collect();
-    if free.is_empty() {
+    let calls = short.min(run.0.spec.burst).min(free.len());
+    if calls == 0 {
         return;
     }
     *turn += 1;
-    let i = *turn % free.len();
-    // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
-    *seed = seed.wrapping_add(0x9E37_79B9);
-    let mut s = *seed;
-    s ^= s << 13;
-    s ^= s >> 17;
-    s ^= s << 5;
-    free[i].next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
-    free[i].bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
-    free[i].door.request();
+    let first = *turn % free.len();
+    for k in 0..calls {
+        let len = free.len();
+        let door = &mut free[(first + k) % len];
+        // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
+        *seed = seed.wrapping_add(0x9E37_79B9);
+        let mut s = *seed;
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        door.next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
+        door.bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
+        door.door.request();
+    }
 }
 
 fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut WallDoor>) {
