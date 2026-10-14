@@ -1,6 +1,6 @@
 //! Sound effects, as in the 2.5D game: its generated retro set (`tools/sfx/generate.py`, embedded from
-//! `crates/game/assets/sfx/`) for hits, heavy hits, kills, doors and bomb blasts. Muted by default; M (or Select) on the pause
-//! screen toggles it, and the choice is kept under the 2.5D game's key (`slayback-sound`, see [`Store`]).
+//! `crates/game3d/assets/sfx/`) for hits, heavy hits, kills, doors and bomb blasts. Muted by default; M (or Select) on the
+//! pause screen toggles it, and the choice is kept under the 2.5D game's key (`slayback-sound`, see [`Store`]).
 //!
 //! The setting and its toggle are gameplay (headless scenarios test them); playing the effects needs the renderer's
 //! audio, so [`playback`] is added by the window only.
@@ -69,11 +69,11 @@ mod effects {
     fn load(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>>) {
         let mut add = |bytes: &'static [u8]| sources.add(AudioSource { bytes: Arc::from(bytes) });
         commands.insert_resource(Effects {
-            hit: add(include_bytes!("../../game/assets/sfx/hit.wav")),
-            heavy: add(include_bytes!("../../game/assets/sfx/heavy.wav")),
-            shatter: add(include_bytes!("../../game/assets/sfx/shatter.wav")),
-            door: add(include_bytes!("../../game/assets/sfx/door.wav")),
-            boom: add(include_bytes!("../../game/assets/sfx/boom.wav")),
+            hit: add(include_bytes!("../assets/sfx/hit.wav")),
+            heavy: add(include_bytes!("../assets/sfx/heavy.wav")),
+            shatter: add(include_bytes!("../assets/sfx/shatter.wav")),
+            door: add(include_bytes!("../assets/sfx/door.wav")),
+            boom: add(include_bytes!("../assets/sfx/boom.wav")),
         });
     }
 

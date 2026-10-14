@@ -3,20 +3,22 @@
 # checkout, hero only, release switch off; `rc` ships a preview of a full game with the switch on at
 # https://rc-<n>.slayback.pages.dev.
 #   bash scripts/deploy.sh                 # production -> https://slayback.pages.dev
-#   bash scripts/deploy.sh rc 2            # preview    -> https://rc-2.slayback.pages.dev (the 3D game)
-#   bash scripts/deploy.sh rc <n> <game>   # preview of a given game crate: game (2.5D) or game3d
-# Without <game>, rc-1 ships the 2.5D game (its archive, Q64) and every other preview the 3D one (Q47).
+#   bash scripts/deploy.sh rc 2            # preview    -> https://rc-2.slayback.pages.dev
+# rc-1 is the frozen archive of the retired 2.5D game (Q64): it is never redeployed, so `rc 1` is refused.
 # With no CI behind it, this runs the browser harness (tests/e2e) on exactly the build it is about to ship and
 # refuses to deploy on a failure. Needs Cloudflare credentials for wrangler: `npx wrangler@4 login` once on this
 # machine, or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in .env.local (git-ignored).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "${1:-}" = rc ]; then
-  n="${2:?usage: deploy.sh rc <n> [game|game3d]}"
+  n="${2:?usage: deploy.sh rc <n>}"
+  if [ "$n" = 1 ]; then
+    echo "rc-1 is the frozen archive of the 2.5D game (Q64), which is no longer in this repo; deploy to another rc" >&2
+    exit 1
+  fi
   branch="rc-$n"
-  game="${3:-$([ "$n" = 1 ] && echo game || echo game3d)}"
-  GAME="$game" GAME_RELEASE=1 bash scripts/build.sh
-  harness_env=(GAME="$game" GAME_RELEASE=1 REQUIRE_GAME=1)
+  GAME_RELEASE=1 bash scripts/build.sh
+  harness_env=(GAME_RELEASE=1 REQUIRE_GAME=1)
 else
   branch=main
   SKIP_GAME=1 bash scripts/build.sh

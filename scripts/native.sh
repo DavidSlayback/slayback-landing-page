@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Native (desktop) game builds on a Windows GNU-host toolchain: `bash scripts/native.sh` runs the game in a
-# window; any other arguments go to cargo instead (e.g. `bash scripts/native.sh test -p game`).
+# window; any other arguments go to cargo instead (e.g. `bash scripts/native.sh test -p game3d`).
 #
 # Bevy's Windows dependencies import DLL functions with `raw-dylib`, so rustc needs a `dlltool` on PATH. The
 # toolchain's bundled GNU dlltool needs a GNU assembler we don't have, and llvm-dlltool's import libraries are
@@ -13,7 +13,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 case "$(rustc -vV | sed -n 's/^host: //p')" in
   *-pc-windows-gnu) ;;
-  *) [ $# -eq 0 ] && set -- run -p game; exec cargo "$@" ;;   # nothing to set up on other hosts
+  *) [ $# -eq 0 ] && set -- run -p game3d; exec cargo "$@" ;;   # nothing to set up on other hosts
 esac
 
 bin="$(rustc --print sysroot)/lib/rustlib/x86_64-pc-windows-gnu/bin"
@@ -31,5 +31,5 @@ export PATH="$(cd "$tools" && pwd):$PATH"   # POSIX form: a C:/ path would split
 # gcc's -B puts our `ld` ahead of the bundled GNU ld. Target-scoped, so wasm builds keep their own flags.
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C link-arg=-B$(cd "$tools" && pwd -W)/"
 
-[ $# -eq 0 ] && set -- run -p game
+[ $# -eq 0 ] && set -- run -p game3d
 exec cargo "$@"

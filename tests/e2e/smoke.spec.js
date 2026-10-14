@@ -6,10 +6,6 @@ import { join } from 'node:path';
 import { DIST } from './playwright.config.js';
 import { HOME, collectErrors, hasGl, litFraction } from './helpers.js';
 
-// Which game the build serves at /play (scripts/build.sh's GAME). The 3D port (spec #58) brings the 2.5D game's
-// checks over slice by slice; until then those are skipped on a 3D build, and 3D-only checks on a 2.5D one.
-const GAME3D = process.env.GAME === 'game3d';
-
 test.describe('homepage', () => {
   test('hero renders WebGL text and animates with no console errors', async ({ page }) => {
     const errors = collectErrors(page);
@@ -73,7 +69,6 @@ test.describe('/play', () => {
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
     if (process.env.REQUIRE_GAME) expect(built).toBe(true);
     test.skip(!built, 'game not in this build');
-    test.skip(!GAME3D, 'the 2.5D game does not log its phases');
     const errors = collectErrors(page);
     const logs = [];
     page.on('console', m => logs.push(m.text()));
@@ -124,9 +119,8 @@ test.describe('/play', () => {
       page.on('console', m => logs.push(m.text()));
       await page.goto('/play/');
       await page.waitForFunction(() => document.getElementById('game').width !== 300, null, { timeout: 150_000 });
-      // The 3D game also drops the screen shake and the squash, and says so.
-      const line = GAME3D ? 'comfort: reduced motion on (no shake or squash' : 'comfort: reduced motion on';
-      await expect.poll(() => logs.some(l => l.includes(line))).toBe(true);
+      // Besides softer flashes and fewer bursts, the game drops the screen shake and the squash, and says so.
+      await expect.poll(() => logs.some(l => l.includes('comfort: reduced motion on (no shake or squash'))).toBe(true);
     });
   });
 
@@ -147,7 +141,6 @@ test.describe('/play', () => {
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
     if (process.env.REQUIRE_GAME) expect(built).toBe(true);
     test.skip(!built, 'game not in this build');
-    test.skip(!GAME3D, 'the 2.5D demo does not log its beats');
     const errors = collectErrors(page);
     const logs = [];
     page.on('console', m => logs.push(m.text()));

@@ -1,5 +1,4 @@
-# `trunk serve` from this directory: rebuilds the dev wasm on change and reloads the browser (port 8091, beside
-# the 2.5D game's 8090).
+# `trunk serve` from this directory: rebuilds the dev wasm on change and reloads the browser (port 8091).
 [build]
 target = "index.html"
 dist = "../../target/trunk-dist-3d"

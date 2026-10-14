@@ -1,7 +1,7 @@
 //! Engine-free rules for the escape-the-box game.
 //!
-//! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game` (2.5D) and
-//! `crates/game3d` wire it into ECS systems.
+//! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game3d` wires it into
+//! ECS systems. Some rules still speak in the retired 2.5D game's world units (32 to the metre, `plane::UNITS_PER_METRE`).
 
 pub mod aim;
 pub mod bomb;

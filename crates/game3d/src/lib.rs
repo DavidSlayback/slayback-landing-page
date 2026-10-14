@@ -1,5 +1,5 @@
-//! Escape the box in 3D (spec #58): an open-topped box seen from above at a 3/4 angle, built beside the 2.5D `game`
-//! on the shared engine-free `game-core`, and served at `/play` by `GAME=game3d bash scripts/build.sh`.
+//! Escape the box in 3D (spec #58): an open-topped box seen from above at a 3/4 angle, on the engine-free `game-core`,
+//! and served at `/play` by `bash scripts/build.sh`. It replaced the 2.5D game in G10.
 //!
 //! The library holds the gameplay ([`plugin`]) and, separately, its look ([`look::plugin`]) and camera
 //! ([`camera::plugin`]); `main.rs` adds the window and renderer. Keeping them apart lets tests build a headless app
