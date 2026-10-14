@@ -1,12 +1,13 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 09:45 CDT
-In flight: the feel pass (Q65-Q67, after David played rc-2: "plays like absolute shit... nothing like Rumble Box"). Step 1 (camera, thick black edges, saturated fighters) is on branch feel-1-camera-look (69bb58f, unmerged), previewed at https://rc-3.slayback.pages.dev, waiting for David to play it. Reference: docs/research/rumble-box-reference.md on that branch (DigiPen's gameplay video, frame by frame).
-Next: on David's sign-off, merge feel-1-camera-look and deploy rc-2; then step 2, the player's attack animations (punch as a fast arm extension, ~0.2 s; kick, drop-kick, grab, throw), each previewed on rc-3 before merging; then loose-part figures and kill bursts; then the pace (more enemies, through wall doorways). The playtest (#29) waits for David's sign-off on feel (Q67).
-Waiting on: David: play rc-3 and say what's still wrong; playtesters (#29), gamepad on hardware (#26), C2 content (#13).
-Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. In a fresh worktree, run hooks and builds with CARGO_TARGET_DIR=<main checkout>/target: a cold target/ failed the pre-push hook ("dlltool.exe: program not found").
-Verified: rc-3 from 69bb58f: harness 13 passed, 2 skipped; 6,202 KB gzipped; game3d 58 scenarios and 5 camera tests pass; GPU screenshots compared against the video's full frames. main 71101fe (G10) is on rc-2 and production.
+As of: Wed Oct 14 2026 11:40 CDT
+In flight: the feel pass (Q65-Q69), steps 1-4 done on branch feel-1-camera-look (dc06e6a, unmerged; feel-4-pace merged into it), previewed at https://rc-3.slayback.pages.dev. Waiting for David to play it (Q69: he looks only once animations, figures and pace are in; they now are).
+Done in the feel pass: Rumble Box camera (yawed 30°, swings ±35° away from the wall the player nears, 12 m roaming / 9.5 m fighting, swoop each box, camera-relative controls); thick black edges and tile grid; saturated fighters (no tonemapping); pose.rs attack animations (punch ~0.1 s to full reach and snap back, alternating arms; kick; drop-kick; hold; whirl; throw follow-through; dash lean; snappy walk); loose-part player (ball head and fists) and gapped enemy parts; kill bursts ~0.85 m high; pace (box 1 crowd 3 -> 7 over 40 s, doors called every 1.0 s and in pairs; an idle player dies in ~10 s, Q68).
+Next: David plays rc-3. On sign-off: PR feel-1-camera-look into main, merge, deploy rc-2. Then the playtest (#29).
+Waiting on: David: play rc-3; playtesters (#29), gamepad on hardware (#26), C2 content (#13). Open roster question: Rumble Box sends heavies into box 1 from ~14 s; ours start thugs in box 2 (Q26).
+Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. In a fresh worktree, use CARGO_TARGET_DIR=<main checkout>/target for hooks and builds (a cold target/ failed the pre-push hook: "dlltool.exe: program not found").
+Verified: rc-3 from dc06e6a: harness 13 passed, 2 skipped; 6,203 KB gzipped; game3d 60 scenarios, camera and pose unit tests, full hook gate green. GPU captures reviewed frame by frame (punch, kick, drop-kick, hold, kill bursts, walls) against the video.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
