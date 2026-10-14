@@ -77,6 +77,7 @@ mod effects {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn play(
         mut commands: Commands,
         sound: Res<Sound>,
