@@ -1698,3 +1698,65 @@ fn thugs_and_ninjas_burst_into_their_own_pieces_and_a_bomb_head_drops_its_head()
         }
     }
 }
+
+// Parity with the 2.5D scenarios that had no 3D counterpart yet (G10; the mapping is in docs/planning/parity-3d.md).
+
+#[test]
+fn a_dash_covers_its_distance_along_the_floor_and_the_player_stays_grounded() {
+    use game_core::movement::DASH_TIME;
+    use game_core::plane::DASH_SPEED;
+    let mut app = standing();
+    let (start, _, _) = player(&mut app);
+    // Nothing held: the dash goes the way the player faces (+x).
+    tap(&mut app, KeyCode::Space);
+    let mut fastest: f32 = 0.0;
+    for _ in 0..30 {
+        step(&mut app, 1.0 / FPS);
+        fastest = fastest.max(player(&mut app).1.xz().length());
+        assert!(feet(&mut app).abs() < 0.02, "stays on the floor while dashing: feet {}", feet(&mut app));
+    }
+    assert!(fastest > RUN_SPEED * 2.0, "a burst well past the run speed: {fastest} m/s");
+    let (end, vel, _) = player(&mut app);
+    let expected = DASH_SPEED * DASH_TIME;
+    let dashed = end.x - start.x;
+    // Within two frames' travel: input runs per frame and the controller per physics step, so the ends quantise.
+    let slack = 2.0 * DASH_SPEED / FPS;
+    assert!((dashed - expected).abs() < slack, "dashed {dashed} m to the right, expected ~{expected}");
+    assert!((end.z - start.z).abs() < 0.01, "straight along the facing: {end} from {start}");
+    assert!(vel.xz().length() < 1e-3, "and stops after the dash when no direction is held: {vel}");
+}
+
+#[test]
+fn there_is_no_jump() {
+    // Up (W or the arrow) runs away from the camera and Space dashes; none of them lifts the player off the floor.
+    let mut app = standing();
+    for key in [KeyCode::KeyW, KeyCode::ArrowUp, KeyCode::Space] {
+        let top = hold_highest(&mut app, &[key], 0.3);
+        assert!(top < 0.02, "{key:?} lifted the feet to {top}");
+        step(&mut app, 0.6); // past the dash cooldown
+    }
+}
+
+#[test]
+fn fodder_enter_through_a_door_only_after_its_warning() {
+    use game3d::enemy::WallDoor;
+    let mut app = standing();
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    let mut doors = app.world_mut().query::<&WallDoor>();
+    let (mut warned_for, mut first_entry) = (0.0, None);
+    for frame in 0..(4.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if first_entry.is_some() {
+            break;
+        }
+        if doors.iter(app.world()).any(|d| d.door.warning()) {
+            warned_for += 1.0 / FPS;
+        }
+        if !enemies(&mut app).is_empty() {
+            first_entry = Some(frame);
+        }
+    }
+    assert!(first_entry.is_some(), "a fodder entered within 4 s");
+    let warning = game_core::doors::WARNING;
+    assert!(warned_for >= warning - 0.05, "a door warned for {warned_for} s of its {warning} before anyone came in");
+}
