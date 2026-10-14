@@ -69,9 +69,14 @@ pub fn level(attacker_y: f32, target_y: f32) -> bool {
 
 /// Launch velocity for a target struck by `mv` along `yaw`: across the floor (a plane vector) and upward, m/s.
 pub fn launch(mv: Move, yaw: f32) -> ([f32; 2], f32) {
-    let (across, up) = mv.spec().knockback;
-    let k = across * ACROSS;
-    ([yaw.cos() * k, yaw.sin() * k], up * UP)
+    shove(mv.spec().knockback, yaw)
+}
+
+/// Any 2.5D knockback (across and up, world units/s, as in [`crate::combat::MoveSpec::knockback`]) as a 3D launch
+/// along `yaw`, scaled as [`launch`] scales a blow's.
+pub fn shove(knockback: (f32, f32), yaw: f32) -> ([f32; 2], f32) {
+    let k = knockback.0 * ACROSS;
+    ([yaw.cos() * k, yaw.sin() * k], knockback.1 * UP)
 }
 
 #[cfg(test)]

@@ -9,12 +9,14 @@ use bevy::time::TimeUpdateStrategy;
 use game_core::climb::{Placed, pile_height};
 use game_core::combat::Move;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid};
+use game_core::grab::{Held, impact};
 use game_core::plane::RUN_SPEED;
 use game3d::arena::{Arena, Slab};
 use game3d::debris::{Piece, piece};
 use game3d::enemy::{Brain, Waves, fodder};
 use game3d::fighter::{Defeated, Hp, Team};
-use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
+use game3d::grab::{Carried, Thrown};
+use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
 use game3d::score::RunScore;
 
@@ -664,4 +666,158 @@ fn the_demo_stairs_run_climbs_out_of_box_after_box() {
         }
     }
     assert!(reached.starts_with(&[1, 2, 3]), "box after box: {reached:?}");
+}
+
+// Grab and spin-throw (G6).
+
+fn carried(app: &App, e: Entity) -> bool {
+    app.world().get::<Carried>(e).is_some()
+}
+
+fn holding(app: &mut App) -> Option<Holding> {
+    app.world_mut().query_filtered::<&Holding, With<Player>>().single(app.world()).ok().copied()
+}
+
+fn at_of(app: &App, e: Entity) -> Vec3 {
+    app.world().get::<Transform>(e).expect("still in the box").translation
+}
+
+fn body_of(app: &App, e: Entity) -> RigidBody {
+    *app.world().get::<RigidBody>(e).expect("still in the box")
+}
+
+/// Stuns `e` for a few seconds, so it stands still as a target.
+fn stun(app: &mut App, e: Entity) {
+    app.world_mut().get_mut::<Hp>(e).unwrap().0.stun = 3.0;
+}
+
+/// A plane offset `dist` metres from the player at `deg` degrees off its facing (+x).
+fn bearing(deg: f32, dist: f32) -> [f32; 2] {
+    let a = deg.to_radians();
+    [dist * a.cos(), dist * a.sin()]
+}
+
+#[test]
+fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
+    let mut app = standing();
+    let behind = fodder_at(&mut app, [-0.9, 0.0]);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(!carried(&app, behind) && holding(&mut app).is_none(), "nothing in front: nothing grabbed");
+    app.world_mut().despawn(behind);
+
+    let held = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, held), "grabbed the fodder in front");
+    assert_eq!(holding(&mut app).map(|h| h.target), Some(held));
+    // Carried about for a while, into the back-left corner: it rides overhead and can't fight.
+    hold(&mut app, &[KeyCode::KeyW, KeyCode::KeyA], 1.5);
+    step(&mut app, 0.5);
+    let (me, _, _) = player(&mut app);
+    let at = at_of(&app, held);
+    assert!(at.xz().distance(me.xz()) < 0.05 && at.y > me.y + HEIGHT / 2.0, "overhead: {at}, player {me}");
+    assert!(me.distance(SPAWN) > 2.0, "carried along: {me}");
+    let (hp, full) = player_hp(&mut app);
+    assert_eq!(hp, full, "a held fodder doesn't punch");
+    // Set down in front (the corner's walls keep it in the box): it stands on the floor again, a fighter once more.
+    tap(&mut app, KeyCode::KeyL);
+    step(&mut app, 0.2);
+    assert!(!carried(&app, held) && holding(&mut app).is_none(), "let go");
+    assert_eq!(body_of(&app, held), RigidBody::Dynamic);
+    let at = at_of(&app, held);
+    let me = player(&mut app).0;
+    assert!((at.y - FODDER_HEIGHT / 2.0).abs() < 0.1, "back on the floor: {at}");
+    assert!(at.xz().distance(me.xz()) < 1.0, "set down by the player: {at}, player {me}");
+    let half = Arena::default().floor / 2.0;
+    assert!(at.x.abs() <= half.x && at.z.abs() <= half.y, "inside the box: {at}");
+}
+
+#[test]
+fn a_spin_throw_through_a_line_of_fodder_hurts_each_once_and_the_thrown_one_once() {
+    let mut app = standing();
+    let held = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, held));
+    let line: Vec<Entity> = [3.0, 4.5, 6.0].into_iter().map(|x| fodder_at(&mut app, [x, 0.0])).collect();
+    for &e in &line {
+        stun(&mut app, e);
+    }
+    app.world_mut().get_mut::<Hp>(line[2]).unwrap().0.hp = 5.0;
+    let start = player(&mut app).0;
+    tap(&mut app, KeyCode::KeyJ);
+    // The spin, the flight, and the hit-stops (real time) of three hits, one a finisher.
+    step(&mut app, 1.6);
+    let hit = impact(Held::Enemy);
+    for (i, &e) in line[..2].iter().enumerate() {
+        assert_eq!(hp(&app, e), FULL - hit.damage, "fodder {i} in the line was hurt exactly once");
+    }
+    assert!(app.world().get_entity(line[2]).is_err(), "the weakened one was defeated and burst");
+    assert_eq!(pieces(&mut app).len(), FODDER.len(), "into its pieces");
+    assert_eq!(app.world().resource::<RunScore>().0.points, game_core::score::KILL, "and the kill scored");
+    assert_eq!(hp(&app, held), FULL - hit.self_damage, "the thrown fodder was hurt by its first impact only");
+    let landed = at_of(&app, held);
+    // It flew on through the line (and the burst's pieces, which it may bump off).
+    assert!(landed.x > start.x + 4.0, "it flew along the facing: {landed}");
+    assert!(!carried(&app, held) && app.world().get::<Thrown>(held).is_none(), "and landed");
+}
+
+#[test]
+fn frozen_debris_thaws_when_grabbed_and_once_thrown_freezes_again() {
+    let mut app = standing();
+    let at = player(&mut app).0;
+    let part = block(&mut app, TORSO, Vec3::new(at.x + 0.9, TORSO[1] / 2.0, at.z), 0.0);
+    step(&mut app, 0.05);
+    assert_eq!(body_of(&app, part), RigidBody::Static, "frozen on the floor");
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, part), "grabbed");
+    assert_ne!(body_of(&app, part), RigidBody::Static, "and thawed");
+    tap(&mut app, KeyCode::KeyK);
+    step(&mut app, game_core::grab::SPIN + 0.05);
+    assert!(app.world().get::<Thrown>(part).is_some(), "an attack spun it round and threw it");
+    assert_eq!(body_of(&app, part), RigidBody::Dynamic);
+    step(&mut app, game_core::grab::FLIGHT);
+    assert!(app.world().get::<Thrown>(part).is_none(), "its flight ended");
+    let flew = at_of(&app, part);
+    assert!(flew.x > at.x + 4.0, "it flew: {flew} from {at}");
+    // Back under the debris rules: it falls, rests and freezes.
+    step(&mut app, SETTLE + 3.0);
+    assert_eq!(body_of(&app, part), RigidBody::Static, "frozen again");
+    let rest = at_of(&app, part);
+    assert!(rest.y > 0.0 && rest.y < 0.5, "on the floor: {rest}");
+    assert_eq!(pieces(&mut app).len(), 1);
+}
+
+#[test]
+fn aim_assist_bends_a_throw_toward_the_biggest_group_within_30_degrees() {
+    let mut app = standing();
+    let at = player(&mut app).0;
+    let part = block(&mut app, TORSO, Vec3::new(at.x + 0.9, TORSO[1] / 2.0, at.z), 0.0);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, part));
+    // A lone fodder straight ahead, a group of three 20 degrees to the left, and a bigger group 45 degrees off.
+    let lone = fodder_at(&mut app, [3.0, 0.0]);
+    let group: Vec<Entity> =
+        [(18.0, 5.0), (22.0, 5.4), (20.0, 4.6)].into_iter().map(|(d, r)| fodder_at(&mut app, bearing(d, r))).collect();
+    let wide: Vec<Entity> = [(45.0, 3.0), (47.0, 3.6), (43.0, 3.3), (46.0, 4.2)]
+        .into_iter()
+        .map(|(d, r)| fodder_at(&mut app, bearing(d, r)))
+        .collect();
+    for &e in group.iter().chain(&wide).chain([&lone]) {
+        stun(&mut app, e);
+    }
+    tap(&mut app, KeyCode::KeyJ);
+    let yaw = player(&mut app).2;
+    assert!((yaw.to_degrees() - 20.0).abs() < 2.0, "turned toward the group: {}", yaw.to_degrees());
+    step(&mut app, 1.0);
+    let damage = impact(Held::Debris).damage;
+    for &e in &group {
+        assert_eq!(hp(&app, e), FULL - damage, "the throw went through the group");
+    }
+    assert_eq!(hp(&app, lone), FULL, "and past the lone one straight ahead");
+    for &e in &wide {
+        assert_eq!(hp(&app, e), FULL, "the group outside 30 degrees wasn't aimed at");
+    }
 }
