@@ -38,10 +38,10 @@ pub fn plugin(app: &mut App) {
 fn load_effects(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>>) {
     let mut add = |bytes: &'static [u8]| sources.add(AudioSource { bytes: Arc::from(bytes) });
     commands.insert_resource(Effects {
-        hit: add(include_bytes!("../assets/sfx/hit.wav")),
-        heavy: add(include_bytes!("../assets/sfx/heavy.wav")),
-        shatter: add(include_bytes!("../assets/sfx/shatter.wav")),
-        boom: add(include_bytes!("../assets/sfx/boom.wav")),
+        hit: add(include_bytes!("../../game3d/assets/sfx/hit.wav")),
+        heavy: add(include_bytes!("../../game3d/assets/sfx/heavy.wav")),
+        shatter: add(include_bytes!("../../game3d/assets/sfx/shatter.wav")),
+        boom: add(include_bytes!("../../game3d/assets/sfx/boom.wav")),
     });
 }
 
