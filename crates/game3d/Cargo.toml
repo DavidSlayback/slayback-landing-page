@@ -16,6 +16,8 @@ render = [
     "bevy/bevy_render", "bevy/bevy_core_pipeline", "bevy/bevy_pbr",
     # Gamepads: the gilrs backend, which uses the browser's Gamepad API on the web. Input mapping is base.
     "bevy/bevy_gilrs",
+    # The HUD and floating score numbers (G2), as in the 2.5D game: about +0.4 MB gzipped (decision Q34).
+    "bevy/bevy_ui", "bevy/bevy_ui_render", "bevy/bevy_text", "bevy/default_font",
 ]
 
 [[bin]]

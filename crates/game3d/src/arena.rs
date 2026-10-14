@@ -13,7 +13,7 @@ pub const WALL: f32 = 0.5;
 /// Floor slab thickness, metres; its top is y = 0.
 pub const SLAB: f32 = 1.0;
 /// The 2.5D game's world units per metre (its physics length unit), for rules shared with it in `game_core::run`.
-pub const UNITS_PER_METRE: f32 = 32.0;
+pub use game_core::plane::UNITS_PER_METRE;
 
 /// The current box's shape.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]

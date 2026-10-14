@@ -12,6 +12,11 @@ pub const RUN_SPEED: f32 = 6.0;
 pub const RUN_ACCEL: f32 = 60.0;
 /// How fast the facing turns, rad/s: a full about-turn takes about 0.2 s.
 pub const TURN_RATE: f32 = 16.0;
+/// The 2.5D game's world units per metre (its physics length unit), for rules shared with it.
+pub const UNITS_PER_METRE: f32 = 32.0;
+/// Dash speed, m/s: the 2.5D dash's 2.6 times the run speed. It lasts `movement::DASH_TIME` (~2.6 m, about four
+/// fighters across) and is spaced by `movement::DASH_COOLDOWN`.
+pub const DASH_SPEED: f32 = 16.0;
 
 /// Moves `from` toward `to` by at most `step`, without overshooting.
 pub fn approach(from: [f32; 2], to: [f32; 2], step: f32) -> [f32; 2] {
@@ -65,6 +70,60 @@ impl Facing {
     pub fn forward(&self) -> [f32; 2] {
         [self.yaw.cos(), self.yaw.sin()]
     }
+
+    /// Snaps the body to `heading` at once (aim assist turning a swing).
+    pub fn snap(&mut self, heading: f32) {
+        self.yaw = wrap(heading);
+        self.target = self.yaw;
+    }
+}
+
+/// The dash on the floor: a short burst at fixed speed in the held direction, or the facing one when nothing is held,
+/// ignoring input until it ends; then velocity snaps to the run speed for the held direction, so its distance is exact.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Dash {
+    left: f32,
+    cooldown: f32,
+    dir: [f32; 2],
+}
+
+impl Dash {
+    pub fn dashing(&self) -> bool {
+        self.left > 0.0
+    }
+
+    /// Advances one frame and returns the new floor velocity. `dir` is the move direction (unit or zero), `dash`
+    /// whether the dash button went down this frame, and `forward` the facing direction.
+    pub fn step(&mut self, velocity: [f32; 2], dir: [f32; 2], dash: bool, forward: [f32; 2], dt: f32) -> [f32; 2] {
+        use crate::movement::{DASH_COOLDOWN, DASH_TIME};
+        self.cooldown = (self.cooldown - dt).max(0.0);
+        if dash && !self.dashing() && self.cooldown == 0.0 {
+            self.left = DASH_TIME;
+            self.dir = if dir == [0.0, 0.0] { forward } else { dir };
+        }
+        if !self.dashing() {
+            return run_velocity(velocity, dir, dt);
+        }
+        self.left = (self.left - dt).max(0.0);
+        if self.dashing() {
+            [self.dir[0] * DASH_SPEED, self.dir[1] * DASH_SPEED]
+        } else {
+            self.cooldown = DASH_COOLDOWN;
+            [dir[0] * RUN_SPEED, dir[1] * RUN_SPEED]
+        }
+    }
+
+    /// The direction of the dash under way (or the last one).
+    pub fn direction(&self) -> [f32; 2] {
+        self.dir
+    }
+
+    /// Bends the dash under way toward `dir` (unit length): a drop-kick homing on the target its aim assist found.
+    pub fn aim(&mut self, dir: [f32; 2]) {
+        if self.dashing() {
+            self.dir = dir;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -111,5 +170,38 @@ mod tests {
         assert!((f.yaw - PI / 2.0).abs() < 1e-6, "standing still keeps the facing");
         let fw = f.forward();
         assert!(fw[0].abs() < 1e-6 && (fw[1] - 1.0).abs() < 1e-6);
+        f.snap(3.0 * PI / 2.0);
+        assert!((f.yaw + PI / 2.0).abs() < 1e-5 && f.target == f.yaw, "a snap turns at once, wrapped");
+    }
+
+    /// Runs a dash from standing (`dir` held, dash pressed on the first frame) for `frames`; returns distance covered.
+    fn dash(d: &mut Dash, dir: [f32; 2], frames: usize) -> ([f32; 2], [f32; 2]) {
+        let (mut v, mut x) = ([0.0, 0.0], [0.0, 0.0]);
+        for i in 0..frames {
+            v = d.step(v, dir, i == 0, [1.0, 0.0], DT);
+            x = [x[0] + v[0] * DT, x[1] + v[1] * DT];
+        }
+        (x, v)
+    }
+
+    #[test]
+    fn a_dash_covers_its_fixed_distance_along_the_held_or_facing_direction_then_cools_down() {
+        use crate::movement::{DASH_COOLDOWN, DASH_TIME};
+        let frames = (DASH_TIME / DT).ceil() as usize;
+        let mut d = Dash::default();
+        let (x, v) = dash(&mut d, [0.0, 0.0], frames);
+        assert!((x[0] - DASH_SPEED * DASH_TIME).abs() < DASH_SPEED * DT && x[1] == 0.0, "along the facing: {x:?}");
+        assert_eq!(v, [0.0, 0.0], "stops dead when nothing is held");
+        let mut d = Dash::default();
+        let (x, v) = dash(&mut d, [0.0, -1.0], frames);
+        assert!(x[1] < -2.0 && x[0] == 0.0, "toward the camera: {x:?}");
+        assert_eq!(v, [0.0, -RUN_SPEED], "back to run speed in the held direction");
+        d.step(v, [0.0, -1.0], true, [1.0, 0.0], DT);
+        assert!(!d.dashing(), "no dash in the cooldown");
+        for _ in 0..(DASH_COOLDOWN / DT).ceil() as usize {
+            d.step(v, [0.0, -1.0], false, [1.0, 0.0], DT);
+        }
+        d.step(v, [1.0, 0.0], true, [1.0, 0.0], DT);
+        assert!(d.dashing() && d.direction() == [1.0, 0.0], "dashes again once cooled down");
     }
 }

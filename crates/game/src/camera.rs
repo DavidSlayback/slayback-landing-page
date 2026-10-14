@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use game_core::combat::Move;
+use game_core::impact::{self, BLAST_TRAUMA, trauma};
 
 use crate::ARENA;
 use crate::bomb::Exploded;
@@ -75,52 +75,21 @@ pub fn placement(view: View) -> Transform {
     Transform::from_xyz(view.centre.x, view.centre.y + d * TILT, d).looking_at(view.centre.extend(0.0), Vec3::Y)
 }
 
-/// Screen shake as trauma (0 to 1): impacts add to it, it drains over time, and the shake grows with its square, so
-/// a jab barely moves the view while a kill or a blast jolts it. Driven by real time, so it keeps going through
+/// Screen shake (`game_core::impact::Shake`): trauma from impacts, drained over real time, so it keeps going through
 /// hit-stop: a frozen frame that shakes is what sells the weight.
-#[derive(Resource, Default, Debug)]
-pub struct Shake {
-    pub trauma: f32,
-}
+#[derive(Resource, Default, Debug, Deref, DerefMut)]
+pub struct Shake(pub impact::Shake);
 
 /// Shake at full trauma, world units.
 const MAX_SHAKE: f32 = 14.0;
-/// Trauma drained per second.
-const DRAIN: f32 = 1.8;
 /// How much tighter the view gets at full trauma: a slight punch-in on big impacts.
 const PUNCH_IN: f32 = 0.05;
-/// Trauma from a bomb blast.
-pub const BLAST_TRAUMA: f32 = 0.8;
 
 impl Shake {
-    pub fn add(&mut self, amount: f32) {
-        self.trauma = (self.trauma + amount).min(1.0);
-    }
-
-    pub fn drain(&mut self, dt: f32) {
-        self.trauma = (self.trauma - DRAIN * dt).max(0.0);
-    }
-
-    /// The view's offset at time `t` (seconds): two unrelated sines per axis read as noise without a noise crate.
+    /// The view's offset at time `t` (seconds), world units.
     pub fn offset(&self, t: f32) -> Vec2 {
-        let a = self.trauma * self.trauma * MAX_SHAKE;
-        Vec2::new(
-            a * (0.6 * (t * 47.0).sin() + 0.4 * (t * 71.0).sin()),
-            a * (0.6 * (t * 53.0).cos() + 0.4 * (t * 89.0).sin()),
-        )
+        Vec2::from(self.0.offset(t)) * MAX_SHAKE
     }
-}
-
-/// Trauma from one blow: heavier moves shake more, and a finishing blow most of all.
-pub fn trauma(mv: Move, finisher: bool) -> f32 {
-    let base = match mv {
-        Move::Punch => 0.18,
-        Move::Slash => 0.2,
-        Move::Kick => 0.3,
-        Move::DropKick => 0.38,
-        Move::Smash => 0.42,
-    };
-    base + if finisher { 0.26 } else { 0.0 }
 }
 
 pub fn plugin(app: &mut App) {
@@ -206,29 +175,6 @@ mod tests {
         let v = frame(&[Vec2::new(-600.0, y), Vec2::new(600.0, y)], 185.0, WIDE);
         assert!((v.height * WIDE - ARENA.x).abs() < 1.0, "exactly the box's width");
         assert_eq!(v.centre.x, 0.0);
-    }
-
-    #[test]
-    fn shake_grows_with_the_square_of_trauma_and_drains_away() {
-        let peak = |trauma: f32| {
-            let s = Shake { trauma };
-            (0..200).map(|i| s.offset(i as f32 * 0.01).length()).fold(0.0, f32::max)
-        };
-        assert_eq!(peak(0.0), 0.0, "no trauma, no shake");
-        assert!(peak(1.0) > 3.5 * peak(0.5), "quadratic: a light knock barely moves the view");
-        let mut s = Shake::default();
-        s.add(0.7);
-        s.add(0.7);
-        assert_eq!(s.trauma, 1.0, "capped");
-        s.drain(1.0);
-        s.drain(1.0);
-        assert_eq!(s.trauma, 0.0, "gone within about half a second per unit");
-    }
-
-    #[test]
-    fn heavier_blows_and_finishers_shake_harder() {
-        assert!(trauma(Move::Kick, false) > trauma(Move::Punch, false));
-        assert!(trauma(Move::Punch, true) > trauma(Move::Smash, false), "any kill outweighs any plain hit");
     }
 
     #[test]
