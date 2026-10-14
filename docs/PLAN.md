@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 08:10 CDT
-In flight: G10 #70 (switch /play to 3D, delete the 2.5D crate, parity table) on branch g10-switch-3d in worktree agent-ae64a123a4c72e7d4, by a background agent (dies with the session; branch commits survive). Done today: G4 #77, G9 #78, harness fix #79 (the overlay check's brightness bar for G4's paler arena), G5 #80; with G1-G3 and G6-G8 that is every ticket but G10. Spec #58, decisions Q46-Q64.
-Next: review G10, run the hooks and the harness on a switch-on build, PR closing #70, merge, `bash scripts/deploy.sh rc 2`. Then the playtest (#29) on rc-2, then the release switch on main. Until Actions minutes return (2,123/2,000 for October; reset Nov 1): merge on green pre-commit hooks, deploy from this machine right after each merge. rc-1 stays the 2.5D archive (Q64).
-Waiting on: David: playtesters (#29), gamepad check on hardware (#26), C2 content; optionally an Actions spending limit or a self-hosted runner. Q43: no permission asks.
+As of: Wed Oct 14 2026 08:45 CDT
+In flight: nothing. The 3D build is complete: G1-G10 merged (G4 #77, G9 #78, harness fix #79, G5 #80, G10 #81 today). /play is the 3D game; crates/game (2.5D) is deleted; parity table in docs/planning/parity-3d.md (26/26 mapped, 57 game3d scenarios). rc-1 stays the frozen 2.5D archive (deploy.sh refuses `rc 1`).
+Next: the cohort playtest (#29) on https://rc-2.slayback.pages.dev, then the release switch on main (GAME_RELEASE). Until Actions minutes return (reset Nov 1): merge on green pre-commit hooks, deploy from this machine right after each merge. When CI is back, check the edited ci.yml (game3d steps) actually runs.
+Waiting on: David: playtesters (#29), gamepad check on hardware (#26), C2 content (#13).
 Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: main 4db4789 (G5) on rc-2: harness 13 passed, 2 skipped; game_bg.wasm 20,139 KB, 6,196 KB gzipped. 60 fps at the cap: headless Chrome on this PC's Intel UHD (D3D11, 1280x720), ?demo=1&debris=1500, median frame 6.1 ms, p95 12.1 ms (~147 fps uncapped), no quality step. G9's clip recorder works against the 3D demo (SLOW=0.2 PAGE='/play/?demo=1&slow=0.2&palette=netrunner').
+Verified: main 71101fe (G10) deployed. rc-2: harness 13 passed, 2 skipped; game_bg.wasm 20,139 KB, 6,196 KB gzipped (budget 6.6 MB). Production (hero only, switch off): 5 passed, 10 skipped. 60 fps at the cap: headless Chrome on this PC's Intel UHD (D3D11, 1280x720), ?demo=1&debris=1500, median frame 6.1 ms, p95 12.1 ms, no quality step. Issues #64, #65, #69, #70 closed.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
