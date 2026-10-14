@@ -9,7 +9,8 @@ use bevy::time::TimeUpdateStrategy;
 use game_core::bomb::{CHAIN, DAMAGE, FUSE};
 use game_core::climb::{Placed, pile_height};
 use game_core::combat::Move;
-use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid};
+use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid, figure};
+use game_core::enemy::{Kind, THUG};
 use game_core::grab::{Held, impact};
 use game_core::plane::RUN_SPEED;
 use game3d::arena::{Arena, Slab};
@@ -17,7 +18,7 @@ use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb}
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
 use game3d::debris::{Piece, piece};
 use game3d::demo::Demo;
-use game3d::enemy::{Brain, Waves, fodder};
+use game3d::enemy::{Brain, Waves, enemy, fodder, size};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::grab::{Carried, Thrown};
@@ -218,9 +219,14 @@ fn a_gamepad_stick_moves_the_player_in_eight_directions() {
 
 /// Puts a fodder on the floor at `offset` (a plane vector, metres) from the player, facing it.
 fn fodder_at(app: &mut App, offset: [f32; 2]) -> Entity {
-    let at = player(app).0.with_y(FODDER_HEIGHT / 2.0 + 0.02) + game3d::on_floor(offset);
+    enemy_at(app, Kind::Fodder, offset)
+}
+
+/// Puts an enemy of `kind` on the floor at `offset` from the player, facing it.
+fn enemy_at(app: &mut App, kind: Kind, offset: [f32; 2]) -> Entity {
+    let at = player(app).0.with_y(size(kind).1 / 2.0 + 0.02) + game3d::on_floor(offset);
     let yaw = (-offset[1]).atan2(-offset[0]);
-    app.world_mut().spawn(fodder(at, yaw)).id()
+    app.world_mut().spawn(enemy(kind, at, yaw)).id()
 }
 
 fn hp(app: &App, e: Entity) -> f32 {
@@ -1541,4 +1547,154 @@ fn the_demo_slows_the_game_clock() {
     });
     let virt = app.world().resource::<Time<Virtual>>().elapsed_secs();
     assert!((virt - 0.25).abs() < 0.02, "one real second is a quarter of a game second: {virt}");
+}
+
+// Thugs and ninjas (G5).
+
+/// A thug standing just in front of the player, already winding up.
+fn winding_thug(app: &mut App) -> Entity {
+    let thug = enemy_at(app, Kind::Thug, [1.5, 0.0]);
+    step(app, 0.2);
+    assert!(telegraph(app, thug) > 0.0, "the thug is winding up");
+    thug
+}
+
+fn telegraph(app: &App, e: Entity) -> f32 {
+    app.world().get::<Brain>(e).unwrap().0.telegraph()
+}
+
+#[test]
+fn punches_hurt_a_thug_but_dont_interrupt_its_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    let start = at_of(&app, thug);
+    keys(&mut app).press(KeyCode::KeyJ);
+    step(&mut app, 0.15);
+    let hp = app.world().get::<Hp>(thug).unwrap().0;
+    assert!(hp.hp < THUG.max_hp, "the punch hurt");
+    assert!(!hp.stunned() && telegraph(&app, thug) > 0.4, "but the wind-up carried on");
+    assert!(at_of(&app, thug).xz().distance(start.xz()) < 0.05, "and it didn't budge");
+}
+
+#[test]
+fn a_kick_interrupts_a_thugs_wind_up() {
+    let mut app = standing();
+    let thug = winding_thug(&mut app);
+    keys(&mut app).press(KeyCode::KeyK);
+    step(&mut app, 0.25);
+    assert!(app.world().get::<Hp>(thug).unwrap().0.stunned(), "a kick staggers it");
+    assert_eq!(telegraph(&app, thug), 0.0, "and resets its wind-up");
+    assert!(app.world().get::<LinearVelocity>(thug).unwrap().x > 0.5, "and knocks it back");
+}
+
+#[test]
+fn a_thug_ploughs_a_straight_line_while_fodder_beside_it_give_way() {
+    let mut app = standing();
+    let thug = enemy_at(&mut app, Kind::Thug, [-5.0, 0.0]);
+    let fodder = fodder_at(&mut app, [-5.0, 0.5]);
+    let line = at_of(&app, thug).z;
+    let (mut drift, mut widest) = (0.0f32, 0.0f32);
+    for _ in 0..(1.5 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        drift = drift.max((at_of(&app, thug).z - line).abs());
+        widest = widest.max(line - at_of(&app, fodder).z);
+    }
+    assert!(at_of(&app, thug).x > player(&mut app).0.x - 3.0, "the thug closed in: {}", at_of(&app, thug));
+    assert!(drift < 0.05, "in a straight line: drifted {drift} m");
+    assert!(widest > 0.8, "and the fodder gave it room: {widest} m off its line");
+}
+
+#[test]
+fn a_ninja_strikes_from_behind_and_backs_off() {
+    let mut app = standing();
+    // Behind the player (who faces +x), 4.7 m off: the 2.5D scenario's 150 units.
+    let ninja = enemy_at(&mut app, Kind::Ninja, [-4.7, 0.0]);
+    let (full, mut closest, mut hurt_at) = (player_hp(&mut app).1, f32::MAX, None);
+    for frame in 0..(2.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        closest = closest.min(at_of(&app, ninja).xz().distance(player(&mut app).0.xz()));
+        if hurt_at.is_none() && player_hp(&mut app).0 < full {
+            hurt_at = Some(frame);
+        }
+    }
+    assert!(hurt_at.is_some_and(|f| f < 60), "it closed in and struck within a second: {hurt_at:?}");
+    assert!(closest < 1.9, "{closest}");
+    let gap = at_of(&app, ninja).xz().distance(player(&mut app).0.xz());
+    assert!(gap > closest + 1.0, "then backed off: {gap} vs closest {closest}");
+}
+
+#[test]
+fn a_ninja_faced_circles_round_to_flank_the_player_rather_than_running_through() {
+    let mut app = standing();
+    // In front of the player (who faces +x), inside its avoid range.
+    let ninja = enemy_at(&mut app, Kind::Ninja, [3.0, 0.4]);
+    let full = player_hp(&mut app).1;
+    // Its bearing off the player's facing, degrees, and its distance.
+    let seen = |app: &mut App| {
+        let d = at_of(app, ninja) - player(app).0;
+        let along = Vec2::new(d.x, -d.z);
+        (along.to_angle().to_degrees().abs(), along.length())
+    };
+    let (mut flanked_at, mut nearest_in_front, mut struck_from) = (None, f32::MAX, None);
+    for frame in 0..(3.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        let (bearing, dist) = seen(&mut app);
+        if flanked_at.is_none() {
+            nearest_in_front = nearest_in_front.min(dist);
+            if bearing > 60.0 {
+                flanked_at = Some(frame);
+            }
+        }
+        if struck_from.is_none() && player_hp(&mut app).0 < full {
+            struck_from = Some(bearing);
+        }
+    }
+    assert!(flanked_at.is_some_and(|f| f < 60), "it got out of the player's front within a second: {flanked_at:?}");
+    assert!(nearest_in_front > 1.5, "going round, not through: came within {nearest_in_front} m");
+    assert!(struck_from.is_some_and(|b| b > 60.0), "then slashed from the flank: {struck_from:?}");
+}
+
+#[test]
+fn doors_deliver_thugs_and_ninjas_when_the_box_calls_for_them() {
+    let entered = |thugs: f32, ninjas: f32| {
+        let mut app = standing();
+        let mut run = app.world_mut().resource_mut::<RunState>();
+        (run.0.spec.thugs, run.0.spec.ninjas) = (thugs, ninjas);
+        app.world_mut().resource_mut::<Waves>().enabled = true;
+        step(&mut app, 4.0);
+        let mut q = app.world_mut().query::<&Brain>();
+        q.iter(app.world()).map(|b| b.0.style().kind).collect::<Vec<Kind>>()
+    };
+    for (thugs, ninjas, kind) in [(1.0, 0.0, Kind::Thug), (0.0, 1.0, Kind::Ninja), (0.0, 0.0, Kind::Fodder)] {
+        let kinds = entered(thugs, ninjas);
+        assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == kind), "{kind:?} called for, entered: {kinds:?}");
+    }
+}
+
+#[test]
+fn thugs_and_ninjas_burst_into_their_own_pieces_and_a_bomb_head_drops_its_head() {
+    for kind in [Kind::Thug, Kind::Ninja] {
+        for bomb_head in [false, true] {
+            let mut app = standing();
+            let e = enemy_at(&mut app, kind, [3.0, 0.0]);
+            if bomb_head {
+                app.world_mut().entity_mut(e).insert(BombHead);
+            }
+            step(&mut app, 0.1);
+            let at = at_of(&app, e);
+            app.world_mut().write_message(Defeated { entity: e, team: Team::Enemy, at });
+            step(&mut app, 0.1);
+            assert!(gone(&app, e), "{kind:?} burst");
+            let parts = figure(kind).len();
+            let mut q = app.world_mut().query::<&Piece>();
+            let mut burst: Vec<usize> = q.iter(app.world()).map(|p| p.part).collect();
+            burst.sort();
+            if bomb_head {
+                assert_eq!(burst.len(), parts - 1, "{kind:?}: every part but the head");
+                assert_eq!(lit_bombs(&mut app).len(), 1, "{kind:?}: and the head is a lit bomb");
+            } else {
+                assert_eq!(burst, (0..parts).collect::<Vec<_>>(), "{kind:?}: each of its own parts once");
+            }
+        }
+    }
 }

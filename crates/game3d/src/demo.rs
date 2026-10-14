@@ -8,7 +8,7 @@
 //! Knobs, from the page query (`?demo=1&slow=0.25`) or natively the environment (`DEMO=1 SLOW=0.25`):
 //! - `slow=0.25`: slow motion (the game clock's speed), so short effects can be captured frame by frame.
 //! - `debris=1000`: that many loose pieces across the floor at the start, to check the frame time of a full box.
-//! - `enemy=thug|ninja`: who steps up each beat (fodder until those kinds have figures, G5).
+//! - `enemy=thug|ninja`: who steps up each beat (fodder by default).
 //! - `bombs=1`: they step up as bomb-heads (G7), as in the 2.5D demo.
 //! - `timer=6`, `hp=20`: the box clock and the player's health at the start, to end a run on cue (e.g. to check the
 //!   game-over screen and the best).
@@ -63,10 +63,6 @@ pub fn plugin(app: &mut App) {
         .add_plugins(Demo::page());
 }
 
-/// Enemy kinds with figures of their own. Thugs and ninjas wear the fodder's until G5 builds theirs, so until then
-/// `enemy=thug|ninja` sends fodder; G5 adds them here.
-const FIGURED: [Kind; 1] = [Kind::Fodder];
-
 /// The demo's settings (see the module docs). Scenarios build one directly.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct Demo {
@@ -100,12 +96,7 @@ impl Demo {
             stairs: setting("stairs").as_deref() == Some("1"),
             slow: number("slow").filter(|s| *s > 0.0).unwrap_or(1.0),
             debris: setting("debris").and_then(|s| s.parse().ok()).unwrap_or(0),
-            foe: if FIGURED.contains(&foe) {
-                foe
-            } else {
-                info!("demo: {foe:?} has no figure yet; fodder step up instead");
-                Kind::Fodder
-            },
+            foe,
             bombs: setting("bombs").as_deref() == Some("1"),
             timer: number("timer"),
             hp: number("hp"),
