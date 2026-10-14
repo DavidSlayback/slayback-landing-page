@@ -376,6 +376,27 @@ The question: can Bevy 0.19.1 with avian3d 0.7.0 (which targets Bevy ^0.19) run 
   5. AI steering around piles.
   6. Movement and camera: easy, already working in the spike.
 
+**Follow-up spikes S1 and S2** (#59, #60; branch `spike/3d-measure` at `a60ec10`; raw data in `spikes/box3d/results/`).
+- **Same harness:** opt-3, Intel UHD, vsync off.
+- **Quiet machine:** every row ran with no compile in progress, enforced by `bench/measure.sh`. Empty-box baselines were 4.40–4.75 ms.
+
+- **S1, outlines: go.**
+  - **Technique:** one full-screen post-process pass on the camera's own depth texture. It marks depth creases and jumps, giving silhouettes ~4 px and cube creases ~2 px at 720p.
+  - **WebGL2 requirements in Bevy 0.19.1:**
+    - The depth prepass is unusable on WebGL2 (bevy#9710).
+    - Add `TEXTURE_BINDING` to `Camera3d::depth_texture_usages`.
+    - MSAA off: WebGL2 can't read multisampled depth.
+    - Read depth through a nearest-filter sampler. A plain `textureLoad` returns 0, because the GL backend leaves float depth on linear filtering.
+  - **Cost** against today's MSAA look with no outlines: +1.4 / +1.0 / +0.9 ms at 0 / 500 / 1000 cubes. Chosen config at 500 cubes: 6.9 / 8.2 ms (avg / p95).
+  - **No FXAA:** it adds +1–1.7 ms and pushes frames past 16.7 ms.
+  - **Optional saving:** sampling 4 neighbours instead of 8 saves about 0.5 ms.
+- **S2, frozen-debris cap: 1,500 frozen + 300 moving (1,800 total).**
+  - **Freezing to static fixes the physics:** about 0.1 µs per frozen piece per step, against about 2.5 µs per sleeping dynamic body. Bursting steps stay at 3.5–4.6 ms up to 3,000 frozen pieces.
+  - **Rendering sets the cap:** each 1,000 pieces add about 1 ms. At 1,500 + 300 bursting it runs 8.2 / 11.6 ms, leaving about 5 ms for the shipping build (+1 ms) and game code. At 2,000 frozen, p95 reaches 16–19 ms.
+  - **Fallback:** 1,000 + 300 if the full game costs more than ~3 ms per frame.
+  - **Stability:** frozen heaps can't wake; only never-frozen pieces re-woke.
+  - **Raising the cap later:** merge frozen debris into a few static meshes; physics allows about 3,000.
+
 ## Implications for the design (inference, not sourced fact)
 
 - **Pile and debris budget:** with islands, one big connected pile wakes as a unit whenever anything touches it, and

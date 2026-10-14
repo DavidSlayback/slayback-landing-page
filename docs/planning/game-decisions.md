@@ -99,7 +99,7 @@ David, after the look and impact passes: "Take inspiration from rumble box for t
 | Q49 | Movement, facing, aim | **B: 8-direction movement, facing the last move direction, blows hit a cone in front, plus light aim assist** toward the nearest enemy in the cone. | No twin-stick. |
 | Q50 | Look | **C: hybrid.** Flat-shaded saturated cubes with outlines and comic impact bursts, coloured from the site's three schemes: arena and debris in the scheme's muted tone, live fighters in its vivid accents. | Bloom is out (research §7). Outlines need an edge-detection pass, as an early spike ticket. |
 | Q51 | Escape rule | **A: escape when the pile under the player reaches the rim;** the rim rises each box, the floor stays the same size. | |
-| Q52 | Debris budget | **A: settled debris freezes after ~1.5 s; at most 300 moving pieces; frozen pieces kept up to a measured cap (target ~1,500).** | The frozen cap needs a measurement spike. |
+| Q52 | Debris budget | **A: settled debris freezes after ~1.5 s; at most 300 moving pieces; frozen pieces kept up to a measured cap (target ~1,500).** | Measured in S2 (#60): **1,500 frozen + 300 moving**; fallback 1,000 + 300 if the game costs more than ~3 ms per frame (research §7). |
 | Q53 | Testing | **A: game-core rules tests, plus the 26 headless scenarios ported to 3D, plus the browser harness on rc-2.** | |
 | Q54 | 3D v1 scope | **A: everything the game has today:** three enemy types, grab and spin-throw, bomb-heads, doors, sound, gamepad, comfort, score/HUD/screens, demo mode. | Tickets still land the core loop first. |
 | Q55 | Phones | **A: unchanged.** Phones get the clip page and never download the game. | |
