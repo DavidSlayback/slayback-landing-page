@@ -43,8 +43,8 @@ impl Move {
                 startup: 0.06,
                 active: 0.08,
                 recovery: 0.14,
-                // Q70: +35% for more range (the fodder's `Jab` keeps the old reach).
-                reach: 1.45,
+                // Q70, Q73: +70% over the original for more range (the fodder's `Jab` keeps the old reach).
+                reach: 1.8,
                 offset_y: 0.3125,
                 damage: 8.0,
                 knockback: (16.25, 8.125),
@@ -57,7 +57,7 @@ impl Move {
                 startup: 0.12,
                 active: 0.10,
                 recovery: 0.24,
-                reach: 1.95, // Q70: +35% for more range
+                reach: 2.4, // Q70: +35% for more range
                 offset_y: -0.4375,
                 damage: 14.0,
                 knockback: (28.125, 13.125),
@@ -69,7 +69,7 @@ impl Move {
                 startup: 0.0,
                 active: 0.14,
                 recovery: 0.22,
-                reach: 1.25, // Q70: +35% for more range
+                reach: 1.55, // Q70: +35% for more range
                 offset_y: -0.1875,
                 damage: 12.0,
                 knockback: (31.25, 11.25),

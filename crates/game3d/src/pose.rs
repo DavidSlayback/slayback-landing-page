@@ -104,15 +104,18 @@ pub fn body(phase: f32, amount: f32, act: Act) -> (Vec3, Quat) {
             let e = extension(&swing);
             match swing.mv {
                 // Laid back with both feet out, off the floor, flying forward.
-                Move::DropKick => (bob + Vec3::new(0.25 * e, 0.25 * e, 0.0), Quat::from_rotation_z(1.0 * e)),
+                Move::DropKick => (bob + Vec3::new(0.35 * e, 0.25 * e, 0.0), Quat::from_rotation_z(1.2 * e)),
                 // Leaning back from the kicking leg, hips forward.
-                Move::Kick => (bob + Vec3::X * 0.15 * e, Quat::from_rotation_z(0.25 * e)),
+                // ...and turning the kicking hip through.
+                Move::Kick => {
+                    (bob + Vec3::X * 0.2 * e, Quat::from_rotation_y(-0.5 * twist(e)) * Quat::from_rotation_z(0.4 * e))
+                }
                 // A thug's overhead blow comes down from a lean back into a lean forward.
-                Move::Smash => (bob + Vec3::X * 0.1 * e, Quat::from_rotation_z(-0.35 * e)),
+                Move::Smash => (bob + Vec3::X * 0.1 * e, Quat::from_rotation_z(-0.5 * e)),
                 // Punches and slashes lunge, twist into the blow and lean into it.
                 _ => (
-                    bob + Vec3::X * 0.18 * e,
-                    Quat::from_rotation_y(0.4 * side * twist(e)) * Quat::from_rotation_z(-0.12 * e),
+                    bob + Vec3::X * 0.25 * e,
+                    Quat::from_rotation_y(0.75 * side * twist(e)) * Quat::from_rotation_z(-0.18 * e),
                 ),
             }
         }
@@ -148,16 +151,16 @@ pub fn part(limb: Limb, reach: f32, rest: Vec3, phase: f32, amount: f32, act: Ac
             let mine = s == hits;
             match swing.mv {
                 // The player's punch reaches furthest (Q70); enemies' jabs and slashes less.
-                Move::Punch if arm(limb) && mine => line(e, 1.1, 0.2),
+                Move::Punch if arm(limb) && mine => line(e, 1.4, 0.2),
                 Move::Jab | Move::Slash if arm(limb) && mine => line(e, 0.75, 0.2),
                 // The other arm pulls back to guard.
                 Move::Punch | Move::Jab | Move::Slash if arm(limb) => {
                     walk * (1.0 - e) + Vec3::new(-0.12, 0.06, 0.0) * e
                 }
-                Move::Kick if leg(limb) && mine => line(e, 1.0, -0.35),
+                Move::Kick if leg(limb) && mine => line(e, 1.3, -0.35),
                 Move::Kick if arm(limb) => walk * (1.0 - e) + Vec3::new(-0.15, 0.12, 0.0) * e,
                 // Both feet out, both arms flung back.
-                Move::DropKick if leg(limb) => line(e, 0.8, -0.45),
+                Move::DropKick if leg(limb) => line(e, 1.0, -0.45),
                 Move::DropKick if arm(limb) => Vec3::new(-0.25, 0.15, 0.0) * e,
                 // Overhead and down: up past the head, then ahead at chest height.
                 Move::Smash if arm(limb) && mine => line(e, 0.6, 0.35) + Vec3::Y * 0.4 * reach * (1.0 - e),

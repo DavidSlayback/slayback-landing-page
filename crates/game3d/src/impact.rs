@@ -68,9 +68,13 @@ fn star(points: usize, inner: f32) -> Mesh {
     let n = positions.len() as u32;
     let indices: Vec<u32> = (1..n).flat_map(|i| [0, i, if i + 1 < n { i + 1 } else { 1 }]).collect();
     let normals = vec![[0.0, 0.0, 1.0]; positions.len()];
+    // UVs it doesn't need, so it has the same vertex layout as Bevy's shapes and shares their shader: a mesh without
+    // them made its own variant, which ANGLE on D3D11 spent ~3.4 s linking (Q72).
+    let uvs: Vec<[f32; 2]> = positions.iter().map(|p| [p[0] * 0.5 + 0.5, p[1] * 0.5 + 0.5]).collect();
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
         .with_inserted_indices(Indices::U32(indices))
 }
 

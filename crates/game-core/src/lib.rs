@@ -36,12 +36,12 @@ mod metres {
 
     #[test]
     fn moves_reach_land_and_launch_as_the_old_units_over_32() {
-        // Reach in metres: the player's three moves were lengthened 35% on purpose (Q70); the enemies' are the old
+        // Reach in metres: the player's three moves were lengthened on purpose (Q70, Q73); the enemies' are the old
         // units over 32.
         let old = [
-            (Move::Punch, 1.45, 10.0, (520.0, 260.0)),
-            (Move::Kick, 1.95, -14.0, (900.0, 420.0)),
-            (Move::DropKick, 1.25, -6.0, (1000.0, 360.0)),
+            (Move::Punch, 1.8, 10.0, (520.0, 260.0)),
+            (Move::Kick, 2.4, -14.0, (900.0, 420.0)),
+            (Move::DropKick, 1.55, -6.0, (1000.0, 360.0)),
             (Move::Smash, 44.0 / UNITS_PER_METRE, 16.0, (750.0, 480.0)),
             (Move::Slash, 30.0 / UNITS_PER_METRE, 6.0, (450.0, 200.0)),
             (Move::Jab, 34.0 / UNITS_PER_METRE, 10.0, (520.0, 260.0)),
@@ -56,7 +56,7 @@ mod metres {
             assert!((up - knockback.1 * (0.4 / 32.0)).abs() < 1e-5, "{mv:?} up {up}");
         }
         let punch = crate::aim::Cone::of(Move::Punch, [0.0, 0.0], 0.0, 0.35);
-        assert!((punch.reach - 0.35 - 1.45).abs() < 1e-5, "punch reach {}", punch.reach);
+        assert!((punch.reach - 0.35 - 1.8).abs() < 1e-5, "punch reach {}", punch.reach);
     }
 
     #[test]

@@ -29,11 +29,11 @@ use crate::player::{Dasher, Facing, Holding, Player};
 use crate::pose::{self, Act};
 
 /// How much smaller than its solid each part is drawn, and how far its limbs spread sideways from the middle, so the
-/// loose parts show clear gaps between them, Rumble Box style (Q71). The player's table is sized with gaps already,
+/// loose parts show clear gaps between them, Rumble Box style (Q71, Q73). The player's table is sized with gaps already,
 /// so it shrinks less. Parts spread only sideways, so the feet stay on the floor.
-const GAP: f32 = 0.74;
-const PLAYER_GAP: f32 = 0.88;
-const SPREAD: Vec3 = Vec3::new(1.15, 1.0, 1.15);
+const GAP: f32 = 0.62;
+const PLAYER_GAP: f32 = 0.76;
+const SPREAD: Vec3 = Vec3::new(1.25, 1.0, 1.25);
 
 /// What a part looks like this frame: a hit's flash over everything, then the wind-up glow, then its own paint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
