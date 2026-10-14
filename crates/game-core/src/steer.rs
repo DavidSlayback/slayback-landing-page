@@ -1,6 +1,7 @@
 //! Enemy movement on the 3D floor (decision Q63): steering, not pathfinding. Each enemy seeks the player, keeps apart
 //! from the others, and turns away from walls it comes close to, so a crowd spreads out round the player instead of
-//! stacking into one body.
+//! stacking into one body. Thugs plough straight in (the game steers them with no crowd to keep apart from), and a
+//! ninja the player is facing [`circle`]s round to its back rather than standing in front.
 //!
 //! Plane vectors as in [`crate::plane`]; distances in metres.
 
@@ -10,6 +11,9 @@ pub const SEPARATION: f32 = 1.4;
 pub const WALL_MARGIN: f32 = 0.8;
 const SEPARATE_WEIGHT: f32 = 1.8;
 const WALL_WEIGHT: f32 = 1.2;
+/// A flanking enemy circles the player about this far out, centre to centre: past a ninja's striking range (1.4 m)
+/// and the player's punch, so it goes round rather than through.
+pub const ORBIT: f32 = 2.0;
 
 fn length(v: [f32; 2]) -> f32 {
     v[0].hypot(v[1])
@@ -25,7 +29,25 @@ fn unit(v: [f32; 2]) -> [f32; 2] {
 /// of a floor `half` wide each way from the middle.
 pub fn steer(me: [f32; 2], goal: [f32; 2], toward: f32, others: &[[f32; 2]], half: [f32; 2]) -> [f32; 2] {
     let seek = unit([goal[0] - me[0], goal[1] - me[1]]);
-    let mut v = [seek[0] * toward.signum(), seek[1] * toward.signum()];
+    keep_clear([seek[0] * toward.signum(), seek[1] * toward.signum()], me, others, half)
+}
+
+/// Which way a flanking enemy at `me` walks (unit length) to get behind a player at `goal` facing `facing` (a unit
+/// plane vector): round the player toward its back the shorter way, drawn in or out to [`ORBIT`], and kept apart and
+/// off the walls as in [`steer`].
+pub fn circle(me: [f32; 2], goal: [f32; 2], facing: [f32; 2], others: &[[f32; 2]], half: [f32; 2]) -> [f32; 2] {
+    let out = [me[0] - goal[0], me[1] - goal[1]];
+    let dist = length(out);
+    let back = [-facing[0], -facing[1]];
+    let r = if dist < 1e-4 { back } else { unit(out) };
+    // Anticlockwise unless the back is clockwise from here (exactly in front, anticlockwise).
+    let turn = if back[0] * r[1] - back[1] * r[0] > 0.0 { -1.0 } else { 1.0 };
+    let pull = ((ORBIT - dist) / ORBIT).clamp(-1.0, 1.0);
+    keep_clear([-r[1] * turn + r[0] * pull, r[0] * turn + r[1] * pull], me, others, half)
+}
+
+/// `v` pushed apart from `others` and in from the walls, as a unit vector (or zero).
+fn keep_clear(mut v: [f32; 2], me: [f32; 2], others: &[[f32; 2]], half: [f32; 2]) -> [f32; 2] {
     for o in others {
         let d = [me[0] - o[0], me[1] - o[1]];
         let dist = length(d);
@@ -108,5 +130,48 @@ mod tests {
         let spread =
             bearings.iter().fold(f32::MIN, |m, b| m.max(*b)) - bearings.iter().fold(f32::MAX, |m, b| m.min(*b));
         assert!(spread > 1.0, "fanned out round the player: {bearings:?}");
+    }
+
+    /// Walks a flanker at `speed` round a player at the origin facing +x for `seconds`; returns its track.
+    fn flank(from: [f32; 2], speed: f32, seconds: f32) -> Vec<[f32; 2]> {
+        let (dt, mut me) = (1.0 / 60.0, from);
+        let mut track = vec![me];
+        for _ in 0..(seconds / dt) as usize {
+            let v = circle(me, [0.0, 0.0], [1.0, 0.0], &[], HALF);
+            me = [me[0] + v[0] * speed * dt, me[1] + v[1] * speed * dt];
+            track.push(me);
+        }
+        track
+    }
+
+    #[test]
+    fn a_flanker_in_front_circles_round_to_the_players_back_the_shorter_way_without_cutting_through() {
+        // In front and a little anticlockwise (screen up): it goes round that way, at a ninja's 7.5 m/s.
+        let track = flank([3.0, 0.4], 7.5, 1.2);
+        let behind = track.iter().position(|p| p[0] < -0.5).expect("got round behind");
+        assert!(behind as f32 / 60.0 < 1.0, "within a second: {behind} frames");
+        for p in &track[..=behind] {
+            assert!(p[1] > 0.0, "the shorter way, anticlockwise: {p:?}");
+            assert!(length(*p) > 1.6, "kept its distance, not through the player: {p:?}");
+        }
+        // Clockwise from the front, it goes round clockwise.
+        let track = flank([3.0, -0.4], 7.5, 1.2);
+        assert!(track.iter().any(|p| p[0] < -0.5) && track.iter().all(|p| p[1] < 0.3), "{:?}", track.last());
+    }
+
+    #[test]
+    fn a_flanker_holds_its_orbit_and_keeps_clear_of_walls_and_others() {
+        // Far out it closes in; close in it backs out; either way it ends near the orbit.
+        for from in [[5.0, 1.0], [0.6, 0.6]] {
+            let end = *flank(from, 3.0, 3.0).last().unwrap();
+            assert!((length(end) - ORBIT).abs() < 0.3, "from {from:?} ended {} out", length(end));
+        }
+        // Circling into a wall, it turns off it.
+        let v = circle([0.0, HALF[1] - 0.1], [0.0, HALF[1] - 2.0], [0.0, -1.0], &[], HALF);
+        assert!(v[1] < 0.0, "{v:?}");
+        // And it gives way to another enemy in its path.
+        let alone = circle([2.0, 0.0], [0.0, 0.0], [1.0, 0.0], &[], HALF);
+        let crowded = circle([2.0, 0.0], [0.0, 0.0], [1.0, 0.0], &[[2.0, 0.5]], HALF);
+        assert!(crowded[1] < alone[1], "{alone:?} {crowded:?}");
     }
 }
