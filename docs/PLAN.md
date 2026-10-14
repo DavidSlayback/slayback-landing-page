@@ -1,12 +1,12 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 08:45 CDT
-In flight: nothing. The 3D build is complete: G1-G10 merged (G4 #77, G9 #78, harness fix #79, G5 #80, G10 #81 today). /play is the 3D game; crates/game (2.5D) is deleted; parity table in docs/planning/parity-3d.md (26/26 mapped, 57 game3d scenarios). rc-1 stays the frozen 2.5D archive (deploy.sh refuses `rc 1`).
-Next: the cohort playtest (#29) on https://rc-2.slayback.pages.dev, then the release switch on main (GAME_RELEASE). Until Actions minutes return (reset Nov 1): merge on green pre-commit hooks, deploy from this machine right after each merge. When CI is back, check the edited ci.yml (game3d steps) actually runs.
-Waiting on: David: playtesters (#29), gamepad check on hardware (#26), C2 content (#13).
-Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
-Verified: main 71101fe (G10) deployed. rc-2: harness 13 passed, 2 skipped; game_bg.wasm 20,139 KB, 6,196 KB gzipped (budget 6.6 MB). Production (hero only, switch off): 5 passed, 10 skipped. 60 fps at the cap: headless Chrome on this PC's Intel UHD (D3D11, 1280x720), ?demo=1&debris=1500, median frame 6.1 ms, p95 12.1 ms, no quality step. Issues #64, #65, #69, #70 closed.
+As of: Wed Oct 14 2026 09:45 CDT
+In flight: the feel pass (Q65-Q67, after David played rc-2: "plays like absolute shit... nothing like Rumble Box"). Step 1 (camera, thick black edges, saturated fighters) is on branch feel-1-camera-look (69bb58f, unmerged), previewed at https://rc-3.slayback.pages.dev, waiting for David to play it. Reference: docs/research/rumble-box-reference.md on that branch (DigiPen's gameplay video, frame by frame).
+Next: on David's sign-off, merge feel-1-camera-look and deploy rc-2; then step 2, the player's attack animations (punch as a fast arm extension, ~0.2 s; kick, drop-kick, grab, throw), each previewed on rc-3 before merging; then loose-part figures and kill bursts; then the pace (more enemies, through wall doorways). The playtest (#29) waits for David's sign-off on feel (Q67).
+Waiting on: David: play rc-3 and say what's still wrong; playtesters (#29), gamepad on hardware (#26), C2 content (#13).
+Re-arm: nothing scheduled. wrangler is logged in on this PC (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. In a fresh worktree, run hooks and builds with CARGO_TARGET_DIR=<main checkout>/target: a cold target/ failed the pre-push hook ("dlltool.exe: program not found").
+Verified: rc-3 from 69bb58f: harness 13 passed, 2 skipped; 6,202 KB gzipped; game3d 58 scenarios and 5 camera tests pass; GPU screenshots compared against the video's full frames. main 71101fe (G10) is on rc-2 and production.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
