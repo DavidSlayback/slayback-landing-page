@@ -23,11 +23,6 @@ pub struct Actions {
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
 pub struct ViewYaw(pub f32);
 
-/// Present while something scripted drives the keys in world terms (the demo): moves are read as if the camera
-/// looked straight down -z, whatever it is doing.
-#[derive(Resource, Default)]
-pub struct WorldControls;
-
 /// A move direction read off the screen, turned onto the floor for a camera at `yaw` (both `game_core` plane
 /// vectors, y away from the camera).
 pub fn to_floor([x, y]: [f32; 2], yaw: f32) -> [f32; 2] {
@@ -76,7 +71,6 @@ fn read(
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     pads: Query<&Gamepad>,
     view: Res<ViewYaw>,
-    world: Option<Res<WorldControls>>,
     mut actions: ResMut<Actions>,
 ) {
     let held = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
@@ -101,6 +95,5 @@ fn read(
         dir = first_direction(dir, p.direction());
         verbs = verbs.or(p.verbs());
     }
-    let yaw = if world.is_some() { 0.0 } else { view.0 };
-    *actions = Actions { dir: to_floor(dir, yaw), verbs };
+    *actions = Actions { dir: to_floor(dir, view.0), verbs };
 }
