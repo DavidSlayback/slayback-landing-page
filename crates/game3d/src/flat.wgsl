@@ -19,11 +19,10 @@ const AMBIENT: vec3<f32> = vec3<f32>(0.243, 0.287, 0.48);
 const DIFFUSE: f32 = 3.1;
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    var n = normalize(in.world_normal);
-    if !front {
-        n = -n;
-    }
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Lit meshes are closed (cubes, balls), so the face seen is the one its normal points out of; the flat meshes (the
+    // bursts' stars, the ring, the shadow disc) are unlit, so no back face needs lighting.
+    let n = normalize(in.world_normal);
     let shade = AMBIENT + vec3<f32>(DIFFUSE * max(dot(n, LIGHT), 0.0));
     let rgb = material.color.rgb * mix(vec3<f32>(1.0), shade, material.lit) + material.glow.rgb;
     return vec4<f32>(rgb, material.color.a);

@@ -10,9 +10,10 @@ use bevy::prelude::*;
 use game_core::palette::Rgb;
 use game_core::scheme::{self, Scheme};
 
-use crate::arena::{Kind, Slab, WALL};
+use crate::arena::{Arena, Kind, Slab, WALL};
 use crate::flat::Flat;
 use crate::paint::{Paints, Role};
+use crate::player::Player;
 use crate::run::BoxStarted;
 
 /// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
@@ -73,7 +74,7 @@ pub fn plugin(app: &mut App) {
             crate::hud::plugin,
         ))
         .add_systems(Startup, load_kit)
-        .add_systems(Update, (rotate_scheme, dress_slabs, fade_walls).chain());
+        .add_systems(Update, (rotate_scheme, dress_slabs, fade_walls, clear_glass).chain());
 }
 
 /// Each box takes the next scheme, starting from the page's (Q31).
@@ -148,7 +149,9 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
             if let Some(face) = face {
                 c.insert(face);
             }
+            c.id()
         };
+        let mut rail = None;
         match slab.kind {
             Kind::Floor => {
                 cube(s, Vec3::ZERO, &kit.floor, None);
@@ -191,11 +194,37 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
             // The glass is a faint pane drawn by its edges: a bar along the rim and the two corner posts.
             Kind::Glass => {
                 cube(s, Vec3::ZERO, &kit.glass, None);
-                cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.line, None);
+                rail = Some(cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.line, None));
                 for x in [-1.0, 1.0] {
                     cube(Vec3::new(EDGE, s.y, EDGE), Vec3::X * x * (s.x - EDGE) / 2.0, &kit.line, None);
                 }
             }
+        }
+        if let Some(rail) = rail {
+            commands.entity(rail).insert(GlassRail);
+        }
+    }
+}
+
+/// The glass's top rail. The camera always looks in over the front wall, so with the player close to it the rail
+/// crosses the fight; it goes while the player is within [`CLEAR`] of the glass.
+#[derive(Component)]
+struct GlassRail;
+
+/// How close to the front wall the player is before its rail goes, metres.
+const CLEAR: f32 = 2.0;
+
+fn clear_glass(
+    arena: Res<Arena>,
+    player: Query<&Transform, With<Player>>,
+    mut rails: Query<&mut Visibility, With<GlassRail>>,
+) {
+    let Ok(at) = player.single() else { return };
+    let close = at.translation.z > arena.floor.y / 2.0 - CLEAR;
+    let want = if close { Visibility::Hidden } else { Visibility::Inherited };
+    for mut shown in &mut rails {
+        if *shown != want {
+            *shown = want;
         }
     }
 }
