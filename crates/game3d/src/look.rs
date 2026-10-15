@@ -43,6 +43,7 @@ pub fn plugin(app: &mut App) {
             crate::figure::plugin,
             crate::impact::plugin,
             crate::hud::plugin,
+            crate::touchpad::plugin,
         ))
         .add_systems(Startup, load_kit)
         .add_systems(Update, (next_stage, dress_slabs, fade_walls, clear_glass).chain());

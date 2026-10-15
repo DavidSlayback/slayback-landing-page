@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use avian3d::prelude::*;
+use bevy::input::touch::{TouchInput, TouchPhase};
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use game_core::bomb::{CHAIN, DAMAGE, FUSE};
@@ -13,6 +14,7 @@ use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SE
 use game_core::enemy::{Kind, THUG};
 use game_core::grab::{Held, impact};
 use game_core::plane::RUN_SPEED;
+use game_core::touch::{Button, Layout};
 use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
@@ -1900,4 +1902,71 @@ fn standing_still_is_lethal_within_12_s_and_no_less_so_in_later_boxes() {
     // About 10 s in box 1 (three fodder alone took about 12 s) and a little less in box 3.
     assert!(first.is_some_and(|t| t < 12.0), "box 1 kills an idle player within 12 s (Q68): {first:?}");
     assert!(third.is_some_and(|t| t <= first.unwrap()), "box 3 no slower: {third:?} against {first:?}");
+}
+
+/// A finger `id` touching the screen at `at` (pixels, y down; the headless game lays its touch controls out on
+/// 1280x720), for the next frame.
+fn finger(app: &mut App, id: u64, phase: TouchPhase, at: [f32; 2]) {
+    let position = Vec2::from_array(at);
+    app.world_mut().write_message(TouchInput { phase, position, window: Entity::PLACEHOLDER, force: None, id });
+}
+
+/// A quick tap: down one frame, up the next.
+fn finger_tap(app: &mut App, id: u64, at: [f32; 2]) {
+    finger(app, id, TouchPhase::Started, at);
+    step(app, 1.0 / FPS);
+    finger(app, id, TouchPhase::Ended, at);
+    step(app, 1.0 / FPS);
+}
+
+#[test]
+fn on_a_touch_screen_the_left_thumb_walks_the_buttons_punch_a_swipe_dashes_and_the_hud_pauses() {
+    let mut app = standing();
+    let screen = Layout { size: [1280.0, 720.0] };
+    let (start, _, _) = player(&mut app);
+    finger(&mut app, 1, TouchPhase::Started, [200.0, 500.0]);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 1, TouchPhase::Moved, [270.0, 500.0]);
+    step(&mut app, 0.5);
+    let (walked, _, _) = player(&mut app);
+    let moved = (walked - start).xz();
+    assert!(moved.x > 1.0 && moved.y.abs() < 0.05, "dragging the stick right walks right: moved {moved}");
+    finger(&mut app, 1, TouchPhase::Ended, [270.0, 500.0]);
+    step(&mut app, 0.5);
+    assert!(player(&mut app).1.length() < 0.1, "letting go stops");
+
+    let ahead = fodder_at(&mut app, [1.1, 0.0]);
+    step(&mut app, 0.05);
+    finger_tap(&mut app, 2, screen.button(Button::Punch));
+    step(&mut app, 0.2);
+    assert!(hp(&app, ahead) < FULL, "the punch button punched");
+    step(&mut app, 0.5);
+
+    // A swipe down the screen on the right half: a dash toward the camera (+z), whichever way the player faced.
+    let pad = [900.0, 300.0];
+    finger(&mut app, 3, TouchPhase::Started, pad);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 3, TouchPhase::Moved, [pad[0], pad[1] + 60.0]);
+    step(&mut app, 2.0 / FPS);
+    let (_, v, _) = player(&mut app);
+    assert!(v.z > RUN_SPEED && v.x.abs() < 0.1, "dashed down the screen: {v}");
+    finger(&mut app, 3, TouchPhase::Ended, [pad[0], pad[1] + 60.0]);
+    step(&mut app, 0.5);
+
+    finger_tap(&mut app, 4, [1200.0, 30.0]);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Paused, "a tap on the HUD pauses");
+    finger_tap(&mut app, 5, [640.0, 360.0]);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Playing, "a tap anywhere resumes");
+}
+
+#[test]
+fn a_touch_held_on_the_pad_grabs() {
+    let mut app = standing();
+    let foe = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    finger(&mut app, 1, TouchPhase::Started, [900.0, 300.0]);
+    step(&mut app, 0.4);
+    assert!(app.world().get::<Carried>(foe).is_some(), "held still, the touch grabbed the fodder in front");
 }

@@ -1,10 +1,11 @@
 //! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in Rumble Box's
-//! health green, then the box number, the box clock, and the score with its streak multiplier. The start, pause and
-//! game-over screens are `screens`.
+//! health green, then the box number, the box clock, and the score with its streak multiplier; on a touch screen, a
+//! pause sign first, since a tap on the HUD pauses. The start, pause and game-over screens are `screens`.
 
 use bevy::prelude::*;
 
 use crate::fighter::Hp;
+use crate::input::Touch;
 use crate::look::Palette;
 use crate::paint::{Role, colour};
 use crate::player::Player;
@@ -70,6 +71,7 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
 fn update(
     run: Res<RunState>,
     score: Res<RunScore>,
+    touch: Res<Touch>,
     player: Query<&Hp, With<Player>>,
     mut fill: Query<&mut Node, With<HealthFill>>,
     mut readout: Query<&mut Text, With<Readout>>,
@@ -83,7 +85,9 @@ fn update(
     if let Ok(mut t) = readout.single_mut() {
         let streak = if score.0.streak > 1 { format!("  x{:.1}", score.0.multiplier()) } else { String::new() };
         let secs = run.0.time_left.ceil().max(0.0) as u32;
-        let line = format!("Box {}   {}:{:02}   {}{}", run.0.spec.number, secs / 60, secs % 60, score.0.points, streak);
+        let pause = if touch.used { "II   " } else { "" };
+        let line =
+            format!("{pause}Box {}   {}:{:02}   {}{}", run.0.spec.number, secs / 60, secs % 60, score.0.points, streak);
         if t.0 != line {
             t.0 = line;
         }

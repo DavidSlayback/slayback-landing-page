@@ -93,6 +93,34 @@ test.describe('/play', () => {
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 
+  test.describe('on a phone held sideways', () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 844, height: 390 } });
+
+    test('a tap starts the game and a tap on the HUD pauses it (Q78)', async ({ page }) => {
+      test.setTimeout(180_000);
+      const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+      if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+      test.skip(!built, 'game not in this build');
+      const errors = collectErrors(page);
+      const logs = [];
+      page.on('console', m => logs.push(m.text()));
+      const after = (from, text) => () => logs.slice(from).some(l => l.includes(text));
+      await page.goto('/play/');
+      await expect.poll(after(0, 'phase start'), { timeout: 150_000 }).toBe(true);
+      const box = await page.locator('#game').boundingBox();
+      expect(box.width, 'on a touch screen the game fills the screen').toBeGreaterThan(840);
+      await page.waitForTimeout(1000);   // a screen ignores taps for its first 0.6 s
+      let from = logs.length;
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await expect.poll(after(from, 'phase playing')).toBe(true);
+      await page.waitForTimeout(500);
+      from = logs.length;
+      await page.touchscreen.tap(box.x + box.width - 80, box.y + 30);
+      await expect.poll(after(from, 'phase paused')).toBe(true);
+      expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
+    });
+  });
+
   test('a scripted run climbs out to box 2 with no console errors', async ({ page }) => {
     test.setTimeout(180_000);
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));

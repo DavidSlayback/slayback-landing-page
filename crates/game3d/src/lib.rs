@@ -38,6 +38,8 @@ pub mod score;
 pub mod screens;
 pub mod sound;
 pub mod store;
+#[cfg(feature = "render")]
+pub mod touchpad;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

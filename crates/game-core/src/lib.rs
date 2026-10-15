@@ -19,6 +19,7 @@ pub mod quality;
 pub mod run;
 pub mod score;
 pub mod steer;
+pub mod touch;
 
 /// The rules once spoke the retired 2.5D game's world units (32 to the metre); these pin the metre values to the old
 /// numbers over 32, so the move to metres changed nothing.

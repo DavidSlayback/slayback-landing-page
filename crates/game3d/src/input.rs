@@ -1,11 +1,18 @@
 //! One set of actions from every input device: keyboard, mouse and any standard gamepad, through the mapping shared
 //! with the 2.5D game (`game_core::controls`, which has the table). Gameplay reads [`Actions`]; only this module reads
 //! devices. A standard gamepad needs nothing set up: the left stick or d-pad moves, A or the right trigger dashes,
-//! X punches, Y kicks, B grabs, Start pauses or starts, and Select toggles sound on the pause screen.
+//! X punches, Y kicks, B grabs, Start pauses or starts, and Select toggles sound on the pause screen. A touch screen
+//! gets the touch controls of `game_core::touch` (Q78): a stick under the left thumb, buttons and gestures under the
+//! right, a tap on the HUD to pause, and a tap anywhere to leave a screen.
 
 use bevy::input::InputSystems;
+use bevy::input::touch::{TouchInput, TouchPhase};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use game_core::controls::{Pad, Verbs, first_direction, keys_direction};
+use game_core::touch::TouchPad;
+
+use crate::flow::Phase;
 
 /// This frame's actions.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
@@ -40,10 +47,49 @@ pub const KICK_KEY: KeyCode = KeyCode::KeyK;
 pub const GRAB_KEY: KeyCode = KeyCode::KeyL;
 pub const BEGIN_KEYS: [KeyCode; 2] = [KeyCode::Enter, KeyCode::Space];
 
+/// The touch controls, and whether to show them: from the start on a touch screen, else from the first touch.
+#[derive(Resource)]
+pub struct Touch {
+    pub pad: TouchPad,
+    pub used: bool,
+    /// The phase the last frame was in and when it began (real time, seconds): a touch that leaves a screen does
+    /// nothing in the next, and a screen ignores taps for its first [`SETTLE`], so a fight's last frantic taps don't
+    /// skip the game-over screen.
+    phase: Option<Phase>,
+    since: f64,
+}
+
+/// See [`Touch::since`].
+const SETTLE: f64 = 0.6;
+
+/// How far down the pause screen the sound toggle's band starts, as a fraction of the height.
+pub const SOUND_BAND: f32 = 0.75;
+
+impl Default for Touch {
+    fn default() -> Self {
+        Self { pad: TouchPad::new([1280.0, 720.0]), used: touch_screen(), phase: None, since: 0.0 }
+    }
+}
+
+/// Whether the page's main pointer is a finger (`pointer: coarse`), or natively `TOUCH=1`.
+fn touch_screen() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window().and_then(|w| w.match_media("(pointer: coarse)").ok().flatten()).is_some_and(|m| m.matches())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::var("TOUCH").is_ok_and(|v| v == "1")
+    }
+}
+
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Actions>()
+    // Registered here too, so the headless scenarios (no input plugin) can send touches.
+    app.add_message::<TouchInput>()
+        .init_resource::<Actions>()
         .init_resource::<ViewYaw>()
-        .add_systems(PreUpdate, read.in_set(ReadActions).after(InputSystems));
+        .init_resource::<Touch>()
+        .add_systems(PreUpdate, (read, read_touch).chain().in_set(ReadActions).after(InputSystems));
 }
 
 /// One gamepad's state, as the shared mapping needs it. The d-pad is read as buttons (pressed or not), so it works
@@ -96,4 +142,59 @@ fn read(
         verbs = verbs.or(p.verbs());
     }
     *actions = Actions { dir: to_floor(dir, view.0), verbs };
+}
+
+/// Adds the touch controls' frame to the actions: in play, their move and verbs; on the pause screen, a tap resumes (or,
+/// low down, toggles sound); on the start and game-over screens, a tap starts.
+fn read_touch(
+    mut touches: MessageReader<TouchInput>,
+    mut touch: ResMut<Touch>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    time: Res<Time<Real>>,
+    phase: Option<Res<State<Phase>>>,
+    view: Res<ViewYaw>,
+    mut actions: ResMut<Actions>,
+) {
+    let now = time.elapsed_secs_f64();
+    if let Ok(w) = windows.single() {
+        touch.pad.layout.size = [w.width(), w.height()];
+    }
+    let phase = phase.map(|p| *p.get());
+    if touch.phase != phase {
+        touch.pad.clear();
+        touch.phase = phase;
+        touch.since = now;
+    }
+    for t in touches.read() {
+        let (id, at) = (t.id, t.position.to_array());
+        match t.phase {
+            TouchPhase::Started => {
+                touch.used = true;
+                touch.pad.down(id, at, now);
+            }
+            TouchPhase::Moved => touch.pad.moved(id, at),
+            TouchPhase::Ended => touch.pad.up(id),
+            TouchPhase::Canceled => touch.pad.cancel(id),
+        }
+    }
+    let frame = touch.pad.frame(now);
+    let settled = now - touch.since >= SETTLE;
+    let verbs = &mut actions.verbs;
+    match phase {
+        None | Some(Phase::Playing) => {
+            *verbs = verbs.or(frame.verbs);
+            // A swipe's dash goes the swipe's way, whatever else is held.
+            if frame.dir != [0.0, 0.0] && (frame.verbs.dash || actions.dir == [0.0, 0.0]) {
+                actions.dir = to_floor(frame.dir, view.0);
+            }
+        }
+        Some(Phase::Paused) => {
+            if let Some([_, y]) = frame.landed {
+                let low = y > touch.pad.layout.size[1] * SOUND_BAND;
+                verbs.sound |= low;
+                verbs.pause |= !low;
+            }
+        }
+        Some(Phase::Start | Phase::Over) => verbs.begin |= frame.landed.is_some() && settled,
+    }
 }
