@@ -1,10 +1,10 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 CDT
+As of: Thu Oct 15 2026 CDT
 In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, Q75 Rumble Box colours, Q76 heavies in box 1 plus a HUD that reads on every box, and Q77 carrying a grab in the fists instead of on the head. PR #83 open, not merged (David: "PR no merge"); rc-3 serves it.
 Done in look-flat: flat.rs/flat.wgsl replace StandardMaterial (no load stall); GlassRail hides within 2 m of the front wall; Q75: game-core palette is Rumble Box's (fixed fighter colours by part, four box stages, pale part-tinted debris, cyan ring, green health, red signal), game-core scheme.rs deleted (the hero keeps its own schemes in site/hero.js), flat shader checkers floor and walls and lights softer, outlines 2 px / creases 1 px, `?stage=N` previews a box's look.
-Next: David plays rc-3 (Q67). On sign-off: merge the look-flat PR, deploy rc-2; then the playtest (#29).
+Next (David, 2026-10-15, after playing rc-3: "This is pretty cool! And hard."): (1) touch controls: "come up with some satisfactory touch controls" for the 3D game (none today; design with David first, e.g. a virtual stick plus attack/grab/dash buttons, mapped onto input::Actions). (2) the homepage hero (site/hero.js, crates/sim): "I'd like my lettering to not have the color scheme, but instead be lit up by the light sources of the sparks. Just a bit above barely readable unless lit." So the name/heading text loses its scheme colour, sits just above barely readable, and brightens where sparks pass near it. PR #83 stays open, unmerged, until David signs off.
 Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13).
 Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1.
 Verified: game-core 108 tests, game3d 62 headless scenarios + 18 render unit tests, clippy both feature sets; rc-3 harness 14 passed, 2 skipped (shaders.spec.js included). Frames of all four stages compared against the video's full frames.
