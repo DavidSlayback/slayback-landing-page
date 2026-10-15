@@ -1,13 +1,13 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 18:25 CDT
-In flight: nothing running. Branch chain, all pushed, none merged: feel-6-more (946f697: feel pass Q65-Q73 + refactors #1 #2 #4) -> env-retro (c89d88f: retro guardrails + review tools). rc-3 serves feel-6-more.
+As of: Wed Oct 14 2026 19:40 CDT
+In flight: nothing running. Branch chain, all pushed, none merged: feel-6-more (946f697: feel pass Q65-Q73 + refactors #1 #2 #4) -> env-retro (2a45c4e: retro guardrails, review tools, and two refactors: bomb::space and grab::flat flattened; the demo drives Actions instead of faked keys, WorldControls gone). rc-3 serves env-retro. Repo cleaned: merged branches and worktrees deleted locally and on GitHub (kept: main, env-retro, spike/*, game-combat); subagent build caches removed.
 Done in env-retro: .gitattributes LF; scripts/target-dir.sh (worktrees share the main target); deploy.sh retries the harness once; hooks+CI run game3d render unit tests; pre-commit colour guard (paint.rs only); tests/e2e/shaders.spec.js (no shader link after "warm-up drawn"; mutation-checked); tests/e2e/tools/{capture,frametime,trace-shaders}.mjs (checked against a bad and a good build); AGENTS.md pointers. Global lessons merged in david-brain #39 and synced live: CODING.md feel-done rule and LF .gitattributes rule; memories webgl-shader-variant-stalls, reference-footage-review; per-agent CARGO_TARGET_DIR in local-resource-safety.
-Next: David plays rc-3. On sign-off: PR env-retro into main (it contains feel-6-more), merge, deploy rc-2; then the playtest (#29). Optional: a flat-shaded material instead of Bevy's PBR StandardMaterial to cut the ~3 s load-time shader link; ranking #3 (demo sends intents, not keys); flatten bomb::space and grab::flat.
+Next: David plays rc-3. On sign-off: PR env-retro into main (it contains feel-6-more), merge, deploy rc-2; then the playtest (#29). Optional, needs David's eyes: a flat-shaded material instead of Bevy's PBR StandardMaterial (cuts the ~3 s load-time shader link, changes the look); the front glass's top rail crosses the view when the player is knocked against the front wall.
 Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13). Roster question: heavies in box 1 vs Q26.
 Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1 (the new CI apt step and render-test step are unrun).
-Verified: env-retro: all hooks pass with no CARGO_TARGET_DIR set; shaders.spec.js passes on the real build and fails (1 link) with an unwarmed UV-less star; frametime on the real build max 36.5 ms, p99 12.2 ms; trace-shaders 7 links, one ~3 s stall at load. rc-3 from 946f697: harness 13 passed, 2 skipped.
+Verified: rc-3 from 2a45c4e: harness 14 passed (incl. shaders.spec.js), 2 skipped. The cold-target dlltool failure did not reproduce (cold absolute and relative targets built every native dep). env-retro: all hooks pass with no CARGO_TARGET_DIR set; shaders.spec.js passes on the real build and fails (1 link) with an unwarmed UV-less star; frametime on the real build max 36.5 ms, p99 12.2 ms; trace-shaders 7 links, one ~3 s stall at load. rc-3 from 946f697: harness 13 passed, 2 skipped.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**
