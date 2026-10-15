@@ -1,9 +1,9 @@
 //! Every fighter's figure, Rumble Box style (Q61, Q65-Q69): loose parts that `pose` moves. The player is built from
 //! [`PLAYER`] (ball head and fists, a four-cube torso, two cubes to each leg) in contrasting colours; each enemy kind
 //! from its pieces in `game_core::debris::solid::figure` (the fodder's eleven, the thug's fourteen, the ninja's nine)
-//! in its own vivid colour, drawn a little smaller so gaps show. A bomb-head of any kind wears a bomb (`bomb::view`)
-//! in place of its ball head. When an enemy dies, the same pieces become debris, dressed here in the arena's muted
-//! tones.
+//! in its kind's Rumble Box colours ([`enemy_paint`]), drawn a little smaller so gaps show. A bomb-head of any kind
+//! wears a bomb (`bomb::view`) in place of its ball head. When an enemy dies, the same pieces become debris, dressed
+//! here in a pale wash of the colour each wore.
 //!
 //! One path dresses and animates every fighter, so what one figure does (a hit flash, the softer flash under reduced
 //! motion, a wind-up glow) the others do too. Colours are `paint`'s. Gameplay entities carry no visuals; this plugin dresses them
@@ -15,12 +15,13 @@ use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
 use game_core::combat::Move;
 use game_core::debris::solid::{Limb, Solid, figure};
-use game_core::palette::{DEBRIS_SHADES, Fighter};
+use game_core::enemy::Kind;
+use game_core::palette::Fighter;
 
 use crate::bomb::{self, BombHead};
 use crate::camera::Warm;
 use crate::comfort::Comfort;
-use crate::debris::Piece;
+use crate::debris::{Kin, Piece};
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
 use crate::flat::Flat;
@@ -201,12 +202,13 @@ fn parts(who: Fighter) -> Vec<Build> {
             let pieces = figure(kind);
             pieces
                 .iter()
-                .map(|p| Build {
+                .enumerate()
+                .map(|(i, p)| Build {
                     solid: p.solid,
                     rest: Vec3::from_array(p.at) * SPREAD,
                     limb: p.limb,
                     reach: reach(pieces, p.limb, p.at[1]),
-                    paint: Paint::Body,
+                    paint: enemy_paint(kind, i),
                     scale: GAP,
                 })
                 .collect()
@@ -279,12 +281,27 @@ fn dress_debris(
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<Flat>>,
-    pieces: Query<(Entity, &Piece), Added<Piece>>,
+    pieces: Query<(Entity, &Piece, Option<&Kin>), Added<Piece>>,
 ) {
-    for (e, piece) in &pieces {
-        // Neighbouring parts take different shades, so a heap's pieces read apart under the outlines.
-        let debris = paints.get(Role::Debris(piece.part % DEBRIS_SHADES.len()), &palette, &mut mats);
+    for (e, piece, kin) in &pieces {
+        // Each piece pales the colour it wore, so a heap's pieces read apart under the outlines as Rumble Box's do.
+        let kind = kin.map_or(Kind::Fodder, |k| k.0);
+        let role = Role::Debris(Fighter::Enemy(kind), enemy_paint(kind, piece.part));
+        let debris = paints.get(role, &palette, &mut mats);
         commands.entity(e).insert((Mesh3d(kit.mesh(piece.solid, &mut meshes)), MeshMaterial3d(debris)));
+    }
+}
+
+/// Which of its kind's colours piece `i` of an enemy's figure wears: the ball head its head colour, the hand end of an
+/// arm of two or more pieces its fist colour, the legs the trim, the rest (torso, upper arms) the body.
+fn enemy_paint(kind: Kind, i: usize) -> Paint {
+    let pieces = figure(kind);
+    let p = pieces[i % pieces.len()];
+    match (p.solid, p.limb) {
+        (Solid::Ball(_), _) => Paint::Head,
+        (_, Limb::LeftLeg | Limb::RightLeg) => Paint::Trim,
+        (_, Limb::LeftArm | Limb::RightArm) if reach(pieces, p.limb, p.at[1]) == 1.0 => Paint::Fist,
+        _ => Paint::Body,
     }
 }
 

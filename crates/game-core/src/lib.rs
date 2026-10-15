@@ -17,7 +17,6 @@ pub mod palette;
 pub mod plane;
 pub mod quality;
 pub mod run;
-pub mod scheme;
 pub mod score;
 pub mod steer;
 

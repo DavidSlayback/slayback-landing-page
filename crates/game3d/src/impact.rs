@@ -1,5 +1,5 @@
 //! Hit impact, after Rumble Box's comic punch (spec #58, carried over from the 2.5D game): trauma screen shake, a star
-//! burst where a blow lands (scheme-coloured with a white-hot core, bigger for heavy moves and kills; biggest, with the
+//! burst where a blow lands (signal-red with a white-hot core, bigger for heavy moves and kills; biggest, with the
 //! strongest shake, for a bomb's blast), a squash on the fighter who takes it, and each kill's points floating up from
 //! where it fell, with the streak. The finisher's longer freeze is the hit-stop in `fighter`. Rules:
 //! `game_core::impact`. All of it runs on real time, so it plays through hit-stop: the frozen frame is the squashed,

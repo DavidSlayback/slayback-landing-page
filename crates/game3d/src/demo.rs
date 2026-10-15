@@ -14,6 +14,9 @@
 //!   game-over screen and the best).
 //! - `stairs=1`: no fight; each box gets a staircase of debris up past its rim and the player walks right, up it and
 //!   out, box after box (the browser harness's scripted climb).
+//!
+//! One knob works without the demo too, for reviewing the look: `stage=1` starts the run's colours that many stages on
+//! (`look`; box 1 in box 2's orange checker).
 
 use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
@@ -34,7 +37,7 @@ use crate::player::{Facing, Player, SPAWN};
 use crate::run::{BoxStarted, RunState};
 
 /// A demo setting from the page query (`demo=1&stairs=1`) or, natively, the environment (`DEMO=1 STAIRS=1`).
-fn setting(key: &str) -> Option<String> {
+pub(crate) fn setting(key: &str) -> Option<String> {
     #[cfg(target_arch = "wasm32")]
     {
         let query = web_sys::window()?.location().search().ok()?;

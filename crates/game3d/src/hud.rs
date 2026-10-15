@@ -1,5 +1,5 @@
-//! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in the scheme's
-//! main accent, then the box number, the box clock, and the score with its streak multiplier. The start, pause and
+//! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in Rumble Box's
+//! health green, then the box number, the box clock, and the score with its streak multiplier. The start, pause and
 //! game-over screens are `screens`.
 
 use bevy::prelude::*;
@@ -12,7 +12,7 @@ use crate::run::RunState;
 use crate::score::RunScore;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, (update, repaint.run_if(resource_changed::<Palette>)));
+    app.add_systems(Startup, spawn).add_systems(Update, update);
 }
 
 #[derive(Component)]
@@ -45,17 +45,10 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             .with_child((
                 HealthFill,
                 Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
-                BackgroundColor(colour(Role::Ring, &palette)),
+                BackgroundColor(colour(Role::Health, &palette)),
             ));
             hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), TextShadow::default()));
         });
-}
-
-/// The bar follows the scheme as boxes rotate it.
-fn repaint(palette: Res<Palette>, mut fill: Query<&mut BackgroundColor, With<HealthFill>>) {
-    for mut bg in &mut fill {
-        bg.0 = colour(Role::Ring, &palette);
-    }
 }
 
 fn update(

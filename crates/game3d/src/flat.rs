@@ -1,5 +1,6 @@
 //! The game's one material (decision Q74): a colour, Lambert-shaded by the scene's fixed key light plus ambient, or
-//! at full strength when unlit, plus a glow, drawn on both faces. It replaces Bevy's `StandardMaterial` everywhere:
+//! at full strength when unlit, plus a glow, drawn on both faces; optionally checkered with a second colour (a box's
+//! tiles, Q75). It replaces Bevy's `StandardMaterial` everywhere:
 //! the look is flat-coloured cubes, and the PBR shader cost ~3 s to link on ANGLE/D3D11 each time WebGL met a new
 //! variant of it, where this one links in milliseconds.
 
@@ -18,6 +19,13 @@ pub struct Flat {
     /// Added on top, unshaded (a lit bomb's blink).
     #[uniform(0)]
     pub glow: LinearRgba,
+    /// The checker's other colour, on alternate tiles of [`Flat::grid`].
+    #[uniform(0)]
+    pub check: LinearRgba,
+    /// A world-space checker across whichever plane a face lies in: a tile corner (xyz) and the tile size (w); size 0
+    /// is no checker.
+    #[uniform(0)]
+    pub grid: Vec4,
     /// 1 shaded by the light, 0 at full strength.
     #[uniform(0)]
     pub lit: f32,
@@ -27,7 +35,14 @@ pub struct Flat {
 impl Flat {
     /// Shaded by the light: surfaces and fighters.
     pub fn lit(color: Color) -> Self {
-        Self { color: color.into(), glow: LinearRgba::BLACK, lit: 1.0, alpha: AlphaMode::Opaque }
+        Self {
+            color: color.into(),
+            glow: LinearRgba::BLACK,
+            check: LinearRgba::BLACK,
+            grid: Vec4::ZERO,
+            lit: 1.0,
+            alpha: AlphaMode::Opaque,
+        }
     }
 
     /// At full strength: marks, glows, lines.

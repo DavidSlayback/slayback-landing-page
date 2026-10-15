@@ -6,6 +6,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use game_core::debris::solid::{Settle, Solid, at_rest, figure, frozen_over_cap, moving_over_cap};
+use game_core::enemy::Kind;
 use game_core::grab::Held;
 
 use crate::bomb::{BombHead, lit_bomb};
@@ -24,6 +25,10 @@ pub struct Piece {
     pub part: usize,
     pub settle: Settle,
 }
+
+/// Which kind's figure a burst piece came from, so the look can colour it by the part it was.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Kin(pub Kind);
 
 /// How hard a burst throws pieces out from the body and up, m/s, and how much of the body's own velocity they keep.
 /// Rumble Box blows a figure apart, its parts flying high: 5 m/s up rises ~0.85 m against 15 m/s² of gravity. They
@@ -73,7 +78,8 @@ fn burst(
         let centre = transform.translation;
         let turn = facing.rotation();
         commands.entity(d.entity).despawn();
-        for (i, p) in figure(brain.0.style().kind).iter().enumerate() {
+        let kind = brain.0.style().kind;
+        for (i, p) in figure(kind).iter().enumerate() {
             let offset = turn * Vec3::from_array(p.at);
             let out = offset.with_y(offset.y * 0.5).normalize_or_zero();
             let fling = velocity.0 * CARRY + out * BURST_OUT + Vec3::Y * BURST_UP;
@@ -91,6 +97,7 @@ fn burst(
             };
             commands.spawn((
                 piece(p.solid, i, centre + offset, turn, time.elapsed_secs()),
+                Kin(kind),
                 LinearVelocity(fling),
                 AngularVelocity(spin),
             ));

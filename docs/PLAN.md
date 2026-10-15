@@ -1,13 +1,13 @@
 # Portfolio plan
 
 ```text
-As of: Wed Oct 14 2026 19:40 CDT
-In flight: nothing running. Branch chain, all pushed, none merged: feel-6-more (946f697: feel pass Q65-Q73 + refactors #1 #2 #4) -> env-retro (2a45c4e: retro guardrails, review tools, and two refactors: bomb::space and grab::flat flattened; the demo drives Actions instead of faked keys, WorldControls gone). rc-3 serves env-retro. Repo cleaned: merged branches and worktrees deleted locally and on GitHub (kept: main, env-retro, spike/*, game-combat); subagent build caches removed.
-Done in env-retro: .gitattributes LF; scripts/target-dir.sh (worktrees share the main target); deploy.sh retries the harness once; hooks+CI run game3d render unit tests; pre-commit colour guard (paint.rs only); tests/e2e/shaders.spec.js (no shader link after "warm-up drawn"; mutation-checked); tests/e2e/tools/{capture,frametime,trace-shaders}.mjs (checked against a bad and a good build); AGENTS.md pointers. Global lessons merged in david-brain #39 and synced live: CODING.md feel-done rule and LF .gitattributes rule; memories webgl-shader-variant-stalls, reference-footage-review; per-agent CARGO_TARGET_DIR in local-resource-safety.
-Next: David plays rc-3. On sign-off: PR env-retro into main (it contains feel-6-more), merge, deploy rc-2; then the playtest (#29). Optional, needs David's eyes: a flat-shaded material instead of Bevy's PBR StandardMaterial (cuts the ~3 s load-time shader link, changes the look); the front glass's top rail crosses the view when the player is knocked against the front wall.
+As of: Wed Oct 14 2026 CDT
+In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, and Q75 Rumble Box colours. Pushed, no PR yet; rc-3 serves it.
+Done in look-flat: flat.rs/flat.wgsl replace StandardMaterial (no load stall); GlassRail hides within 2 m of the front wall; Q75: game-core palette is Rumble Box's (fixed fighter colours by part, four box stages, pale part-tinted debris, cyan ring, green health, red signal), game-core scheme.rs deleted (the hero keeps its own schemes in site/hero.js), flat shader checkers floor and walls and lights softer, outlines 2 px / creases 1 px, `?stage=N` previews a box's look.
+Next: David plays rc-3 (Q67). On sign-off: PR look-flat into main, merge, deploy rc-2; then the playtest (#29).
 Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13). Roster question: heavies in box 1 vs Q26.
-Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1 (the new CI apt step and render-test step are unrun).
-Verified: rc-3 from 2a45c4e: harness 14 passed (incl. shaders.spec.js), 2 skipped. The cold-target dlltool failure did not reproduce (cold absolute and relative targets built every native dep). env-retro: all hooks pass with no CARGO_TARGET_DIR set; shaders.spec.js passes on the real build and fails (1 link) with an unwarmed UV-less star; frametime on the real build max 36.5 ms, p99 12.2 ms; trace-shaders 7 links, one ~3 s stall at load. rc-3 from 946f697: harness 13 passed, 2 skipped.
+Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1.
+Verified: see the look-flat commits and the rc-3 deploy's harness result.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**

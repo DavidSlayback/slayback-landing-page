@@ -12,7 +12,7 @@
 //   FRAMES  frame-exact: frames at 30 fps (default 150)     SLOW, SECONDS  slow-motion mode (SECONDS default 6)
 //   CROP    w:h:x:y of the 960x540 capture to keep (e.g. frame the game's box)   outDir  default ../../site/play/watch
 //   The game clip (its camera frames the whole box, so no crop):
-//                  SLOW=0.2 PAGE='/play/?demo=1&slow=0.2&palette=netrunner' node record-clip.mjs
+//                  SLOW=0.2 PAGE='/play/?demo=1&slow=0.2' node record-clip.mjs
 import { chromium } from '@playwright/test';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';

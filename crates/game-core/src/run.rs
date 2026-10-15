@@ -14,8 +14,6 @@ use crate::enemy::Kind;
 pub const TIMEOUT_PENALTY: f32 = 25.0;
 /// Fraction of max health restored on escaping a box.
 pub const REFILL: f32 = 0.3;
-/// Colour schemes the boxes rotate through (decision Q31: starting from the site's scheme).
-pub const SCHEMES: usize = 3;
 /// Seconds over which a box's crowd rises from its starting [`BoxSpec::crowd`] to its [`BoxSpec::peak`].
 pub const RAMP: f32 = 40.0;
 
@@ -35,8 +33,8 @@ pub struct BoxSpec {
     pub interval: f32,
     /// How many doors one call opens at most (each warns, then lets one enemy in).
     pub burst: usize,
-    /// Offset from the starting colour scheme.
-    pub scheme: usize,
+    /// Which look the box wears (`palette::stage`): Rumble Box's, in its order (Q75).
+    pub stage: usize,
     /// Shares of entering enemies that are thugs and ninjas (the rest are fodder).
     pub thugs: f32,
     pub ninjas: f32,
@@ -58,7 +56,7 @@ pub fn box_spec(number: usize) -> BoxSpec {
         peak: (7 + n).min(10),
         interval: (1.0 - 0.1 * n as f32).max(0.6),
         burst: if n < 2 { 2 } else { 3 },
-        scheme: n % SCHEMES,
+        stage: n,
         // Thugs from box 2 (decision Q26 roster; "thugs from box 2" in the difficulty notes).
         thugs: if n == 0 { 0.0 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
         // Ninjas from box 3.
@@ -163,19 +161,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_box_is_taller_faster_and_busier_and_rotates_the_scheme() {
+    fn each_box_is_taller_faster_and_busier_and_takes_the_next_stage() {
         for n in 1..5 {
             let (a, b) = (box_spec(n), box_spec(n + 1));
             assert!(b.rim > a.rim, "box {} taller", n + 1);
             assert!(b.timer < a.timer, "box {} shorter timer", n + 1);
             assert!(b.interval < a.interval, "box {} calls at the doors more often", n + 1);
             assert!(b.crowd >= a.crowd && b.burst >= a.burst, "box {} no quieter", n + 1);
-            assert_eq!(b.scheme, (a.scheme + 1) % SCHEMES);
+            assert_eq!(b.stage, a.stage + 1);
         }
         for n in 1..4 {
             assert!(box_spec(n + 1).peak > box_spec(n).peak, "box {} more enemies at its peak", n + 1);
         }
-        assert_eq!(box_spec(1).scheme, 0, "the first box uses the site's scheme");
+        assert_eq!(box_spec(1).stage, 0, "the first box is Rumble Box's first");
     }
 
     #[test]
