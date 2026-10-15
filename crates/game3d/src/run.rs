@@ -158,17 +158,14 @@ fn restart(mut run: ResMut<RunState>, mut reset: BoxReset) {
     reset.apply(run.0.spec);
 }
 
-/// Each box sets the crowd at the doors, and is logged: the browser harness's scripted run waits for "box 2 started".
+/// Each box sets how often the doors are called (the crowd itself comes from `RunState`), and is logged: the browser
+/// harness's scripted run waits for "box 2 started".
 fn announce(mut started: MessageReader<BoxStarted>, mut waves: ResMut<Waves>) {
     for BoxStarted(spec) in started.read() {
         info!(
-            "box {} started (rim {:.2} m, {} s, crowd {})",
-            spec.number,
-            game_core::run::rim_metres(spec),
-            spec.timer,
-            spec.crowd
+            "box {} started (rim {:.2} m, {} s, crowd {} to {}, doors every {:.1} s, {} at once)",
+            spec.number, spec.rim, spec.timer, spec.crowd, spec.peak, spec.interval, spec.burst
         );
-        waves.crowd = spec.crowd;
-        waves.timer.reset();
+        waves.timer = Timer::from_seconds(spec.interval, TimerMode::Repeating);
     }
 }

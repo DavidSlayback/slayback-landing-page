@@ -24,10 +24,16 @@ else
   SKIP_GAME=1 bash scripts/build.sh
   harness_env=()
 fi
-(
+harness() (
   cd tests/e2e
   [ -d node_modules ] || npm ci --silent
   # A port of its own, so the harness can't reuse some other server's build.
   env DIST=../../dist PORT=4179 "${harness_env[@]}" npx playwright test --reporter=line
 )
+# One retry: under heavy machine load the scripted climb has timed out (a 36 s run took 2.6 min) on a build that then
+# passed twice. A real failure fails both runs.
+if ! harness; then
+  echo "harness failed; retrying once in case that was machine load" >&2
+  harness
+fi
 npx --yes wrangler@4 pages deploy dist --project-name=slayback --branch="$branch" --commit-dirty=true

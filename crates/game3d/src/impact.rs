@@ -13,13 +13,13 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
 use game_core::impact::{BLAST_BURST, burst_size, pop, squash};
-use game_core::plane::UNITS_PER_METRE;
 
 use crate::bomb::Exploded;
-use crate::camera;
+use crate::camera::{self, Warm};
 use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
 use crate::fighter::{Hit, Team};
-use crate::look::{Palette, srgb};
+use crate::look::Palette;
+use crate::paint::{Paints, Role, colour};
 use crate::score::Scored;
 
 /// Shake at full trauma, metres the camera moves across the view.
@@ -53,7 +53,6 @@ struct BurstKit {
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load)
-        .add_systems(Update, repaint.run_if(resource_changed::<Palette>))
         .add_systems(Update, ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain())
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
@@ -69,37 +68,45 @@ fn star(points: usize, inner: f32) -> Mesh {
     let n = positions.len() as u32;
     let indices: Vec<u32> = (1..n).flat_map(|i| [0, i, if i + 1 < n { i + 1 } else { 1 }]).collect();
     let normals = vec![[0.0, 0.0, 1.0]; positions.len()];
+    // UVs it doesn't need, so it has the same vertex layout as Bevy's shapes and shares their shader: a mesh without
+    // them made its own variant, which ANGLE on D3D11 spent ~3.4 s linking (Q72).
+    let uvs: Vec<[f32; 2]> = positions.iter().map(|p| [p[0] * 0.5 + 0.5, p[1] * 0.5 + 0.5]).collect();
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
         .with_inserted_indices(Indices::U32(indices))
 }
 
 fn load(
     mut commands: Commands,
     palette: Res<Palette>,
+    mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut mats: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Unlit, so they read at full strength with no bloom (research section 7).
-    let flat = |c: Color| StandardMaterial { base_color: c, unlit: true, cull_mode: None, ..default() };
-    commands.insert_resource(BurstKit {
+    // Unlit, so they read at full strength with no bloom (research section 7); the outer star in the signal paint.
+    let core = StandardMaterial { base_color: Color::srgb(1.0, 0.97, 0.85), unlit: true, cull_mode: None, ..default() };
+    let kit = BurstKit {
         star: meshes.add(star(8, 0.42)),
-        outer: mats.add(flat(signal(&palette))),
-        core: mats.add(flat(Color::srgb(1.0, 0.97, 0.85))),
-    });
-}
-
-/// The bursts' and popups' colour: the palette's signal accent.
-fn signal(palette: &Palette) -> Color {
-    srgb(game_core::palette::signal(palette.scheme))
-}
-
-/// Recolours the bursts when a box changes the scheme.
-fn repaint(palette: Res<Palette>, kit: Res<BurstKit>, mut mats: ResMut<Assets<StandardMaterial>>) {
-    if let Some(mut m) = mats.get_mut(&kit.outer) {
-        m.base_color = signal(&palette);
+        outer: paints.get(Role::Signal, &palette, &mut mats),
+        core: mats.add(core),
+    };
+    // Built while the page loads, not on the first hit (`camera::Warm`): the burst's stars, and the popup's text at
+    // every size a streak gives it.
+    for mat in [&kit.outer, &kit.core] {
+        commands.spawn((Warm, Mesh3d(kit.star.clone()), MeshMaterial3d(mat.clone())));
     }
+    for streak in 0..=5 {
+        commands.spawn((
+            Warm,
+            Text::new("+0123456789 x"),
+            TextFont::from_font_size(22.0 + 3.0 * streak as f32),
+            TextColor(Color::NONE),
+            Node { position_type: PositionType::Absolute, ..default() },
+        ));
+    }
+    commands.insert_resource(kit);
 }
 
 /// Moves the camera off its framing by the shake, across and up the view, after `camera::fit` has placed it.
@@ -127,17 +134,20 @@ fn spawn_bursts(
     mut blasts: MessageReader<Exploded>,
     mut seed: Local<u32>,
     mut thin: Local<Thin>,
+    cameras: Query<&Transform, With<Camera3d>>,
 ) {
-    let toward_camera = camera::orientation() * Vec3::Z;
+    // Bursts face the camera as it is when they go off; they're gone before it has turned far.
+    let facing = cameras.iter().next().map_or(Quat::IDENTITY, |t| t.rotation);
+    let toward_camera = facing * Vec3::Z;
     let share = burst_share(&comfort, &quality);
     // A blast bursts biggest of all, centred on the bomb.
     let blows = hits.read().filter(|h| h.finisher || thin.keep(share)).map(|h| (h.at, burst_size(h.mv, h.finisher)));
     for (at, size) in blows.chain(blasts.read().map(|b| (b.at, BLAST_BURST))) {
         *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let turn = camera::orientation() * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
+        let turn = facing * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
         commands
             .spawn((
-                Burst { life: BURST_LIFE, size: size / UNITS_PER_METRE },
+                Burst { life: BURST_LIFE, size },
                 Mesh3d(kit.star.clone()),
                 MeshMaterial3d(kit.outer.clone()),
                 Transform::from_translation(at + toward_camera * BURST_LIFT).with_rotation(turn).with_scale(Vec3::ZERO),
@@ -170,7 +180,7 @@ fn ease_squash(
     mut commands: Commands,
     real: Res<Time<Real>>,
     mut fighters: Query<(Entity, &mut Squash, &Children), With<Team>>,
-    mut rigs: Query<&mut Transform, Or<(With<crate::figure::Rig>, With<crate::look::Rig>)>>,
+    mut rigs: Query<&mut Transform, With<crate::figure::Rig>>,
 ) {
     for (e, mut s, children) in &mut fighters {
         s.0 = (s.0 - real.delta_secs()).max(0.0);
@@ -193,7 +203,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Popup { life: POPUP_LIFE, at: s.at + Vec3::Y * 1.0 },
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
-            TextColor(signal(&palette)),
+            TextColor(colour(Role::Signal, &palette)),
             TextShadow::default(),
             Node { position_type: PositionType::Absolute, ..default() },
         ));

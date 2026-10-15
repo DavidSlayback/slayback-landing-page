@@ -5,7 +5,7 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::run::{BoxSpec, box_spec, rim_metres};
+use game_core::run::{BoxSpec, box_spec};
 
 use crate::run::BoxStarted;
 
@@ -36,9 +36,9 @@ impl Default for Arena {
 }
 
 impl Arena {
-    /// The box for `spec`: the same floor every time, and its rim from the run's rules (`game_core::run::rim_metres`).
+    /// The box for `spec`: the same floor every time, and its rim from the run's rules (`game_core::run::BoxSpec::rim`).
     pub fn for_box(spec: &BoxSpec) -> Self {
-        Self { floor: FLOOR, rim: rim_metres(spec) }
+        Self { floor: FLOOR, rim: spec.rim }
     }
 
     /// Half the outer footprint (floor plus walls), metres.

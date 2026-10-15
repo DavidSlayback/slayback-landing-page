@@ -5,18 +5,18 @@
 //! Plane vectors and angles as in [`crate::plane`]; distances in metres.
 
 use crate::combat::Move;
-use crate::plane::{UNITS_PER_METRE, wrap};
+use crate::plane::wrap;
 
 /// Half the cone's opening angle, radians (50°: a 100° wedge in front).
 pub const HALF_ANGLE: f32 = 50.0 * std::f32::consts::PI / 180.0;
 /// How far above or below the attacker's centre a target's centre may be and still be struck, metres: about half a
 /// fighter, so a blow doesn't reach someone standing on a pile above.
 pub const HEIGHT_BAND: f32 = 0.9;
-/// Knockback in 3D: the 2.5D launch (world units/s) scaled to the 3D game's smaller box and gentler gravity. Across the
-/// floor a little under the run speeds' ratio (a punch shoves about a metre); upward so a kick's hop lasts about as
-/// long as in 2.5D.
-const ACROSS: f32 = 0.35 / UNITS_PER_METRE;
-const UP: f32 = 0.4 / UNITS_PER_METRE;
+/// The 3D game's scale on a knockback (`combat::MoveSpec::knockback`, m/s), for its smaller box and gentler gravity:
+/// across the floor a little under the run speeds' ratio (a punch shoves about a metre), and upward so a kick's hop
+/// lasts about as long as it did in the side view.
+pub const ACROSS: f32 = 0.35;
+pub const UP: f32 = 0.4;
 
 /// A swing's reach: a sector of the floor around `apex`, opening toward `yaw`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,10 +27,10 @@ pub struct Cone {
 }
 
 impl Cone {
-    /// The cone of `mv` thrown by an attacker of `radius` at `apex` facing `yaw`: the move's 2.5D reach past the body's
-    /// edge, in metres.
+    /// The cone of `mv` thrown by an attacker of `radius` at `apex` facing `yaw`: the move's reach past the body's
+    /// edge.
     pub fn of(mv: Move, apex: [f32; 2], yaw: f32, radius: f32) -> Cone {
-        Cone { apex, yaw, reach: radius + mv.spec().reach / UNITS_PER_METRE }
+        Cone { apex, yaw, reach: radius + mv.spec().reach }
     }
 
     /// The bearing of `p` from the apex relative to the cone's axis (-π..=π) and its distance.
@@ -72,8 +72,8 @@ pub fn launch(mv: Move, yaw: f32) -> ([f32; 2], f32) {
     shove(mv.spec().knockback, yaw)
 }
 
-/// Any 2.5D knockback (across and up, world units/s, as in [`crate::combat::MoveSpec::knockback`]) as a 3D launch
-/// along `yaw`, scaled as [`launch`] scales a blow's.
+/// Any knockback (across and up, m/s, as in [`crate::combat::MoveSpec::knockback`]) as a launch along `yaw`, scaled
+/// by [`ACROSS`] and [`UP`] as [`launch`] scales a blow's.
 pub fn shove(knockback: (f32, f32), yaw: f32) -> ([f32; 2], f32) {
     let k = knockback.0 * ACROSS;
     ([yaw.cos() * k, yaw.sin() * k], knockback.1 * UP)
@@ -93,10 +93,11 @@ mod tests {
     }
 
     #[test]
-    fn a_punch_reaches_about_a_metre_past_the_body_and_a_kick_further() {
+    fn a_punch_reaches_about_two_metres_past_the_body_and_a_kick_further() {
         let punch = Cone::of(Move::Punch, [0.0, 0.0], 0.0, R);
         let kick = Cone::of(Move::Kick, [0.0, 0.0], 0.0, R);
-        assert!((1.2..1.6).contains(&punch.reach), "punch {}", punch.reach);
+        // Q70 and Q73 lengthened it from about a metre.
+        assert!((2.0..2.4).contains(&punch.reach), "punch {}", punch.reach);
         assert!(kick.reach > punch.reach);
     }
 

@@ -1,6 +1,5 @@
-//! Attacks, hits, health and hit-stop: the rules of a single exchange of blows.
-//!
-//! Coordinates are world units with +y up (Bevy's convention); `facing` is +1 (right) or -1 (left).
+//! Attacks, hits, health and hit-stop: the rules of a single exchange of blows. Lengths are metres and speeds m/s,
+//! with +y up.
 
 /// An attack the player or an enemy can throw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +12,8 @@ pub enum Move {
     Smash,
     /// The ninja's quick cut.
     Slash,
+    /// The fodder's punch: the player's before Q70 lengthened it.
+    Jab,
 }
 
 /// Timing (seconds), reach and effect of a move.
@@ -21,13 +22,12 @@ pub struct MoveSpec {
     pub startup: f32,
     pub active: f32,
     pub recovery: f32,
-    /// How far the hitbox extends past the attacker's edge.
+    /// How far the blow reaches past the attacker's edge, metres.
     pub reach: f32,
-    pub height: f32,
-    /// Hitbox centre relative to the attacker's centre (punches high, kicks low).
+    /// Where the blow lands, metres above the attacker's centre (punches high, kicks low).
     pub offset_y: f32,
     pub damage: f32,
-    /// Launch velocity given to the target, before applying `facing` to x.
+    /// Launch given to the target, away and up, m/s: the side-view game's, which `aim::launch` scales for the floor.
     pub knockback: (f32, f32),
     /// How long the target loses control.
     pub hitstun: f32,
@@ -43,24 +43,24 @@ impl Move {
                 startup: 0.06,
                 active: 0.08,
                 recovery: 0.14,
-                reach: 34.0,
-                height: 24.0,
-                offset_y: 10.0,
+                // Q70, Q73: +70% over the original for more range (the fodder's `Jab` keeps the old reach).
+                reach: 1.8,
+                offset_y: 0.3125,
                 damage: 8.0,
-                knockback: (520.0, 260.0),
+                knockback: (16.25, 8.125),
                 hitstun: 0.25,
                 hitstop: 0.05,
             },
+            Move::Jab => MoveSpec { reach: 1.0625, ..Move::Punch.spec() },
             // Slow and far: launches bodies across the box.
             Move::Kick => MoveSpec {
                 startup: 0.12,
                 active: 0.10,
                 recovery: 0.24,
-                reach: 46.0,
-                height: 22.0,
-                offset_y: -14.0,
+                reach: 2.4, // Q70: +35% for more range
+                offset_y: -0.4375,
                 damage: 14.0,
-                knockback: (900.0, 420.0),
+                knockback: (28.125, 13.125),
                 hitstun: 0.40,
                 hitstop: 0.09,
             },
@@ -69,11 +69,10 @@ impl Move {
                 startup: 0.0,
                 active: 0.14,
                 recovery: 0.22,
-                reach: 30.0,
-                height: 30.0,
-                offset_y: -6.0,
+                reach: 1.55, // Q70: +35% for more range
+                offset_y: -0.1875,
                 damage: 12.0,
-                knockback: (1000.0, 360.0),
+                knockback: (31.25, 11.25),
                 hitstun: 0.45,
                 hitstop: 0.08,
             },
@@ -82,11 +81,10 @@ impl Move {
                 startup: 0.1,
                 active: 0.12,
                 recovery: 0.4,
-                reach: 44.0,
-                height: 44.0,
-                offset_y: 16.0,
+                reach: 1.375,
+                offset_y: 0.5,
                 damage: 22.0,
-                knockback: (750.0, 480.0),
+                knockback: (23.4375, 15.0),
                 hitstun: 0.5,
                 hitstop: 0.1,
             },
@@ -94,11 +92,10 @@ impl Move {
                 startup: 0.05,
                 active: 0.08,
                 recovery: 0.2,
-                reach: 30.0,
-                height: 26.0,
-                offset_y: 6.0,
+                reach: 0.9375,
+                offset_y: 0.1875,
                 damage: 7.0,
-                knockback: (450.0, 200.0),
+                knockback: (14.0625, 6.25),
                 hitstun: 0.25,
                 hitstop: 0.05,
             },
@@ -169,33 +166,6 @@ impl Swing {
     }
 }
 
-/// Axis-aligned box in world space.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Aabb {
-    pub min: (f32, f32),
-    pub max: (f32, f32),
-}
-
-impl Aabb {
-    /// A box of half-size `half` around `centre`.
-    pub fn around(centre: (f32, f32), half: (f32, f32)) -> Aabb {
-        Aabb { min: (centre.0 - half.0, centre.1 - half.1), max: (centre.0 + half.0, centre.1 + half.1) }
-    }
-
-    pub fn overlaps(&self, other: &Aabb) -> bool {
-        self.min.0 < other.max.0 && self.max.0 > other.min.0 && self.min.1 < other.max.1 && self.max.1 > other.min.1
-    }
-}
-
-/// The hitbox of `mv` for an attacker centred at `pos` with half-size `half`, facing `facing`.
-pub fn hitbox(mv: Move, pos: (f32, f32), half: (f32, f32), facing: f32) -> Aabb {
-    let s = mv.spec();
-    let edge = pos.0 + facing * half.0;
-    let tip = edge + facing * s.reach;
-    let y = pos.1 + s.offset_y;
-    Aabb { min: (edge.min(tip), y - s.height / 2.0), max: (edge.max(tip), y + s.height / 2.0) }
-}
-
 /// Freeze for a finishing blow: longer than any move's own, so a kill always lands as a beat.
 pub const FINISHER_HITSTOP: f32 = 0.16;
 
@@ -203,12 +173,6 @@ pub const FINISHER_HITSTOP: f32 = 0.16;
 pub fn hitstop(mv: Move, finished: bool) -> f32 {
     let own = mv.spec().hitstop;
     if finished { own.max(FINISHER_HITSTOP) } else { own }
-}
-
-/// Launch velocity for a target hit by `mv` from an attacker facing `facing`.
-pub fn knockback(mv: Move, facing: f32) -> (f32, f32) {
-    let (x, y) = mv.spec().knockback;
-    (x * facing, y)
 }
 
 /// What a hit did to its target.
@@ -279,11 +243,9 @@ impl HitStop {
 mod tests {
     use super::*;
 
-    const HALF: (f32, f32) = (14.0, 28.0);
-
     #[test]
     fn a_finishing_blow_freezes_longer_than_any_ordinary_hit() {
-        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash] {
+        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash, Move::Jab] {
             assert_eq!(hitstop(mv, false), mv.spec().hitstop);
             assert!(FINISHER_HITSTOP > mv.spec().hitstop, "{mv:?} must not out-freeze a kill");
             assert_eq!(hitstop(mv, true), FINISHER_HITSTOP);
@@ -347,28 +309,6 @@ mod tests {
         assert!(swing.is_active());
         assert!(swing.advance(0.1) && swing.is_active());
         assert!(Move::DropKick.spec().knockback.0 > Move::Kick.spec().knockback.0, "the hardest launch");
-    }
-
-    #[test]
-    fn hitboxes_point_the_way_the_attacker_faces() {
-        let front = Aabb::around((40.0, 0.0), HALF);
-        let behind = Aabb::around((-40.0, 0.0), HALF);
-        let right = hitbox(Move::Punch, (0.0, 0.0), HALF, 1.0);
-        assert!(right.overlaps(&front) && !right.overlaps(&behind));
-        let left = hitbox(Move::Punch, (0.0, 0.0), HALF, -1.0);
-        assert!(left.overlaps(&behind) && !left.overlaps(&front));
-    }
-
-    #[test]
-    fn a_punch_does_not_reach_across_the_arena() {
-        let far = Aabb::around((200.0, 0.0), HALF);
-        assert!(!hitbox(Move::Punch, (0.0, 0.0), HALF, 1.0).overlaps(&far));
-    }
-
-    #[test]
-    fn knockback_launches_away_from_the_attacker_and_upward() {
-        let (x, y) = knockback(Move::Kick, -1.0);
-        assert!(x < 0.0 && y > 0.0);
     }
 
     #[test]

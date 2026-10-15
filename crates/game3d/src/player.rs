@@ -15,7 +15,7 @@ use game_core::aim::{Cone, level};
 use game_core::climb::{MAX_STEP, walkable};
 use game_core::combat::Move;
 use game_core::grab::Held;
-use game_core::grab::flat::throw_heading;
+use game_core::grab::throw_heading;
 use game_core::plane::{self, Dash, run_velocity};
 
 use crate::enemy::Brain;

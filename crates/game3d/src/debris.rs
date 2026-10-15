@@ -26,8 +26,11 @@ pub struct Piece {
 }
 
 /// How hard a burst throws pieces out from the body and up, m/s, and how much of the body's own velocity they keep.
-const BURST_OUT: f32 = 2.4;
-const BURST_UP: f32 = 2.8;
+/// Rumble Box blows a figure apart, its parts flying high: 5 m/s up rises ~0.85 m against 15 m/s² of gravity. They
+/// fly about twice as long as they used to, so they go out about half as fast and land about as spread as before:
+/// how wide a burst spreads decides how fast piles grow toward the rim (the 25-kill heap still tops 1.5 m).
+const BURST_OUT: f32 = 1.3;
+const BURST_UP: f32 = 5.0;
 const CARRY: f32 = 0.3;
 
 pub fn plugin(app: &mut App) {
@@ -52,7 +55,7 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
         Restitution::new(0.05),
         // So the ball head stops rolling and settles like the cubes, and bursts stay near where the figure fell.
         LinearDamping(0.4),
-        AngularDamping(2.0),
+        AngularDamping(3.5),
         Transform::from_translation(at).with_rotation(rotation),
     )
 }

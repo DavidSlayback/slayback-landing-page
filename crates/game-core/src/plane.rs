@@ -2,7 +2,7 @@
 //! last move direction (decision Q49).
 //!
 //! Plane vectors are `[x, y]` with y pointing away from the camera; angles are radians, counter-clockwise from +x.
-//! Distances are metres (the 2.5D game's 32 world units).
+//! Distances are metres.
 
 use std::f32::consts::{PI, TAU};
 
@@ -12,11 +12,13 @@ pub const RUN_SPEED: f32 = 6.0;
 pub const RUN_ACCEL: f32 = 60.0;
 /// How fast the facing turns, rad/s: a full about-turn takes about 0.2 s.
 pub const TURN_RATE: f32 = 16.0;
-/// The 2.5D game's world units per metre (its physics length unit), for rules shared with it.
-pub const UNITS_PER_METRE: f32 = 32.0;
-/// Dash speed, m/s: the 2.5D dash's 2.6 times the run speed. It lasts `movement::DASH_TIME` (~2.6 m, about four
-/// fighters across) and is spaced by `movement::DASH_COOLDOWN`.
+/// Dash speed, m/s: the 2.5D dash's 2.6 times the run speed. It lasts [`DASH_TIME`] (~2.6 m, about four fighters
+/// across) and is spaced by [`DASH_COOLDOWN`].
 pub const DASH_SPEED: f32 = 16.0;
+/// How long a dash lasts, seconds.
+pub const DASH_TIME: f32 = 0.16;
+/// Time from the end of one dash until the next may start, seconds.
+pub const DASH_COOLDOWN: f32 = 0.5;
 
 /// Moves `from` toward `to` by at most `step`, without overshooting.
 pub fn approach(from: [f32; 2], to: [f32; 2], step: f32) -> [f32; 2] {
@@ -95,7 +97,6 @@ impl Dash {
     /// Advances one frame and returns the new floor velocity. `dir` is the move direction (unit or zero), `dash`
     /// whether the dash button went down this frame, and `forward` the facing direction.
     pub fn step(&mut self, velocity: [f32; 2], dir: [f32; 2], dash: bool, forward: [f32; 2], dt: f32) -> [f32; 2] {
-        use crate::movement::{DASH_COOLDOWN, DASH_TIME};
         self.cooldown = (self.cooldown - dt).max(0.0);
         if dash && !self.dashing() && self.cooldown == 0.0 {
             self.left = DASH_TIME;
@@ -186,7 +187,6 @@ mod tests {
 
     #[test]
     fn a_dash_covers_its_fixed_distance_along_the_held_or_facing_direction_then_cools_down() {
-        use crate::movement::{DASH_COOLDOWN, DASH_TIME};
         let frames = (DASH_TIME / DT).ceil() as usize;
         let mut d = Dash::default();
         let (x, v) = dash(&mut d, [0.0, 0.0], frames);

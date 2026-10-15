@@ -12,7 +12,7 @@ use crate::scheme::Scheme;
 pub type Rgb = [f32; 3];
 
 /// Who wears a figure's colours.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Fighter {
     Player,
     Enemy(Kind),

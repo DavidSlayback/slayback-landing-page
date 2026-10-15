@@ -7,6 +7,7 @@ struct EdgeOutline {
     width: f32,
     crease: f32,
     silhouette: f32,
+    crease_width: f32,
 }
 
 @group(0) @binding(0) var screen: texture_2d<f32>;
@@ -38,8 +39,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let uv = in.position.xy * px;
     let col = textureLoad(screen, vec2<i32>(in.position.xy), 0);
     let c = d(uv);
-    // Creases 1 px out (lines ~2 px); only the stronger silhouette edges `width` px out (lines ~2 x width).
-    let thin = smoothstep(o.crease, 2.0 * o.crease, rel_lap(uv, c, px, 1.0));
+    // Creases `crease_width` px out; only the stronger silhouette edges `width` px out (lines ~2 x width).
+    let thin = smoothstep(o.crease, 2.0 * o.crease, rel_lap(uv, c, px, o.crease_width));
     let thick = smoothstep(o.silhouette, 2.0 * o.silhouette, rel_lap(uv, c, px, o.width));
     return vec4(mix(col.rgb, o.color.rgb, max(thin, thick) * o.color.a), col.a);
 }

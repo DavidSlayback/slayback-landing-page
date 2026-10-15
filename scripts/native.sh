@@ -9,6 +9,7 @@
 # Nothing is installed globally; it needs only `rustup component add llvm-tools`. Wasm and CI builds are unaffected.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. scripts/target-dir.sh
 export PATH="$HOME/.cargo/bin:$PATH"
 
 case "$(rustc -vV | sed -n 's/^host: //p')" in

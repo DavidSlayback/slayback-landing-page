@@ -1,66 +1,83 @@
-//! The camera: fixed, at a 3/4 angle, framing the whole box (decision Q48). A following or zooming camera waits until
-//! boxes outgrow one screen.
+//! The camera, as Rumble Box's (decision Q65, `docs/research/rumble-box-reference.md`): yawed off the box's axis so a
+//! back corner is in view, swinging round as the player crosses the box, and dropping a little closer when enemies
+//! close in.
+//! Each box opens with it down among the debris, swooping up and out.
 //!
-//! [`frame`] is exact: with the view direction fixed, each edge of the view is a plane through the camera, so every
-//! corner of the box gives one linear limit on where the camera can sit. The tightest position meets the two
-//! binding limits of one axis (left and right, or top and bottom) and centres the other.
+//! [`targets`] says where the camera wants to be and [`place`] puts it there; both are plain functions, so tests
+//! check them headless. The rig eases toward its targets and writes its yaw to `input::ViewYaw`, which turns the
+//! move keys to match the view.
 
 use bevy::prelude::*;
 
 use crate::arena::Arena;
 
-/// How far the view looks down from the horizontal: a 3/4 view that still shows the back wall's face.
-pub const PITCH: f32 = 50.0;
-/// Vertical field of view, degrees: narrow, so the box's near and far ends stay close in scale.
-pub const FOV: f32 = 34.0;
-/// Fraction of the screen the box may fill on its binding axis.
-const FILL: f32 = 0.94;
-/// Headroom above the rim, metres: a fighter standing on the rim stays in view.
-const HEADROOM: f32 = 1.0;
+/// Vertical field of view, degrees.
+pub const FOV: f32 = 40.0;
+/// The yaw with the player in the middle of the box, and how far it swings either way as the player reaches a side
+/// wall, degrees. It swings away from the wall the player nears, so that wall stays behind the player rather than
+/// between the camera and the player.
+const YAW: f32 = 30.0;
+const SWING: f32 = 35.0;
+/// Pitch (down from the horizontal, degrees) and distance from the focus (metres): roaming, and fighting. The box
+/// stays filling the frame either way; a fight only drops and closes the view a little.
+const ROAM: (f32, f32) = (38.0, 12.0);
+const FIGHT: (f32, f32) = (30.0, 9.5);
+/// Where a box's swoop starts: down among the debris, close in.
+const SWOOP: (f32, f32) = (6.0, 3.0);
+/// The focus's height above the player's feet, metres: about the fighters' chests.
+const CHEST: f32 = 0.9;
+/// Enemies this close to the player (metres) pull the camera in; the focus leans this far toward their middle.
+const ENGAGE: f32 = 4.0;
+const LEAN: f32 = 0.3;
 
-/// The camera's fixed orientation.
-pub fn orientation() -> Quat {
-    Quat::from_rotation_x(-PITCH.to_radians())
+/// Where the camera wants to be.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Aim {
+    pub focus: Vec3,
+    /// Radians.
+    pub yaw: f32,
+    pub pitch: f32,
+    pub distance: f32,
 }
 
-/// Corners of everything the camera must show: the box's outer footprint, from the floor to above the rim.
-pub fn corners(arena: &Arena) -> [Vec3; 8] {
-    let h = arena.outer_half();
-    let top = arena.rim + HEADROOM;
-    let mut out = [Vec3::ZERO; 8];
-    for (i, c) in out.iter_mut().enumerate() {
-        let sx = if i & 1 == 0 { -1.0 } else { 1.0 };
-        let sz = if i & 2 == 0 { -1.0 } else { 1.0 };
-        *c = Vec3::new(sx * h.x, if i & 4 == 0 { 0.0 } else { top }, sz * h.y);
+/// The camera's aim for a player standing at `feet` with `foes` (positions) nearby, in `arena`.
+pub fn targets(arena: &Arena, feet: Vec3, foes: impl IntoIterator<Item = Vec3>) -> Aim {
+    let near: Vec<Vec3> = foes.into_iter().filter(|f| f.xz().distance(feet.xz()) < ENGAGE).collect();
+    let engaged = !near.is_empty();
+    let mut focus = feet + Vec3::Y * CHEST;
+    if engaged {
+        let middle = near.iter().sum::<Vec3>() / near.len() as f32;
+        focus += (middle - feet).with_y(0.0) * LEAN;
     }
-    out
+    let across = (feet.x / (arena.floor.x / 2.0)).clamp(-1.0, 1.0);
+    let (pitch, distance) = if engaged { FIGHT } else { ROAM };
+    Aim { focus, yaw: (YAW - SWING * across).to_radians(), pitch: pitch.to_radians(), distance }
 }
 
-/// Where the camera sits to frame `arena` in a viewport `aspect` (width over height) wide.
-pub fn frame(arena: &Arena, aspect: f32) -> Transform {
-    let rotation = orientation();
-    let (right, up, forward) = (rotation * Vec3::X, rotation * Vec3::Y, rotation * Vec3::NEG_Z);
-    let kv = (FOV.to_radians() / 2.0).tan() * FILL;
-    let kh = kv * aspect;
-    // In view coordinates (a, b, e) = (right, up, forward), point p is in view from camera (cr, cu, cf) when
-    // |a - cr| <= kh (e - cf) and |b - cu| <= kv (e - cf). Each side's binding corner bounds cr ∓ k cf.
-    let (mut r, mut l, mut u, mut d) = (f32::MIN, f32::MIN, f32::MIN, f32::MIN);
-    for p in corners(arena) {
-        let (a, b, e) = (p.dot(right), p.dot(up), p.dot(forward));
-        r = r.max(a - kh * e);
-        l = l.max(-a - kh * e);
-        u = u.max(b - kv * e);
-        d = d.max(-b - kv * e);
+/// The aim each box opens with: low and close, at the yaw it will settle on.
+pub fn swoop(aim: Aim) -> Aim {
+    Aim { pitch: SWOOP.0.to_radians(), distance: SWOOP.1, ..aim }
+}
+
+/// The camera for `aim`: `distance` back from the focus, looking down at it by `pitch`, round by `yaw`.
+pub fn place(aim: Aim) -> Transform {
+    let rotation = Quat::from_euler(EulerRot::YXZ, aim.yaw, -aim.pitch, 0.0);
+    Transform { translation: aim.focus + rotation * Vec3::Z * aim.distance, rotation, ..default() }
+}
+
+/// Eases `from` toward `to`, `rate` per second over `dt`.
+pub fn ease(from: Aim, to: Aim, dt: f32) -> Aim {
+    let k = |rate: f32| 1.0 - (-rate * dt).exp();
+    Aim {
+        focus: from.focus.lerp(to.focus, k(4.0)),
+        yaw: from.yaw + (to.yaw - from.yaw) * k(1.5),
+        pitch: from.pitch + (to.pitch - from.pitch) * k(2.0),
+        distance: from.distance + (to.distance - from.distance) * k(2.0),
     }
-    // Each axis's apex: where its two limits meet. The camera stands at whichever apex is further back.
-    let (cr, cf_h) = ((r - l) / 2.0, -(r + l) / (2.0 * kh));
-    let (cu, cf_v) = ((u - d) / 2.0, -(u + d) / (2.0 * kv));
-    let translation = right * cr + up * cu + forward * cf_h.min(cf_v);
-    Transform { translation, rotation, ..default() }
 }
 
 #[cfg(feature = "render")]
-pub use view::{fit, plugin};
+pub use view::{Warm, fit, plugin};
 
 #[cfg(feature = "render")]
 mod view {
@@ -68,33 +85,94 @@ mod view {
     use bevy::prelude::*;
     use bevy::transform::TransformSystems;
 
-    use super::{FOV, frame};
+    use super::{Aim, FOV, ease, place, swoop, targets};
     use crate::arena::Arena;
+    use crate::enemy::Brain;
+    use crate::input::ViewYaw;
+    use crate::player::{HEIGHT, Player};
+    use crate::run::BoxStarted;
+
+    /// Something drawn once while the page loads, so its render pipeline is built then rather than mid-fight. On
+    /// WebGL, Bevy builds a pipeline the first time a new kind of material is drawn and blocks the frame while it does:
+    /// the first punch (burst, flash, popup) froze the game for 3.6 s. Modules that own such a material spawn one tiny
+    /// instance with this; it rides just in front of the camera for [`WARM_FRAMES`] frames, then goes.
+    #[derive(Component)]
+    pub struct Warm;
+
+    /// How many frames the warm-up instances are drawn.
+    const WARM_FRAMES: u32 = 4;
+
+    /// Where the camera is aiming now, easing toward [`targets`].
+    #[derive(Component)]
+    pub struct Rig(Aim);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(PostUpdate, fit.before(TransformSystems::Propagate));
+        app.add_systems(Startup, spawn)
+            .add_systems(PostStartup, hold_warm)
+            .add_systems(Update, drop_warm)
+            .add_systems(PostUpdate, fit.before(TransformSystems::Propagate));
     }
 
     fn spawn(mut commands: Commands) {
+        let aim = targets(&Arena::default(), Vec3::ZERO, []);
         commands.spawn((
             Camera3d::default(),
             Projection::Perspective(PerspectiveProjection { fov: FOV.to_radians(), ..default() }),
-            // ACES, as the 2.5D game: Bevy's default tonemapper needs the LUTs this build leaves out.
-            Tonemapping::AcesFitted,
-            Transform::default(),
+            // No tonemapping: ACES washed the fighters' vivid colours toward white (Q66).
+            Tonemapping::None,
+            Rig(swoop(aim)),
+            place(swoop(aim)),
         ));
     }
 
-    /// Keeps the framing right for the window's shape and the box's size.
-    pub fn fit(arena: Res<Arena>, mut cameras: Query<(&mut Transform, &Projection), With<Camera3d>>) {
-        for (mut tf, projection) in &mut cameras {
-            let aspect = match projection {
-                Projection::Perspective(p) => p.aspect_ratio,
-                _ => 16.0 / 9.0,
-            };
-            let want = frame(&arena, aspect);
-            if *tf != want {
-                *tf = want;
+    /// Puts every warm-up mesh just in front of the camera, tiny, so it is drawn (and its pipeline built) but not seen.
+    fn hold_warm(
+        mut commands: Commands,
+        cameras: Query<Entity, With<Camera3d>>,
+        warm: Query<Entity, (With<Warm>, With<Mesh3d>)>,
+    ) {
+        let Ok(camera) = cameras.single() else { return };
+        for e in &warm {
+            commands
+                .entity(e)
+                .insert((Transform::from_xyz(0.0, 0.0, -1.0).with_scale(Vec3::splat(1e-3)), ChildOf(camera)));
+        }
+    }
+
+    /// Removes the warm-up instances once they have been drawn a few times.
+    fn drop_warm(mut commands: Commands, mut frames: Local<u32>, warm: Query<Entity, With<Warm>>) {
+        *frames += 1;
+        if *frames == WARM_FRAMES {
+            for e in &warm {
+                commands.entity(e).despawn();
+            }
+            // The browser harness (shaders.spec.js) marks this moment: no shader may be linked after it.
+            info!("warm-up drawn");
+        }
+    }
+
+    /// Follows the player on real time (so it keeps moving through hit-stop), and turns the move keys with it.
+    #[allow(clippy::type_complexity)]
+    pub fn fit(
+        real: Res<Time<Real>>,
+        arena: Res<Arena>,
+        mut started: MessageReader<BoxStarted>,
+        mut view: ResMut<ViewYaw>,
+        // `Transform`, not `GlobalTransform`: fighters are top-level, and their transforms are this frame's
+        // interpolated ones, where `GlobalTransform` is still last frame's. Following it made the player wobble.
+        player: Query<&Transform, (With<Player>, Without<Camera3d>)>,
+        foes: Query<&Transform, (With<Brain>, Without<Camera3d>)>,
+        mut cameras: Query<(&mut Rig, &mut Transform), With<Camera3d>>,
+    ) {
+        let swooping = started.read().count() > 0;
+        // The player's transform is its capsule's centre.
+        let feet = player.single().map(|t| t.translation - Vec3::Y * HEIGHT / 2.0).unwrap_or(Vec3::ZERO);
+        let want = targets(&arena, feet, foes.iter().map(|t| t.translation));
+        for (mut rig, mut tf) in &mut cameras {
+            rig.0 = if swooping { swoop(want) } else { ease(rig.0, want, real.delta_secs()) };
+            *tf = place(rig.0);
+            if view.0 != rig.0.yaw {
+                view.0 = rig.0.yaw;
             }
         }
     }
@@ -103,49 +181,71 @@ mod view {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::to_floor;
+    use crate::plane;
 
-    const WIDE: f32 = 16.0 / 9.0;
-
-    /// A point's position on screen, -1..=1 on both axes, for the camera at `tf`.
-    fn ndc(tf: &Transform, aspect: f32, p: Vec3) -> Vec2 {
-        let local = tf.rotation.inverse() * (p - tf.translation);
-        let k = (FOV.to_radians() / 2.0).tan();
-        Vec2::new(local.x / (-local.z * k * aspect), local.y / (-local.z * k))
-    }
-
-    fn extent(arena: &Arena, aspect: f32) -> (Vec2, Vec2) {
-        let tf = frame(arena, aspect);
-        let pts = corners(arena).map(|p| ndc(&tf, aspect, p));
-        let lo = pts.iter().fold(Vec2::MAX, |m, p| m.min(*p));
-        let hi = pts.iter().fold(Vec2::MIN, |m, p| m.max(*p));
-        (lo, hi)
+    fn aim(yaw_deg: f32) -> Aim {
+        Aim { focus: Vec3::new(1.0, 0.9, -2.0), yaw: yaw_deg.to_radians(), pitch: 0.6, distance: 9.0 }
     }
 
     #[test]
-    fn the_whole_box_is_in_view_and_fills_its_binding_axis() {
-        for aspect in [WIDE, 4.0 / 3.0, 21.0 / 9.0, 1.0] {
-            let arena = Arena::default();
-            let (lo, hi) = extent(&arena, aspect);
-            assert!(lo.min_element() >= -FILL - 1e-3 && hi.max_element() <= FILL + 1e-3, "{aspect}: {lo} {hi}");
-            let touches = |v: f32| (v.abs() - FILL).abs() < 1e-3;
-            assert!(
-                (touches(lo.x) && touches(hi.x)) || (touches(lo.y) && touches(hi.y)),
-                "{aspect}: tight on one axis: {lo} {hi}"
-            );
-            assert!((lo.x + hi.x).abs() < 1e-3, "{aspect}: centred across: {lo} {hi}");
+    fn the_camera_looks_at_its_focus_from_its_distance() {
+        for yaw in [-40.0, 0.0, 30.0, 55.0] {
+            let a = aim(yaw);
+            let tf = place(a);
+            assert!((tf.translation.distance(a.focus) - a.distance).abs() < 1e-4);
+            let ahead = tf.translation + tf.forward() * a.distance;
+            assert!(ahead.distance(a.focus) < 1e-4, "{yaw}: looks at the focus");
         }
     }
 
     #[test]
-    fn on_a_widescreen_the_box_fills_most_of_the_width() {
-        let (lo, hi) = extent(&Arena::default(), WIDE);
-        assert!(hi.x - lo.x > 1.5, "a 3:2 box spans most of a 16:9 screen: {lo} {hi}");
+    fn up_on_the_keys_is_up_the_screen_at_any_yaw() {
+        for yaw in [-40.0, 0.0, 30.0, 55.0, 90.0] {
+            let tf = place(aim(yaw));
+            // Up the screen, laid flat on the floor.
+            let up = plane(tf.forward().with_y(0.0).normalize());
+            let right = plane(tf.right().with_y(0.0).normalize());
+            let (u, r) = (to_floor([0.0, 1.0], yaw.to_radians()), to_floor([1.0, 0.0], yaw.to_radians()));
+            assert!((u[0] - up[0]).abs() < 1e-4 && (u[1] - up[1]).abs() < 1e-4, "{yaw}: up {u:?} vs {up:?}");
+            assert!((r[0] - right[0]).abs() < 1e-4 && (r[1] - right[1]).abs() < 1e-4, "{yaw}: right {r:?}");
+        }
     }
 
     #[test]
-    fn the_camera_looks_down_at_the_box_from_in_front() {
-        let tf = frame(&Arena::default(), WIDE);
-        assert!(tf.translation.y > Arena::default().rim && tf.translation.z > 0.0, "{}", tf.translation);
-        assert!(tf.translation.x.abs() < 1e-3, "centred across: {}", tf.translation);
+    fn the_camera_swings_with_the_player_across_the_box() {
+        let arena = Arena::default();
+        let half = arena.floor.x / 2.0;
+        let yaw = |x: f32| targets(&arena, Vec3::new(x, 0.0, 0.0), []).yaw.to_degrees();
+        assert!((yaw(0.0) - YAW).abs() < 1e-3, "yawed off the axis in the middle");
+        assert!(yaw(-half) > yaw(0.0) && yaw(0.0) > yaw(half), "it swings as the player crosses");
+        assert!((yaw(half * 2.0) - yaw(half)).abs() < 1e-3, "and no further than the walls");
+        // Near a side wall, the camera stays on the box's side of it: the wall is behind the player.
+        for x in [-half, half] {
+            let a = targets(&arena, Vec3::new(x, 0.0, 0.0), []);
+            let eye = place(a).translation;
+            assert!(eye.x.signum() != x.signum() || eye.x.abs() < arena.floor.x / 2.0, "at {x}: camera at {eye}");
+        }
+    }
+
+    #[test]
+    fn enemies_close_by_pull_the_camera_in_low_and_lean_the_focus_toward_them() {
+        let arena = Arena::default();
+        let alone = targets(&arena, Vec3::ZERO, [Vec3::new(6.0, 0.0, 0.0)]);
+        let fight = targets(&arena, Vec3::ZERO, [Vec3::new(2.0, 0.0, 0.0)]);
+        assert!(fight.distance < alone.distance && fight.pitch < alone.pitch);
+        assert!(fight.focus.x > alone.focus.x, "leans toward the fight: {}", fight.focus);
+        assert_eq!(alone.focus, Vec3::Y * CHEST, "a far enemy doesn't pull");
+    }
+
+    #[test]
+    fn a_box_opens_low_and_close_then_eases_out_to_its_aim() {
+        let want = targets(&Arena::default(), Vec3::ZERO, []);
+        let mut now = swoop(want);
+        assert!(place(now).translation.y < 1.5, "starts down among the debris");
+        for _ in 0..(3.0 * 60.0) as usize {
+            now = ease(now, want, 1.0 / 60.0);
+        }
+        assert!((now.distance - want.distance).abs() < 0.1 && (now.pitch - want.pitch).abs() < 0.01, "{now:?}");
     }
 }

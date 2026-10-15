@@ -10,11 +10,24 @@ use game_core::controls::{Pad, Verbs, first_direction, keys_direction};
 /// This frame's actions.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
 pub struct Actions {
-    /// Move direction on the floor as a `game_core` plane vector (y away from the camera): one of eight unit
-    /// directions, or zero.
+    /// Move direction on the floor as a `game_core` plane vector: one of eight unit directions on the screen, turned
+    /// by [`ViewYaw`] onto the floor, or zero.
     pub dir: [f32; 2],
     /// Verbs just pressed this frame.
     pub verbs: Verbs,
+}
+
+/// Which way the camera looks across the floor (Q65): its yaw, radians, turning the view's "up the screen" from -z
+/// toward -x. The camera writes it; movement is read relative to it, so up on the keys or the stick is always up the
+/// screen. Headless scenarios leave it at zero, where screen up is -z.
+#[derive(Resource, Default, Clone, Copy, Debug, PartialEq)]
+pub struct ViewYaw(pub f32);
+
+/// A move direction read off the screen, turned onto the floor for a camera at `yaw` (both `game_core` plane
+/// vectors, y away from the camera).
+pub fn to_floor([x, y]: [f32; 2], yaw: f32) -> [f32; 2] {
+    let (s, c) = yaw.sin_cos();
+    [x * c - y * s, x * s + y * c]
 }
 
 /// Where actions are gathered; anything that fakes input runs before it.
@@ -28,7 +41,9 @@ pub const GRAB_KEY: KeyCode = KeyCode::KeyL;
 pub const BEGIN_KEYS: [KeyCode; 2] = [KeyCode::Enter, KeyCode::Space];
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Actions>().add_systems(PreUpdate, read.in_set(ReadActions).after(InputSystems));
+    app.init_resource::<Actions>()
+        .init_resource::<ViewYaw>()
+        .add_systems(PreUpdate, read.in_set(ReadActions).after(InputSystems));
 }
 
 /// One gamepad's state, as the shared mapping needs it. The d-pad is read as buttons (pressed or not), so it works
@@ -55,6 +70,7 @@ fn read(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Option<Res<ButtonInput<MouseButton>>>,
     pads: Query<&Gamepad>,
+    view: Res<ViewYaw>,
     mut actions: ResMut<Actions>,
 ) {
     let held = |a: KeyCode, b: KeyCode| keys.pressed(a) || keys.pressed(b);
@@ -79,5 +95,5 @@ fn read(
         dir = first_direction(dir, p.direction());
         verbs = verbs.or(p.verbs());
     }
-    *actions = Actions { dir, verbs };
+    *actions = Actions { dir: to_floor(dir, view.0), verbs };
 }

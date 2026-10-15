@@ -26,7 +26,10 @@ pub mod input;
 pub mod look;
 #[cfg(feature = "render")]
 pub mod outline;
+#[cfg(feature = "render")]
+pub mod paint;
 pub mod player;
+pub mod pose;
 pub mod run;
 pub mod score;
 #[cfg(feature = "render")]
@@ -44,21 +47,25 @@ pub const GRAVITY: f32 = 15.0;
 /// player, grabbing and throwing, enemies and their bomb-heads, their debris, the run, the score and best, the sound
 /// setting, and comfort (reduced motion, quality scaling).
 pub fn plugin(app: &mut App) {
-    app.add_plugins(PhysicsPlugins::default()).insert_resource(Gravity(Vec3::NEG_Y * GRAVITY)).add_plugins((
-        input::plugin,
-        comfort::plugin,
-        flow::plugin,
-        arena::plugin,
-        fighter::plugin,
-        player::plugin,
-        grab::plugin,
-        bomb::plugin,
-        enemy::plugin,
-        debris::plugin,
-        run::plugin,
-        score::plugin,
-        sound::plugin,
-    ));
+    // Every rigid body's transform is interpolated between physics steps (64 Hz), so fighters and tumbling debris
+    // move smoothly at any frame rate.
+    app.add_plugins(PhysicsPlugins::default().set(PhysicsInterpolationPlugin::interpolate_all()))
+        .insert_resource(Gravity(Vec3::NEG_Y * GRAVITY))
+        .add_plugins((
+            input::plugin,
+            comfort::plugin,
+            flow::plugin,
+            arena::plugin,
+            fighter::plugin,
+            player::plugin,
+            grab::plugin,
+            bomb::plugin,
+            enemy::plugin,
+            debris::plugin,
+            run::plugin,
+            score::plugin,
+            sound::plugin,
+        ));
 }
 
 /// A plane vector from `game_core` (`[x, y]`, y away from the camera) on the floor, as a world direction.

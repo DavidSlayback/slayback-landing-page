@@ -1,9 +1,9 @@
-//! The action mapping both games share (D11): which gamepad button does what, and how sticks, d-pads and keys turn
-//! into a move direction. Engine-free, so each game reads its devices its own way and maps them identically.
+//! The action mapping (D11): which gamepad button does what, and how sticks, d-pads and keys turn
+//! into a move direction. Engine-free, so the game reads its devices its own way and maps them through these rules.
 //!
 //! | Action | Keyboard | Mouse | Gamepad |
 //! |---|---|---|---|
-//! | Move | WASD, arrows (2.5D: A / D, left and right) | | left stick, d-pad |
+//! | Move | WASD, arrows | | left stick, d-pad |
 //! | Dash | Space, Shift | | A (south), right trigger |
 //! | Punch | J | left | X (west) |
 //! | Kick | K | right | Y (north) |
@@ -71,17 +71,6 @@ impl Pad {
         }
     }
 
-    /// The 2.5D game's run axis: the d-pad wins, else the stick past the deadzone; -1, 0 or 1.
-    pub fn axis(&self) -> f32 {
-        if self.dpad[0] != 0.0 {
-            self.dpad[0].signum()
-        } else if self.stick[0].abs() >= DEADZONE {
-            self.stick[0].signum()
-        } else {
-            0.0
-        }
-    }
-
     /// The 3D game's move direction: the d-pad wins, else the stick past the deadzone, snapped to eight ways.
     pub fn direction(&self) -> [f32; 2] {
         if self.dpad != [0.0, 0.0] {
@@ -129,9 +118,6 @@ mod tests {
 
     #[test]
     fn the_stick_has_a_deadzone_and_the_dpad_wins() {
-        assert_eq!(Pad { stick: [0.2, 0.0], ..Default::default() }.axis(), 0.0);
-        assert_eq!(Pad { stick: [-0.7, 0.0], ..Default::default() }.axis(), -1.0);
-        assert_eq!(Pad { stick: [-0.7, 0.0], dpad: [1.0, 0.0], ..Default::default() }.axis(), 1.0);
         assert_eq!(Pad { stick: [0.15, 0.2], ..Default::default() }.direction(), [0.0, 0.0]);
         assert_eq!(Pad { stick: [-0.7, 0.1], dpad: [0.0, 1.0], ..Default::default() }.direction(), [0.0, 1.0]);
     }

@@ -1,9 +1,10 @@
 //! Enemies enter through doors in the back and side walls (none in the front, Q58), which warn first; then they steer
-//! toward the player while keeping apart and off the walls (Q63), telegraph and strike.
+//! toward the player while keeping apart and off the walls (Q63), telegraph and strike. The box keeps its crowd topped
+//! up, calling at several doors at once (`game_core::run::BoxSpec`: crowd ramp, interval, burst), at Rumble Box's pace.
 //!
-//! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game, fed distances in its
-//! world units), steering from `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the
-//! box (`game_core::run::pick_kind`); this module turns them into entities, velocity, facing and swings. Fodder seek
+//! Decisions come from `game_core::enemy::Mind` (the same brains and timings as the 2.5D game), steering from
+//! `game_core::steer`, door timing from `game_core::doors` and the mix of kinds from the box
+//! (`game_core::run::pick_kind`); this module turns them into entities, velocity, facing and swings. Fodder seek
 //! and keep apart; thugs plough straight in, ignoring the crowd; a ninja the player faces circles round to its back.
 
 use avian3d::prelude::*;
@@ -12,8 +13,8 @@ use game_core::debris::solid::height;
 use game_core::doors::Door;
 use game_core::enemy::{Intent, Kind, Mind, NinjaPhase};
 use game_core::grab::Held;
-use game_core::plane::{RUN_ACCEL, RUN_SPEED, UNITS_PER_METRE, approach, heading};
-use game_core::run::pick_kind;
+use game_core::plane::{RUN_ACCEL, RUN_SPEED, approach, heading};
+use game_core::run::{box_spec, pick_kind};
 use game_core::steer::{circle, steer};
 
 use crate::arena::Arena;
@@ -59,8 +60,8 @@ impl WallDoor {
 #[derive(Resource)]
 pub struct Waves {
     pub enabled: bool,
-    /// Keep this many enemies in the box; ask a door for one more every `timer` while below it.
-    pub crowd: usize,
+    /// Each time it finishes, while the box holds fewer than its crowd (`Run::crowd`, counting enemies on their way in
+    /// through a door), call at up to the box's `burst` free doors. Each box sets it to its spec's `interval`.
     pub timer: Timer,
     /// The share of entries that are bomb-heads, overriding the box spec's (the demo's `bombs=1` makes it 1).
     pub bombs: Option<f32>,
@@ -68,7 +69,8 @@ pub struct Waves {
 
 impl Default for Waves {
     fn default() -> Self {
-        Self { enabled: true, crowd: 3, timer: Timer::from_seconds(2.0, TimerMode::Repeating), bombs: None }
+        let every = box_spec(1).interval;
+        Self { enabled: true, timer: Timer::from_seconds(every, TimerMode::Repeating), bombs: None }
     }
 }
 
@@ -150,25 +152,28 @@ fn request_entries(
         return;
     }
     let pending = doors.iter().filter(|d| d.door != Door::Closed).count();
-    if enemies.iter().count() + pending >= waves.crowd {
-        return;
-    }
+    let short = run.0.crowd().saturating_sub(enemies.iter().count() + pending);
     // Round the doors in turn, skipping busy ones.
     let mut free: Vec<_> = doors.iter_mut().filter(|d| d.door == Door::Closed).collect();
-    if free.is_empty() {
+    let calls = short.min(run.0.spec.burst).min(free.len());
+    if calls == 0 {
         return;
     }
     *turn += 1;
-    let i = *turn % free.len();
-    // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
-    *seed = seed.wrapping_add(0x9E37_79B9);
-    let mut s = *seed;
-    s ^= s << 13;
-    s ^= s >> 17;
-    s ^= s << 5;
-    free[i].next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
-    free[i].bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
-    free[i].door.request();
+    let first = *turn % free.len();
+    for k in 0..calls {
+        let len = free.len();
+        let door = &mut free[(first + k) % len];
+        // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
+        *seed = seed.wrapping_add(0x9E37_79B9);
+        let mut s = *seed;
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        door.next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
+        door.bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
+        door.door.request();
+    }
 }
 
 fn open_doors(time: Res<Time>, mut commands: Commands, mut doors: Query<&mut WallDoor>) {
@@ -206,8 +211,7 @@ fn think(
         // The player is facing this enemy (ninjas won't stand there).
         let in_front = dist > 1e-4 && -(forward[0] * to_player[0] + forward[1] * to_player[1]) / dist > IN_FRONT;
         let stunned = hp.0.stunned();
-        // The brains think in the 2.5D game's world units.
-        let intent = brain.0.decide(dist * UNITS_PER_METRE, in_front, dt, stunned, attack.busy());
+        let intent = brain.0.decide(dist, in_front, dt, stunned, attack.busy());
         if stunned {
             continue; // knockback plays out
         }
@@ -246,12 +250,12 @@ fn think(
 mod view {
     use bevy::prelude::*;
     use game_core::doors::{Door, WARNING};
-    use game_core::palette;
 
     use super::WallDoor;
-    use crate::look::{Palette, srgb};
+    use crate::look::Palette;
+    use crate::paint::{Role, colour};
 
-    /// Door panel size, metres: about a fighter and a half tall.
+    /// Door panel size, metres: about a fighter and a half tall (taller than box 1's walls, as in Rumble Box).
     const PANEL: Vec3 = Vec3::new(1.2, 2.1, 0.08);
 
     /// Each door's own material, recoloured as it warns.
@@ -259,11 +263,11 @@ mod view {
     struct Panel(Handle<StandardMaterial>);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Update, (dress, pulse).chain());
+        app.add_systems(Update, (dress, pulse, fade).chain());
     }
 
     fn closed(palette: &Palette) -> Color {
-        srgb(palette::arena_tone(palette.scheme).door)
+        colour(Role::Door, palette)
     }
 
     fn dress(
@@ -294,7 +298,7 @@ mod view {
                 Door::Warning(left) => {
                     let t = 1.0 - left / WARNING;
                     let wave = 0.5 + 0.5 * (t * 3.0 * std::f32::consts::TAU).cos();
-                    closed(&palette).mix(&srgb(palette::signal(palette.scheme)), (0.35 + 0.65 * t) * wave)
+                    closed(&palette).mix(&colour(Role::Signal, &palette), (0.35 + 0.65 * t) * wave)
                 }
                 Door::Open(_) => Color::BLACK,
             };
@@ -302,6 +306,21 @@ mod view {
                 && m.base_color != colour
             {
                 m.base_color = colour;
+            }
+        }
+    }
+
+    /// A door in a wall the camera is behind goes with the wall (`look`), so it never hides the fight.
+    fn fade(
+        cameras: Query<&GlobalTransform, With<Camera3d>>,
+        mut doors: Query<(&WallDoor, &GlobalTransform, &mut Visibility)>,
+    ) {
+        let Some(eye) = cameras.iter().next().map(|c| c.translation()) else { return };
+        for (door, at, mut shown) in &mut doors {
+            let behind = (eye - at.translation()).with_y(0.0).dot(-door.inward) > 0.0;
+            let want = if behind { Visibility::Hidden } else { Visibility::Inherited };
+            if *shown != want {
+                *shown = want;
             }
         }
     }

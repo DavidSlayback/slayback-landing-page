@@ -22,7 +22,7 @@ use game3d::enemy::{Brain, Waves, enemy, fodder, size};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::grab::{Carried, Thrown};
-use game3d::input::Actions;
+use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
@@ -114,6 +114,73 @@ fn the_player_lands_on_the_floor_and_stands_still() {
     assert!((pos.y - HEIGHT / 2.0).abs() < 0.05, "stands on the floor: y {}", pos.y);
     assert!(vel.length() < 0.05, "at rest: {vel}");
     assert!(pos.xz().distance(SPAWN.xz()) < 0.01, "lands where it spawned: {pos}");
+}
+
+#[test]
+fn with_the_camera_turned_up_on_the_keys_walks_up_the_screen() {
+    // A camera yawed 90° looks along -x, so up the screen is -x on the floor and right is -z (Q65).
+    let mut app = standing();
+    app.world_mut().resource_mut::<ViewYaw>().0 = std::f32::consts::FRAC_PI_2;
+    let (start, _, _) = player(&mut app);
+    hold(&mut app, &[KeyCode::KeyW], 0.5);
+    let (up, _, _) = player(&mut app);
+    let moved = (up - start).xz();
+    assert!(moved.x < -1.0 && moved.y.abs() < 0.05, "up the screen is -x: moved {moved}");
+    step(&mut app, 0.5);
+    let (up, _, _) = player(&mut app);
+    hold(&mut app, &[KeyCode::KeyD], 0.5);
+    let (right, _, _) = player(&mut app);
+    let moved = (right - up).xz();
+    assert!(moved.y < -1.0 && moved.x.abs() < 0.05, "right on the screen is -z: moved {moved}");
+}
+
+#[test]
+fn walking_at_60_fps_the_player_moves_the_same_distance_every_frame() {
+    // Physics steps at 64 Hz, so at 60 fps most frames take one step and the odd one two. What's drawn (the
+    // interpolated `Transform`) must still move evenly, or the walk judders.
+    let mut app = standing();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 60.0)));
+    press(&mut app, &[KeyCode::KeyD]);
+    step(&mut app, 0.5);
+    let mut last = player(&mut app).0.x;
+    let mut moves = vec![];
+    // Long enough to cross a frame that takes two physics steps (about one in fifteen).
+    for _ in 0..40 {
+        app.update();
+        let x = player(&mut app).0.x;
+        moves.push(x - last);
+        last = x;
+    }
+    let mean = moves.iter().sum::<f32>() / moves.len() as f32;
+    let worst = moves.iter().map(|m| (m - mean).abs()).fold(0.0f32, f32::max);
+    assert!(mean > 0.05, "walking: {mean} m a frame");
+    assert!(worst < 0.1 * mean, "even steps: mean {mean}, worst off by {worst}: {moves:?}");
+}
+
+#[test]
+fn a_flying_piece_of_debris_moves_evenly_at_60_fps() {
+    // A burst piece in the air at 60 fps: drawn where interpolation puts it, it must not judder between the
+    // 64 Hz physics steps.
+    let mut app = standing();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 60.0)));
+    let solid = FODDER[0].solid;
+    let e = app.world_mut().spawn(piece(solid, 0, Vec3::new(-6.0, 9.0, -2.0), Quat::IDENTITY, 0.0)).id();
+    app.world_mut().entity_mut(e).insert(LinearVelocity(Vec3::new(4.0, 0.0, 0.0)));
+    let x = |app: &App| app.world().get::<Transform>(e).unwrap().translation.x;
+    app.update();
+    app.update();
+    let mut last = x(&app);
+    let mut moves = vec![];
+    // Long enough to cross a frame that takes two physics steps (about one in fifteen).
+    for _ in 0..40 {
+        app.update();
+        moves.push(x(&app) - last);
+        last = x(&app);
+    }
+    let mean = moves.iter().sum::<f32>() / moves.len() as f32;
+    let worst = moves.iter().map(|m| (m - mean).abs()).fold(0.0f32, f32::max);
+    assert!(mean > 0.03, "flying: {mean} m a frame");
+    assert!(worst < 0.15 * mean, "even steps: mean {mean}, worst off by {worst}: {moves:?}");
 }
 
 #[test]
@@ -575,7 +642,7 @@ fn the_player_climbs_a_pile_of_debris_and_escapes_to_box_2() {
     assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "with the player back at the start");
     assert!(app.world().resource::<RunScore>().0.points > score, "the time left scored a bonus");
     let next = app.world().resource::<Arena>().rim;
-    assert!((next - game_core::run::rim_metres(&game_core::run::box_spec(2))).abs() < 1e-5, "box 2's rim: {next}");
+    assert!((next - game_core::run::box_spec(2).rim).abs() < 1e-5, "box 2's rim: {next}");
     let mut walls = app.world_mut().query::<&Slab>();
     let tallest = walls.iter(app.world()).fold(0.0f32, |m, s| m.max(s.size.y));
     assert!((tallest - next).abs() < 1e-5, "the walls were rebuilt at the new rim: {tallest}");
@@ -684,7 +751,7 @@ fn a_defeat_ends_the_run_and_the_next_starts_at_box_1_in_an_empty_box() {
     assert!(enemies(&mut app).is_empty() && pieces(&mut app).is_empty(), "in an empty box");
     assert!((player(&mut app).0.xz() - SPAWN.xz()).length() < 0.05, "back at the start");
     let rim = app.world().resource::<Arena>().rim;
-    assert_eq!(rim, game_core::run::rim_metres(&game_core::run::box_spec(1)), "box 1's rim again");
+    assert_eq!(rim, game_core::run::box_spec(1).rim, "box 1's rim again");
 }
 
 #[test]
@@ -1703,8 +1770,7 @@ fn thugs_and_ninjas_burst_into_their_own_pieces_and_a_bomb_head_drops_its_head()
 
 #[test]
 fn a_dash_covers_its_distance_along_the_floor_and_the_player_stays_grounded() {
-    use game_core::movement::DASH_TIME;
-    use game_core::plane::DASH_SPEED;
+    use game_core::plane::{DASH_SPEED, DASH_TIME};
     let mut app = standing();
     let (start, _, _) = player(&mut app);
     // Nothing held: the dash goes the way the player faces (+x).
@@ -1759,4 +1825,71 @@ fn fodder_enter_through_a_door_only_after_its_warning() {
     assert!(first_entry.is_some(), "a fodder entered within 4 s");
     let warning = game_core::doors::WARNING;
     assert!(warned_for >= warning - 0.05, "a door warned for {warned_for} s of its {warning} before anyone came in");
+}
+
+/// Doors warning right now.
+fn warning_doors(app: &mut App) -> usize {
+    let mut q = app.world_mut().query::<&game3d::enemy::WallDoor>();
+    q.iter(app.world()).filter(|d| d.door.warning()).count()
+}
+
+/// Steps `seconds` with the waves on and the player out of harm's way (health topped up each frame); the most doors
+/// that warned at once and the most enemies inside at once.
+fn waves_for(app: &mut App, seconds: f32) -> (usize, usize) {
+    let (mut doors, mut most) = (0, 0);
+    for _ in 0..(seconds * FPS) as usize {
+        set_player_hp(app, game3d::player::MAX_HP);
+        step(app, 1.0 / FPS);
+        doors = doors.max(warning_doors(app));
+        most = most.max(enemies(app).len());
+    }
+    (doors, most)
+}
+
+#[test]
+fn box_1_fills_through_doors_opening_in_pairs_and_ramps_to_seven() {
+    let mut app = standing();
+    app.world_mut().resource_mut::<Waves>().enabled = true;
+    // Rumble Box: 3-5 inside for the first half-minute, two doors often opening together.
+    let (doors, most) = waves_for(&mut app, 3.0);
+    assert!(doors >= 2, "two doors warned at once: {doors}");
+    assert_eq!((enemies(&mut app).len(), most), (3, 3), "three inside by 3 s, and no more yet");
+    // Defeated, they are replaced within seconds.
+    let mut q = app.world_mut().query_filtered::<Entity, With<Brain>>();
+    for e in q.iter(app.world()).collect::<Vec<_>>() {
+        app.world_mut().despawn(e);
+    }
+    waves_for(&mut app, 3.0);
+    assert_eq!(enemies(&mut app).len(), 3, "topped up again within 3 s");
+    // About 45 s in, Rumble Box holds 6-8.
+    app.world_mut().resource_mut::<RunState>().0.elapsed = game_core::run::RAMP;
+    let (_, most) = waves_for(&mut app, 5.0);
+    assert_eq!((enemies(&mut app).len(), most), (7, 7), "seven inside 5 s after the ramp tops out");
+}
+
+/// Seconds an idle player lasts in box `number` with the waves on.
+fn idle_until_dead(number: usize) -> Option<f32> {
+    let mut app = standing();
+    for _ in 1..number {
+        app.world_mut().resource_mut::<RunState>().0.escape(100.0, 100.0);
+    }
+    let every = app.world().resource::<RunState>().0.spec.interval;
+    app.insert_resource(Waves { timer: Timer::from_seconds(every, TimerMode::Repeating), ..default() });
+    let limit = 30.0;
+    for frame in 0..(limit * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        if phase(&app) == Phase::Over {
+            return Some(frame as f32 / FPS);
+        }
+    }
+    None
+}
+
+#[test]
+fn standing_still_is_lethal_within_12_s_and_no_less_so_in_later_boxes() {
+    let first = idle_until_dead(1);
+    let third = idle_until_dead(3);
+    // About 10 s in box 1 (three fodder alone took about 12 s) and a little less in box 3.
+    assert!(first.is_some_and(|t| t < 12.0), "box 1 kills an idle player within 12 s (Q68): {first:?}");
+    assert!(third.is_some_and(|t| t <= first.unwrap()), "box 3 no slower: {third:?} against {first:?}");
 }
