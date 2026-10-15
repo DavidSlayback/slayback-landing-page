@@ -11,11 +11,14 @@
 // world_set keys (sim/src/lib.rs `World::set`).
 const K = { gravity: 0, wind: 1, turb: 2, drag: 3, radius: 4, friction: 5, floorFriction: 6, restitution: 7, shieldRestitution: 8,
   cursorR: 9, spawnRate: 10, source: 11, collide: 12, lifeMin: 13, lifeMax: 14, openEdges: 15, emitters: 16, launchMin: 17, launchMax: 18,
-  openFloor: 19, wander: 20, flowScale: 21, inward: 22 };
+  openFloor: 19, wander: 20, flowScale: 21, inward: 22, topBottom: 23 };
 const SPARK_BASE = { radius: 1.6, friction: 0.12, floorFriction: 0.05, shieldRestitution: 0.85, cursorR: 12, collide: 0, openEdges: 1, wind: 0 };
 // Sparks drift in from off-screen torches, then meander: tight currents, strong coupling to them, and per-spark wander.
-const PRESET = { ...SPARK_BASE, gravity: 0, turb: 170, drag: 1.4, wander: 220, flowScale: 240, inward: 160,
-  restitution: 0.5, lifeMin: 2.5, lifeMax: 6.0, emitters: 4, launchMin: 120, launchMax: 360, openFloor: 1 };
+// The torches sit two above the screen and two below, each jumping along its edge, so the lettering is lit from
+// above and below fairly steadily (David, 2026-10-15: "from top and/or bottom so that I can rely on semi-consistent
+// lighting").
+const PRESET = { ...SPARK_BASE, gravity: 0, turb: 170, drag: 1.1, wander: 220, flowScale: 240, inward: 160,
+  restitution: 0.5, lifeMin: 3.5, lifeMax: 8.0, emitters: 4, launchMin: 180, launchMax: 480, openFloor: 1, topBottom: 1 };
 const PALETTES = [
   { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00', font: '"Chakra Petch"', weight: 700, track: '.04em',
     css: { fg: '#efffd6', muted: '#7d9a52', accent: '#a6ff00' },
@@ -33,9 +36,9 @@ const storedScheme = (() => { try { return localStorage.getItem('slayback-scheme
 let pi = PALETTES.findIndex(p => p.key === (qs.get('palette') || storedScheme));
 if (pi < 0) pi = Math.floor(Math.random() * PALETTES.length);
 const compact = Math.min(innerWidth, innerHeight) < 600;
-const CAP = parseInt(qs.get('n'), 10) || (compact ? 7000 : 14000);
+const CAP = parseInt(qs.get('n'), 10) || (compact ? 9000 : 18000);
 // The lettering: its grey with no spark near (just above barely readable on the dark), and the gain on the sparks' light.
-const INK = parseFloat(qs.get('ink')) || 0.13, LIT = parseFloat(qs.get('lit')) || 8;
+const INK = parseFloat(qs.get('ink')) || 0.09, LIT = parseFloat(qs.get('lit')) || 8;
 const SHIELD_R = 40;   // forcefield radius, px; it exists only while the pointer is held
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const capture = qs.has('capture');
@@ -106,7 +109,7 @@ void main(){
   vec2 uv=gl_FragCoord.xy/uCanvas, tuv=vec2(uv.x,1.0-uv.y), px=tuv*uRes;
   vec3 L=texture(uLight,uv).rgb;
   vec3 b=texture(uB1,uv).rgb*0.6+texture(uB2,uv).rgb*0.7+texture(uB3,uv).rgb*0.55;
-  vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom+L*0.07));
+  vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom+L*0.1));
   // text: an opaque surface the sparks pass behind, in dim ink of no scheme colour, lit only by the sparks' own light
   vec4 t=texture(uText,tuv); float s=texture(uSdf,tuv).r;
   float halo=(1.0-smoothstep(0.0,16.0,s))*(1.0-t.r);
@@ -354,7 +357,7 @@ function runBloom() {
 function drawSparksAndTorches(P, emit, torches) {
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
   gl.bindVertexArray(sparkVao);
-  use(PROG.spark, {}, { uRes: [W, H], uTime: simT, uWidth: emit ? 4.0 : 0.9, uStreak: 0.05, uEmit: emit, uGain: 0.45, ...P });
+  use(PROG.spark, {}, { uRes: [W, H], uTime: simT, uWidth: emit ? 6.0 : 1.0, uStreak: 0.05, uEmit: emit, uGain: 0.55, ...P });
   gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, active);
   gl.bindVertexArray(emptyVao);
   if (torches.length) {
