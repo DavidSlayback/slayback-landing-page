@@ -802,7 +802,7 @@ fn bearing(deg: f32, dist: f32) -> [f32; 2] {
 }
 
 #[test]
-fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
+fn the_player_grabs_a_fodder_in_front_carries_it_in_the_fists_and_sets_it_down() {
     let mut app = standing();
     let behind = fodder_at(&mut app, [-0.9, 0.0]);
     step(&mut app, 0.05);
@@ -815,12 +815,17 @@ fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
     tap(&mut app, KeyCode::KeyL);
     assert!(carried(&app, held), "grabbed the fodder in front");
     assert_eq!(holding(&mut app).map(|h| h.target), Some(held));
-    // Carried about for a while, into the back-left corner: it rides overhead and can't fight.
+    // Carried about for a while, into the back-left corner: it is held out in front, off its feet and tipped back
+    // (Q77), and can't fight.
     hold(&mut app, &[KeyCode::KeyW, KeyCode::KeyA], 1.5);
     step(&mut app, 0.5);
     let (me, _, _) = player(&mut app);
     let at = at_of(&app, held);
-    assert!(at.xz().distance(me.xz()) < 0.05 && at.y > me.y + HEIGHT / 2.0, "overhead: {at}, player {me}");
+    let ahead = at.xz().distance(me.xz());
+    assert!((0.4..1.0).contains(&ahead), "in the fists, not on the head: {ahead} m out");
+    assert!(at.y - FODDER_HEIGHT / 2.0 > 0.2 && at.y < me.y + HEIGHT / 2.0, "lifted off its feet: {at}, player {me}");
+    let tipped = app.world().get::<Transform>(held).unwrap().rotation * Vec3::Y;
+    assert!(tipped.y < 0.95, "tipped back: {tipped}");
     assert!(me.distance(SPAWN) > 2.0, "carried along: {me}");
     let (hp, full) = player_hp(&mut app);
     assert_eq!(hp, full, "a held fodder doesn't punch");
@@ -832,6 +837,8 @@ fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
     let at = at_of(&app, held);
     let me = player(&mut app).0;
     assert!((at.y - FODDER_HEIGHT / 2.0).abs() < 0.1, "back on the floor: {at}");
+    let up = app.world().get::<Transform>(held).unwrap().rotation * Vec3::Y;
+    assert!(up.y > 0.999, "upright again: {up}");
     assert!(at.xz().distance(me.xz()) < 1.0, "set down by the player: {at}, player {me}");
     let half = Arena::default().floor / 2.0;
     assert!(at.x.abs() <= half.x && at.z.abs() <= half.y, "inside the box: {at}");

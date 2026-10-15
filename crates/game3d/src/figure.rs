@@ -25,6 +25,7 @@ use crate::debris::{Kin, Piece};
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
 use crate::flat::Flat;
+use crate::grab::Carried;
 use crate::look::Palette;
 use crate::paint::{Paint, Paints, Role};
 use crate::player::{Dasher, Facing, Holding, Player};
@@ -328,7 +329,7 @@ fn windup(mv: Move, telegraph: f32) -> (Vec3, Vec3) {
 }
 
 /// Poses every figure (`pose`) on the game clock, so hit-stop freezes it: the walk; each blow from the arm or leg it
-/// uses (the player's punches alternate); an enemy's wind-up; a held thing overhead, a whirl (the body turning toward
+/// uses (the player's punches alternate); an enemy's wind-up; a held thing in the fists, a held enemy dangling, a whirl (the body turning toward
 /// the thing) and the throw's follow-through; a lean while dashing. Every part and the rig ease toward the pose
 /// (`pose::follow`). Parts take their [`shade`]: the hit flash, the wind-up glow, or their own paint.
 #[allow(clippy::type_complexity)]
@@ -345,22 +346,25 @@ fn animate(
         Option<&Holding>,
         Option<&Dasher>,
         Option<&Brain>,
+        Has<Carried>,
         &mut Motion,
         &Children,
     )>,
-    held: Query<&GlobalTransform, Without<Motion>>,
+    held: Query<&GlobalTransform>,
     mut rigs: Query<(&mut Transform, &Children), (With<Rig>, Without<Part>)>,
     mut parts: Query<(&Part, &mut Transform, &mut MeshMaterial3d<Flat>), Without<Rig>>,
 ) {
     let dt = time.delta_secs();
     let k = pose::follow(dt);
-    for (me, facing, v, attack, flash, holding, dasher, brain, mut m, children) in &mut fighters {
+    for (me, facing, v, attack, flash, holding, dasher, brain, carried, mut m, children) in &mut fighters {
         let who = brain.map_or(Fighter::Player, |b| Fighter::Enemy(b.0.style().kind));
         let speed = v.0.with_y(0.0).length();
-        let amount = (speed / m.full_stride).min(1.0);
-        m.phase += speed * 3.0 * dt;
+        // A held enemy's legs kick as fast as a run.
+        let (amount, pace) = if carried { (0.8, 9.0) } else { ((speed / m.full_stride).min(1.0), speed * 3.0) };
+        m.phase += pace * dt;
         let mut turn = facing.rotation();
         let act = match (holding, attack.swing) {
+            _ if carried => Act::Dangle,
             (Some(h), _) => {
                 m.held = true;
                 if h.spinning() {
@@ -400,8 +404,8 @@ fn animate(
         if dasher.is_some_and(|d| d.0.dashing()) && matches!(act, Act::None) {
             lean = Quat::from_rotation_z(-0.3);
         }
-        // An enemy telegraphs its blow: the arm winds up and the figure glows.
-        let telegraph = brain.map_or(0.0, |b| b.0.telegraph());
+        // An enemy telegraphs its blow: the arm winds up and the figure glows. Not one held up, which can't fight.
+        let telegraph = if carried { 0.0 } else { brain.map_or(0.0, |b| b.0.telegraph()) };
         let wind = match brain {
             Some(b) if attack.swing.is_none() => windup(b.0.style().attack, telegraph),
             _ => (Vec3::ZERO, Vec3::ZERO),

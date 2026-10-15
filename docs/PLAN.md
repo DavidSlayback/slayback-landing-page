@@ -2,7 +2,7 @@
 
 ```text
 As of: Wed Oct 14 2026 CDT
-In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, Q75 Rumble Box colours, and Q76 heavies in box 1 plus a HUD that reads on every box. PR open, not merged (David: "PR no merge"); rc-3 serves it.
+In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, Q75 Rumble Box colours, Q76 heavies in box 1 plus a HUD that reads on every box, and Q77 carrying a grab in the fists instead of on the head. PR #83 open, not merged (David: "PR no merge"); rc-3 serves it.
 Done in look-flat: flat.rs/flat.wgsl replace StandardMaterial (no load stall); GlassRail hides within 2 m of the front wall; Q75: game-core palette is Rumble Box's (fixed fighter colours by part, four box stages, pale part-tinted debris, cyan ring, green health, red signal), game-core scheme.rs deleted (the hero keeps its own schemes in site/hero.js), flat shader checkers floor and walls and lights softer, outlines 2 px / creases 1 px, `?stage=N` previews a box's look.
 Next: David plays rc-3 (Q67). On sign-off: merge the look-flat PR, deploy rc-2; then the playtest (#29).
 Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13).

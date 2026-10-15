@@ -20,8 +20,10 @@ pub enum Act {
         swing: Swing,
         side: f32,
     },
-    /// Something held overhead in both fists.
+    /// Something held out in front in both fists, at chest height (Q77).
     Hold,
+    /// Held up by the player: the legs kick and the arms grab at the player.
+    Dangle,
     /// Both arms out, whirling a held thing round (the body turns with it, in `look`).
     Whirl,
     /// The follow-through after a throw, `t` seconds since the release.
@@ -167,7 +169,8 @@ pub fn part(limb: Limb, reach: f32, rest: Vec3, phase: f32, amount: f32, act: Ac
                 _ => walk,
             }
         }
-        Act::Hold if arm(limb) => line(1.0, 0.05, 0.95),
+        Act::Hold if arm(limb) => line(1.0, 0.45, 0.25),
+        Act::Dangle if arm(limb) => walk + Vec3::new(0.12, 0.3, 0.0) * reach,
         Act::Whirl if arm(limb) => line(1.0, 0.6, 0.15),
         Act::Release { t } if arm(limb) => line((1.0 - t / RELEASE).clamp(0.0, 1.0), 0.75, 0.2),
         _ => walk,
@@ -254,11 +257,19 @@ mod tests {
     }
 
     #[test]
-    fn a_held_thing_goes_up_in_both_fists() {
+    fn a_held_thing_is_held_out_in_both_fists_at_chest_height() {
         for limb in [Limb::LeftArm, Limb::RightArm] {
             let rest = FIST * Vec3::new(1.0, 1.0, side(limb));
-            let up = rest + part(limb, 1.0, rest, 0.0, 0.0, Act::Hold);
-            assert!(up.y > 0.9, "{limb:?}: {up}");
+            let fist = rest + part(limb, 1.0, rest, 0.0, 0.0, Act::Hold);
+            assert!(fist.x > rest.x + 0.25, "{limb:?} out in front: {fist}");
+            assert!((0.1..0.5).contains(&fist.y), "{limb:?} at chest height, not overhead: {fist}");
         }
+    }
+
+    #[test]
+    fn a_held_enemy_kicks_its_legs_and_reaches_up() {
+        let foot = |phase| part(Limb::RightLeg, 1.0, Vec3::ZERO, phase, 0.8, Act::Dangle);
+        assert_ne!(foot(0.0), foot(1.5), "the legs kick");
+        assert!(part(Limb::RightArm, 1.0, Vec3::ZERO, 0.0, 0.0, Act::Dangle).y > 0.2, "the arms reach up");
     }
 }

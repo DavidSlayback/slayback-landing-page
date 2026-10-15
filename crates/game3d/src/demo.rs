@@ -185,26 +185,34 @@ impl Verb {
 
 /// One beat of the fight: what it is, which verbs (a dash or a grab first, then the attack: a drop-kick or a
 /// spin-throw) and when, seconds into the beat (before the fodder's own punch comes out), how far in front of the
-/// player its fodder stands, metres, and for the throw a second fodder further on for it to hit.
+/// player its fodder stands, metres, and for the throw a second fodder further on for it to hit. The second verb
+/// follows the first after `follow` seconds.
 struct Beat {
     name: &'static str,
     verbs: &'static [Verb],
     strike: f32,
+    follow: f32,
     gap: f32,
     beyond: Option<f32>,
 }
 
 const BEATS: [Beat; 4] = [
-    Beat { name: "punch", verbs: &[Verb::Punch], strike: 0.5, gap: 1.1, beyond: None },
-    Beat { name: "kick", verbs: &[Verb::Kick], strike: 0.35, gap: 1.3, beyond: None },
-    Beat { name: "drop-kick", verbs: &[Verb::Dash, Verb::Punch], strike: 0.5, gap: 2.2, beyond: None },
-    Beat { name: "spin-throw", verbs: &[Verb::Grab, Verb::Punch], strike: 0.35, gap: 0.95, beyond: Some(2.2) },
+    Beat { name: "punch", verbs: &[Verb::Punch], strike: 0.5, follow: 0.0, gap: 1.1, beyond: None },
+    Beat { name: "kick", verbs: &[Verb::Kick], strike: 0.35, follow: 0.0, gap: 1.3, beyond: None },
+    Beat { name: "drop-kick", verbs: &[Verb::Dash, Verb::Punch], strike: 0.5, follow: 0.05, gap: 2.2, beyond: None },
+    // Held up for a moment before the whirl, so the carry shows (Q77).
+    Beat {
+        name: "spin-throw",
+        verbs: &[Verb::Grab, Verb::Punch],
+        strike: 0.35,
+        follow: 0.5,
+        gap: 0.95,
+        beyond: Some(2.2),
+    },
 ];
 /// Seconds per beat; the fodder is placed this far into it.
 const BEAT: f32 = 1.4;
 const PLACE: f32 = 0.2;
-/// The second verb of a beat follows the first after this, seconds.
-const FOLLOW: f32 = 0.05;
 /// The room a beat needs in front of the player, metres: past it, the player turns round first.
 const ROOM: f32 = 4.5;
 /// Weak fodder, so every beat ends in a kill.
@@ -307,7 +315,7 @@ fn fight(
         beat.verbs[0].set(&mut actions.verbs);
     }
     if let Some(&then) = beat.verbs.get(1)
-        && crossed(beat.strike + FOLLOW)
+        && crossed(beat.strike + beat.follow)
     {
         then.set(&mut actions.verbs);
     }

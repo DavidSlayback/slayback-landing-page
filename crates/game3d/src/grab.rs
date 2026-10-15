@@ -1,7 +1,7 @@
 //! Grab and spin-throw in 3D (rules: `game_core::grab`, its `flat` module for the floor). The grab verb (L, the middle
 //! mouse button or B) picks up the nearest [`Grabbable`] thing in front: a live enemy or a debris part, and frozen
-//! debris thaws. It rides overhead; an attack whirls it once and a half round the player (`player::control` aims it)
-//! and lets go straight ahead, flying flat. In flight it hurts every enemy it passes through, once each, and a thrown
+//! debris thaws. It is held out in front in the fists, an enemy lifted off its feet and tipped back, swaying (Q77);
+//! an attack whirls it once round the player (`player::control` aims it) and lets go straight ahead, flying flat. In flight it hurts every enemy it passes through, once each, and a thrown
 //! enemy is hurt by its first impact; then it lands as what it was (a stunned enemy, or loose debris back under the
 //! debris rules). A lit bomb (`bomb`) grabs and throws the same way, but stops at the first enemy it hits and lies
 //! there until its fuse runs out. Grab again while carrying to set the thing down in front.
@@ -29,12 +29,11 @@ use crate::{on_floor, plane};
 pub struct Grabbable(pub Held);
 
 /// Being held: out of the physics world (it collides with nothing and no query finds it) and out of the fight. Keeps
-/// what it collided with, its size across the floor and its half height, for carrying it and letting go.
+/// what it collided with and its size across the floor, for carrying it and letting go.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Carried {
     layers: CollisionLayers,
     radius: f32,
-    half_height: f32,
 }
 
 /// In flight after a throw: a projectile flying flat (no gravity) along `heading` until `ttl` runs out.
@@ -56,6 +55,13 @@ const GRAZE: f32 = 0.05;
 const TUMBLE: f32 = 9.0;
 /// How long a thrown thing's victims lose control, seconds (as in the 2.5D game).
 const VICTIM_STUN: f32 = 0.35;
+/// How high above the player's centre a held thing is, metres: a held enemy's feet clear the floor, and a debris part
+/// or a bomb sits in the fists at chest height.
+const LIFT: f32 = 0.3;
+/// How far back a held enemy is tipped, radians, and how far and how fast it sways about that, limp.
+const TILT: f32 = 0.5;
+const SWAY: f32 = 0.12;
+const SWAY_RATE: f32 = 7.0;
 
 pub fn plugin(app: &mut App) {
     // Grabbing only while playing: L or a middle click on a screen must not pick anything up.
@@ -63,22 +69,23 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, (grab.run_if(playing), carry, fly).chain().after(player::control).before(Combat));
 }
 
-/// A thing's size for carrying: its radius across the floor and its half height, metres.
-fn size(body: Option<&Body>, piece: Option<&Piece>) -> (f32, f32) {
+/// A thing's radius across the floor, for carrying it, metres.
+fn size(body: Option<&Body>, piece: Option<&Piece>) -> f32 {
     match (body, piece.map(|p| p.solid)) {
-        (Some(b), _) => (b.radius, b.height / 2.0),
-        (None, Some(Solid::Cube([x, y, z]))) => (x.max(z) / 2.0, y / 2.0),
-        (None, Some(Solid::Ball(r))) => (r, r),
+        (Some(b), _) => b.radius,
+        (None, Some(Solid::Cube([x, _, z]))) => x.max(z) / 2.0,
+        (None, Some(Solid::Ball(r))) => r,
         // A lit bomb.
-        (None, None) => (bomb::RADIUS, bomb::RADIUS),
+        (None, None) => bomb::RADIUS,
     }
 }
 
-/// Where the held thing sits for a player standing at `me` facing `yaw`: overhead, or `spin` (0..=1) through the throw.
-/// Never past the walls, so a throw or a set-down beside one doesn't start inside it.
+/// Where the held thing sits for a player standing at `me` facing `yaw`: out in front in the fists, or `spin` (0..=1)
+/// through the throw. Never past the walls, so a throw or a set-down beside one doesn't start inside it.
 fn hold_at(arena: &Arena, me: Vec3, yaw: f32, carried: &Carried, spin: Option<f32>) -> Vec3 {
-    let overhead = HEIGHT / 2.0 + carried.half_height + 0.05;
-    let (across, up) = swing(yaw, overhead, RADIUS + carried.radius + 0.1, spin);
+    // Pressed close to the fists: a body's near side, not its centre, is at arm's length.
+    let hold = RADIUS + 0.2 + carried.radius * 0.6;
+    let (across, up) = swing(yaw, LIFT, hold, RADIUS + carried.radius + 0.1, spin);
     let at = me + on_floor(across) + Vec3::Y * up;
     let inside = arena.floor / 2.0 - Vec2::splat(carried.radius);
     at.with_x(at.x.clamp(-inside.x, inside.x)).with_z(at.z.clamp(-inside.y, inside.y))
@@ -105,7 +112,7 @@ fn grab(
     arena: Res<Arena>,
     players: Query<(Entity, &Transform, &Facing, &Hp, Option<&Holding>), With<Player>>,
     mut things: Query<Candidates, (Without<Player>, Without<Carried>, Without<Thrown>)>,
-    mut held: Query<(&mut Transform, &mut Position, &Carried), Without<Player>>,
+    mut held: Query<(&mut Transform, &mut Position, &mut Rotation, &Carried), Without<Player>>,
 ) {
     let Ok((me, at, facing, hp, holding)) = players.single() else { return };
     if !actions.verbs.grab || hp.0.stunned() {
@@ -113,12 +120,13 @@ fn grab(
     }
     let (here, yaw) = (at.translation, facing.0.yaw);
     if let Some(h) = holding {
-        // Set it down in front, at the player's middle: it drops from there.
+        // Set it down in front, at the player's middle and upright: it drops from there.
         if !h.spinning()
-            && let Ok((mut t, mut p, carried)) = held.get_mut(h.target)
+            && let Ok((mut t, mut p, mut r, carried)) = held.get_mut(h.target)
         {
             t.translation = hold_at(&arena, here, yaw, carried, Some(1.0));
             p.0 = t.translation;
+            (t.rotation, r.0) = (Quat::IDENTITY, Quat::IDENTITY);
             let layers = carried.layers;
             commands.entity(h.target).remove::<Carried>().insert((RigidBody::Dynamic, layers, LinearVelocity::ZERO));
             commands.entity(me).remove::<Holding>();
@@ -131,12 +139,12 @@ fn grab(
         .iter()
         .filter(|(.., hp, _)| hp.is_none_or(|h| !h.0.defeated()))
         .filter(|(_, _, t, ..)| (feet - 0.15..=feet + HEIGHT + 0.15).contains(&t.translation.y))
-        .map(|(e, _, t, _, body, piece, ..)| (e, plane(t.translation), size(body, piece).0))
+        .map(|(e, _, t, _, body, piece, ..)| (e, plane(t.translation), size(body, piece)))
         .collect();
     let Some(i) = pick(plane(here), yaw, RADIUS, reachable.iter().map(|(_, p, r)| (*p, *r))) else { return };
     let target = reachable[i].0;
     let Ok((_, &Grabbable(kind), _, &layers, body, piece, _, attack)) = things.get_mut(target) else { return };
-    let (radius, half_height) = size(body, piece.as_deref());
+    let radius = size(body, piece.as_deref());
     if let Some(mut piece) = piece {
         // Thawed: it starts again as a fresh loose piece, so it freezes only after it lands and rests.
         piece.born = time.elapsed_secs();
@@ -146,7 +154,7 @@ fn grab(
         *attack = Attack::default(); // a held enemy's swing stops
     }
     commands.entity(target).insert((
-        Carried { layers, radius, half_height },
+        Carried { layers, radius },
         RigidBody::Kinematic,
         CollisionLayers::NONE,
         LinearVelocity::ZERO,
@@ -155,16 +163,21 @@ fn grab(
     commands.entity(me).insert(Holding { target, kind, spin: None });
 }
 
-/// Keeps the held thing overhead or whirling round the player, and at the end of the spin throws it straight ahead.
+/// Keeps the held thing in the fists or whirling round the player, and at the end of the spin throws it straight
+/// ahead. A held enemy hangs tipped back, away from the player, and sways limply.
+#[allow(clippy::type_complexity)]
 fn carry(
     mut commands: Commands,
     time: Res<Time>,
     arena: Res<Arena>,
     mut players: Query<(Entity, &Transform, &Facing, &mut Holding), With<Player>>,
-    mut held: Query<(&mut Transform, &mut Position, &Carried, Option<&mut Hp>), Without<Player>>,
+    mut held: Query<
+        (&mut Transform, &mut Position, &mut Rotation, &Carried, Option<&mut Hp>, Option<&mut Facing>),
+        Without<Player>,
+    >,
 ) {
     let Ok((me, at, facing, mut h)) = players.single_mut() else { return };
-    let Ok((mut t, mut p, carried, hp)) = held.get_mut(h.target) else {
+    let Ok((mut t, mut p, mut r, carried, hp, held_facing)) = held.get_mut(h.target) else {
         commands.entity(me).remove::<Holding>(); // gone (the box emptied)
         return;
     };
@@ -175,6 +188,17 @@ fn carry(
     let yaw = facing.0.yaw;
     t.translation = hold_at(&arena, at.translation, yaw, carried, progress);
     p.0 = t.translation;
+    if h.kind == Held::Enemy {
+        let out = (t.translation - at.translation).with_y(0.0).normalize_or(on_floor([yaw.cos(), yaw.sin()]));
+        // It faces the player who holds it.
+        if let Some(mut f) = held_facing {
+            let [x, y] = plane(-out);
+            f.0.yaw = y.atan2(x);
+        }
+        let sway = SWAY * (time.elapsed_secs() * SWAY_RATE).sin();
+        r.0 = Quat::from_axis_angle(Vec3::Y.cross(out).normalize(), TILT + sway);
+        t.rotation = r.0;
+    }
     if progress.is_none_or(|p| p < 1.0) {
         return;
     }
@@ -281,7 +305,12 @@ fn fly(
         t.ttl -= time.delta_secs();
         if t.ttl <= 0.0 {
             let layers = t.layers;
-            commands.entity(e).remove::<(Thrown, GravityScale)>().insert(layers);
+            let mut landed = commands.entity(e);
+            landed.remove::<(Thrown, GravityScale)>().insert(layers);
+            // A thrown enemy left the fists tipped back; it lands on its feet.
+            if t.kind == Held::Enemy {
+                landed.insert(Rotation::IDENTITY);
+            }
         }
     }
 }
