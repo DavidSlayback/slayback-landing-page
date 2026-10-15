@@ -1,10 +1,12 @@
-// Landing-page hero: welding-spark currents around always-readable text.
+// Landing-page hero: welding-spark currents around dim lettering that only their light brings up.
 //
 // Physics runs in Rust (crates/sim, exported by crates/hero-wasm as hero.wasm). This file owns the browser side:
 // rasterising the hero's DOM text into the obstacle mask, streaming particle state out of WASM memory into
-// WebGL2, and compositing. Text is drawn last as an opaque, haloed surface so the sparks can never wash it out.
+// WebGL2, and compositing. Text is drawn last as an opaque, haloed surface so the sparks can never wash it out: dim,
+// neutral ink, just above barely readable, that the sparks' light map tints and brightens where they pass.
 // Debug/test hooks: ?hud=1 shows timings; ?capture=1 disables the loop and exposes window.__capture.frame(dt)
-// for frame-exact screenshots; ?warm=<frames> pre-runs the physics; ?n=<sparks> overrides the spark count.
+// for frame-exact screenshots; ?warm=<frames> pre-runs the physics; ?n=<sparks> overrides the spark count;
+// ?ink=<0..1> and ?lit=<gain> override the lettering's unlit grey and how strongly the sparks light it.
 'use strict';
 // world_set keys (sim/src/lib.rs `World::set`).
 const K = { gravity: 0, wind: 1, turb: 2, drag: 3, radius: 4, friction: 5, floorFriction: 6, restitution: 7, shieldRestitution: 8,
@@ -17,16 +19,13 @@ const PRESET = { ...SPARK_BASE, gravity: 0, turb: 170, drag: 1.4, wander: 220, f
 const PALETTES = [
   { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00', font: '"Chakra Petch"', weight: 700, track: '.04em',
     css: { fg: '#efffd6', muted: '#7d9a52', accent: '#a6ff00' },
-    gl: { uP0: [0.62, 1.0, 0.0], uP1: [0.15, 1.0, 0.2], uP2: [0.0, 1.0, 0.72], uP3: [0.88, 1.0, 0.12],
-      uFillCol: [0.86, 1.0, 0.72], uStrokeCol: [0.62, 1.0, 0.05] } },
+    gl: { uP0: [0.62, 1.0, 0.0], uP1: [0.15, 1.0, 0.2], uP2: [0.0, 1.0, 0.72], uP3: [0.88, 1.0, 0.12], uShieldCol: [0.62, 1.0, 0.05] } },
   { key: 'synthwave', label: 'Synthwave', swatch: '#ff2bd6', font: '"Orbitron"', weight: 900, track: '.06em',
     css: { fg: '#ffe9fb', muted: '#a0609a', accent: '#ff2bd6' },
-    gl: { uP0: [1.0, 0.08, 0.72], uP1: [0.0, 0.9, 1.0], uP2: [1.0, 0.92, 0.05], uP3: [0.5, 0.15, 1.0],
-      uFillCol: [1.0, 0.86, 0.98], uStrokeCol: [1.0, 0.18, 0.8] } },
+    gl: { uP0: [1.0, 0.08, 0.72], uP1: [0.0, 0.9, 1.0], uP2: [1.0, 0.92, 0.05], uP3: [0.5, 0.15, 1.0], uShieldCol: [1.0, 0.18, 0.8] } },
   { key: 'gold', label: 'Human Revolution', swatch: '#ffae2b', font: '"Rajdhani"', weight: 700, track: '.16em',
     css: { fg: '#fff1d0', muted: '#a07a35', accent: '#ffae2b' },
-    gl: { uP0: [1.0, 0.55, 0.04], uP1: [1.0, 0.82, 0.2], uP2: [1.0, 0.3, 0.0], uP3: [1.0, 0.95, 0.65],
-      uFillCol: [1.0, 0.9, 0.68], uStrokeCol: [1.0, 0.64, 0.12] } },
+    gl: { uP0: [1.0, 0.55, 0.04], uP1: [1.0, 0.82, 0.2], uP2: [1.0, 0.3, 0.0], uP3: [1.0, 0.95, 0.65], uShieldCol: [1.0, 0.64, 0.12] } },
 ];
 const qs = new URLSearchParams(location.search);
 // Scheme: URL, then the visitor's saved pick, then a random one per visit.
@@ -35,6 +34,8 @@ let pi = PALETTES.findIndex(p => p.key === (qs.get('palette') || storedScheme));
 if (pi < 0) pi = Math.floor(Math.random() * PALETTES.length);
 const compact = Math.min(innerWidth, innerHeight) < 600;
 const CAP = parseInt(qs.get('n'), 10) || (compact ? 7000 : 14000);
+// The lettering: its grey with no spark near (just above barely readable on the dark), and the gain on the sparks' light.
+const INK = parseFloat(qs.get('ink')) || 0.13, LIT = parseFloat(qs.get('lit')) || 8;
 const SHIELD_R = 40;   // forcefield radius, px; it exists only while the pointer is held
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const capture = qs.has('capture');
@@ -90,11 +91,12 @@ void main(){ vec4 t=uTorch[gl_InstanceID]; vec2 c=corner(); vQ=c;
 const FS_TORCH = HEAD + `in vec2 vQ; in vec3 vCol; out vec4 o;
 void main(){ float d2=dot(vQ,vQ); if(d2>1.0) discard; o=vec4(vCol*(exp(-d2*14.0)*1.2+exp(-d2*3.5)*0.25),1.0); }`;
 
-// Final: tone-map sparks + bloom, then the text as an opaque surface on top (dark halo, capped lighting), then the forcefield.
+// Final: tone-map sparks + bloom, then the text as an opaque surface on top (dark halo; dim ink the sparks light),
+// then the forcefield.
 const FS_FINAL = HEAD + `
 uniform sampler2D uScene, uB1, uB2, uB3, uLight, uText, uSdf;
 uniform vec2 uCanvas, uSdfTexel, uRes; uniform float uBloom, uTime;
-uniform vec3 uFillCol, uStrokeCol; uniform vec4 uShield;   // x, y, r (CSS px), hit flash
+uniform vec3 uShieldCol; uniform float uInk, uLit; uniform vec4 uShield;   // x, y, r (CSS px), hit flash
 out vec4 o;
 float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
 float lum(vec3 c){ return dot(c,vec3(0.3,0.5,0.2)); }
@@ -105,25 +107,29 @@ void main(){
   vec3 L=texture(uLight,uv).rgb;
   vec3 b=texture(uB1,uv).rgb*0.6+texture(uB2,uv).rgb*0.7+texture(uB3,uv).rgb*0.55;
   vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom+L*0.07));
-  // text: an opaque surface the sparks pass behind
+  // text: an opaque surface the sparks pass behind, in dim ink of no scheme colour, lit only by the sparks' own light
   vec4 t=texture(uText,tuv); float s=texture(uSdf,tuv).r;
   float halo=(1.0-smoothstep(0.0,16.0,s))*(1.0-t.r);
   col*=1.0-0.82*halo;
-  float l=clamp(lum(L)*0.6,0.0,1.0);
+  vec3 lit=1.0-exp(-L*uLit);                                    // the light falling here, in the sparks' colours
   vec2 g=vec2(texture(uSdf,tuv+vec2(uSdfTexel.x,0.0)).r-texture(uSdf,tuv-vec2(uSdfTexel.x,0.0)).r,
               texture(uSdf,tuv+vec2(0.0,uSdfTexel.y)).r-texture(uSdf,tuv-vec2(0.0,uSdfTexel.y)).r);
-  vec2 n2=dot(g,g)>1e-8?normalize(g):vec2(0.0);
+  vec2 n2=dot(g,g)>1e-8?normalize(g):vec2(0.0);                // outward from the glyph, text space (y down)
+  vec2 dl=12.0/uRes;                                           // which way the light comes from, text space too
+  vec2 gl2=vec2(lum(texture(uLight,uv+vec2(dl.x,0.0)).rgb)-lum(texture(uLight,uv-vec2(dl.x,0.0)).rgb),
+                lum(texture(uLight,uv-vec2(0.0,dl.y)).rgb)-lum(texture(uLight,uv+vec2(0.0,dl.y)).rgb));
+  vec2 toLight=dot(gl2,gl2)>1e-10?normalize(gl2):vec2(0.0);
   float bevel=1.0-smoothstep(0.0,4.0,-s);
-  float rim=max(dot(n2,vec2(-0.6,-0.8)),0.0)*bevel;            // top-left rim, brighter when sparks are near
-  vec3 face=uFillCol*(0.52+0.28*l)+uFillCol*rim*(0.12+0.35*l);
-  col=mix(col, min(face,vec3(0.92)), t.r);
-  col=mix(col, uStrokeCol*(0.85+0.25*l), t.g*0.85);
+  float rim=max(dot(n2,toLight),0.0)*bevel;                    // the glyph edges facing the sparks catch the most
+  vec3 face=vec3(uInk)+lit*(0.65+0.7*rim);
+  col=mix(col, min(face,vec3(0.95)), t.r);
+  col=mix(col, min(vec3(uInk*1.3)+lit*1.1,vec3(0.95)), t.g*0.85);
   // forcefield: a hex shell that flares where sparks hit it
   if(uShield.z>0.5){
     float d=length(px-uShield.xy), r=uShield.z;
     float shell=exp(-pow((d-r)/1.6,2.0))*(0.55+1.4*uShield.w);
     float inner=step(d,r)*hexEdge((px-uShield.xy)/9.0)*smoothstep(r*0.35,r,d)*(0.12+0.5*uShield.w);
-    col+=uStrokeCol*(shell+inner);
+    col+=uShieldCol*(shell+inner);
   }
   vec2 q=uv-0.5; col*=1.0-0.35*dot(q,q);
   col+=(hash12(gl_FragCoord.xy+fract(uTime)*311.0)-0.5)*0.008;
@@ -382,7 +388,7 @@ function present(dt) {
   runBloom();
   pass(null, canvas.width, canvas.height);
   use(PROG.final, { uScene: scene.t, uB1: bloom[0][0].t, uB2: bloom[1][0].t, uB3: bloom[2][0].t, uLight: light.t, uText: textTex, uSdf: sdfTex },
-    { uCanvas: [canvas.width, canvas.height], uSdfTexel: [1 / sdfSize[0], 1 / sdfSize[1]], uRes: [W, H], uBloom: 0.7, uTime: simT,
+    { uCanvas: [canvas.width, canvas.height], uSdfTexel: [1 / sdfSize[0], 1 / sdfSize[1]], uRes: [W, H], uBloom: 0.7, uTime: simT, uInk: INK, uLit: LIT,
       uShield: [mouse.x, mouse.y, shield.r, shield.flash], ...P });
   tri();
   document.documentElement.classList.add('gl');
