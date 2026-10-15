@@ -2,12 +2,9 @@
 
 ```text
 As of: Thu Oct 15 2026 CDT
-In flight: nothing running. Three branches await David, none merged:
-- look-flat (PR #83, "PR no merge"; rc-3): Q74 flat material, the front glass rail, Q75 Rumble Box colours, Q76 heavies in box 1 and a HUD that reads on every box, Q77 carrying a grab in the fists.
-- hero-lit (from main; rc-4): the homepage lettering in dim neutral ink that only the sparks' light brings up (David: "lit up by the light sources of the sparks. Just a bit above barely readable unless lit"); ?ink= and ?lit= tune it.
-- touch (stacked on look-flat; rc-5): Q78 touch controls (game-core touch.rs, game3d touchpad.rs, input.rs read_touch); phones play instead of getting the clip.
-Next: David plays rc-4 (lettering) and rc-5 on a phone (touch). Then the touch playtest question (Q78): which inputs get used, whether a phone needs a slower game. When touch passes, delete site/play/watch and record-clip.mjs, or keep the clip as the no-WebGL fallback.
-Waiting on: David: rc-3, rc-4, rc-5; playtesters (#29), gamepad (#26), C2 content (#13).
+In flight: nothing running. One branch, look-flat (PR #83, "PR no merge"), holds everything unmerged, and one preview, https://rc-5.slayback.pages.dev, serves it (rc-3 and rc-4 carry the same build so old links aren't stale). In it: Q74 flat material; the front glass rail; Q75 Rumble Box colours; Q76 heavies in box 1 and a HUD that reads on every box; Q77 carrying a grab in the fists; the homepage lettering in dim neutral ink that only the sparks' light brings up (David: "lit up by the light sources of the sparks. Just a bit above barely readable unless lit"; ?ink= and ?lit= tune it); Q78 touch controls (game-core touch.rs, game3d touchpad.rs, input.rs read_touch), with phones playing instead of getting the clip.
+Next: David plays rc-5, on a computer and on a phone. Then the touch playtest question (Q78): which inputs get used, whether a phone needs a slower game. When touch passes, delete site/play/watch and record-clip.mjs, or keep the clip as the no-WebGL fallback.
+Waiting on: David: rc-5; playtesters (#29), gamepad (#26), C2 content (#13).
 Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1.
 Verified: game-core 114 tests, game3d 64 headless scenarios + 18 render unit tests, clippy both feature sets; rc-3 harness 14 passed, 2 skipped (shaders.spec.js included). Frames of all four stages compared against the video's full frames.
 ```
@@ -42,6 +39,7 @@ David, after the camera and look pass: **"Make the hits have more impact. Take i
 | Game design (v1) | 2D side view; *escape the box* loop; keyboard + mouse | Chosen by David. |
 | Page content | Static semantic HTML; canvas behind it; hero text is real, transparent DOM drawn by WebGL | Links, SEO, selection and screen readers stay intact. |
 | Schemes | Netrunner (lime), Synthwave, Human Revolution (gold): random per visit, switchable in the nav, saved | David likes all three. |
+| Previews (David, 2026-10-15) | **"We really should just have one site, and probably it should be the latest one, with everything included."** Unmerged work stacks on one branch with one PR, and one preview (rc-5) serves all of it; no preview per branch. | rc-1 stays the 2.5D archive. |
 | Hero lettering (David, 2026-10-15) | **"I'd like my lettering to not have the color scheme, but instead be lit up by the light sources of the sparks. Just a bit above barely readable unless lit."** The name and lines take no scheme colour: dim neutral ink (`INK` 0.13, just legible on the dark) plus the sparks' light map, so each letter takes the colour of the current passing it, brightest on the edges that face it. Schemes still pick the sparks and the font. | `?ink=` and `?lit=` tune it on the live page. |
 | Hosting | Private GitHub repo `DavidSlayback/slayback-landing-page` (local checkout `repos/portfolio`) → Cloudflare Pages | Serves `application/wasm`; `_headers` can add COOP/COEP later if threads are needed. |
 | Motion hygiene | `prefers-reduced-motion` still frame; static fallback if WebGL or WASM is unavailable | Polish; never a blank page. |
