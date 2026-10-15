@@ -170,7 +170,7 @@ fn request_entries(
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;
-        door.next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
+        door.next = pick_kind(&run.0.spec, run.0.elapsed, (s & 0xFFFF) as f32 / 65536.0);
         door.bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
         door.door.request();
     }

@@ -14,7 +14,8 @@
      the backbuffer never exceeds 1280x720, which keeps the look within budget on integrated GPUs (B2). */
   #stage { position: fixed; left: 50%; top: 50%; width: 1280px; height: 720px; transform: translate(-50%, -50%); }
   #game { width: 100%; height: 100%; display: block; outline: none; }
-  .back { position: fixed; top: 34px; left: 40px; z-index: 1; color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
+  /* On a dark pill like the game's HUD panel: the boxes' backdrops run from white to black (Q75). */
+  .back { position: fixed; top: 26px; left: 28px; z-index: 1; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.6); color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
 </style>
 </head>
 <body>

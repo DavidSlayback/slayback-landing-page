@@ -1726,7 +1726,8 @@ fn doors_deliver_thugs_and_ninjas_when_the_box_calls_for_them() {
     let entered = |thugs: f32, ninjas: f32| {
         let mut app = standing();
         let mut run = app.world_mut().resource_mut::<RunState>();
-        (run.0.spec.thugs, run.0.spec.ninjas) = (thugs, ninjas);
+        // From the box's start: box 1 holds its thugs back for its opening (Q76).
+        (run.0.spec.thugs, run.0.spec.ninjas, run.0.spec.thugs_after) = (thugs, ninjas, 0.0);
         app.world_mut().resource_mut::<Waves>().enabled = true;
         step(&mut app, 4.0);
         let mut q = app.world_mut().query::<&Brain>();

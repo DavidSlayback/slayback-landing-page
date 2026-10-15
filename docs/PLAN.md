@@ -2,12 +2,12 @@
 
 ```text
 As of: Wed Oct 14 2026 CDT
-In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, and Q75 Rumble Box colours. Pushed, no PR yet; rc-3 serves it.
+In flight: nothing running. Branch look-flat (from main after env-retro merged as #82; rc-2 and production serve main): Q74 flat material, the front glass rail hiding near the player, Q75 Rumble Box colours, and Q76 heavies in box 1 plus a HUD that reads on every box. PR open, not merged (David: "PR no merge"); rc-3 serves it.
 Done in look-flat: flat.rs/flat.wgsl replace StandardMaterial (no load stall); GlassRail hides within 2 m of the front wall; Q75: game-core palette is Rumble Box's (fixed fighter colours by part, four box stages, pale part-tinted debris, cyan ring, green health, red signal), game-core scheme.rs deleted (the hero keeps its own schemes in site/hero.js), flat shader checkers floor and walls and lights softer, outlines 2 px / creases 1 px, `?stage=N` previews a box's look.
-Next: David plays rc-3 (Q67). On sign-off: PR look-flat into main, merge, deploy rc-2; then the playtest (#29).
-Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13). Roster question: heavies in box 1 vs Q26.
+Next: David plays rc-3 (Q67). On sign-off: merge the look-flat PR, deploy rc-2; then the playtest (#29).
+Waiting on: David: play rc-3; playtesters (#29), gamepad (#26), C2 content (#13).
 Re-arm: nothing scheduled. wrangler logged in (OAuth). ubuntu-latest moves to Ubuntu 26 on 2026-10-19. CI out of minutes until Nov 1.
-Verified: see the look-flat commits and the rc-3 deploy's harness result.
+Verified: game-core 108 tests, game3d 62 headless scenarios + 18 render unit tests, clippy both feature sets; rc-3 harness 14 passed, 2 skipped (shaders.spec.js included). Frames of all four stages compared against the video's full frames.
 ```
 
 Status: 2026-10-12. Phase 0 and game slice 1 are merged to `main`. **The plan for everything left is complete:**

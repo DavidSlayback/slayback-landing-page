@@ -205,7 +205,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
             TextColor(colour(Role::Signal, &palette)),
-            TextShadow::default(),
+            crate::hud::EDGE,
             Node { position_type: PositionType::Absolute, ..default() },
         ));
     }

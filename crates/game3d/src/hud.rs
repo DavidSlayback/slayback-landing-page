@@ -24,8 +24,11 @@ struct Readout;
 /// Text colour, shared with the screens.
 pub(crate) const INK: Color = Color::srgb(0.93, 0.98, 0.9);
 
+/// A crisp dark edge under text drawn over the box, so it reads on every stage's tiles, pale or dark (Q75).
+pub(crate) const EDGE: TextShadow = TextShadow { offset: Vec2::splat(2.0), color: Color::BLACK };
+
 fn spawn(mut commands: Commands, palette: Res<Palette>) {
-    commands
+    let row = commands
         .spawn(Node {
             position_type: PositionType::Absolute,
             top: Val::Px(18.0),
@@ -33,10 +36,23 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             right: Val::Px(0.0),
             padding: UiRect::horizontal(Val::Px(28.0)),
             justify_content: JustifyContent::FlexEnd,
-            column_gap: Val::Px(28.0),
-            align_items: AlignItems::Center,
             ..default()
         })
+        .id();
+    // On a dark panel: the HUD sits over the sky or the box's back wall, which runs from white to near-black by stage
+    // (Q75), and light text on the pale ones didn't read.
+    commands
+        .spawn((
+            Node {
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(8.0)),
+                column_gap: Val::Px(24.0),
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+            ChildOf(row),
+        ))
         .with_children(|hud| {
             hud.spawn((
                 Node { width: Val::Px(240.0), height: Val::Px(12.0), ..default() },
@@ -47,7 +63,7 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
                 Node { width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() },
                 BackgroundColor(colour(Role::Health, &palette)),
             ));
-            hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), TextShadow::default()));
+            hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), EDGE));
         });
 }
 
