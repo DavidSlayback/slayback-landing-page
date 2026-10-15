@@ -23,6 +23,7 @@ use crate::comfort::Comfort;
 use crate::debris::Piece;
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
+use crate::flat::Flat;
 use crate::look::Palette;
 use crate::paint::{Paint, Paints, Role};
 use crate::player::{Dasher, Facing, Holding, Player};
@@ -120,9 +121,9 @@ impl Motion {
 #[derive(Resource, Default)]
 struct Kit {
     meshes: HashMap<[u32; 3], Handle<Mesh>>,
-    flash: Handle<StandardMaterial>,
+    flash: Handle<Flat>,
     blob: Handle<Mesh>,
-    blob_mat: Handle<StandardMaterial>,
+    blob_mat: Handle<Flat>,
     ring: Handle<Mesh>,
 }
 
@@ -154,25 +155,20 @@ fn load(
     mut kit: ResMut<Kit>,
     comfort: Res<Comfort>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
 ) {
     // A hit flashes the body full white; under reduced motion, a softer lit pale grey instead (as the 2.5D game tints).
     kit.flash = mats.add(if comfort.reduced_motion {
-        StandardMaterial { base_color: Color::srgb(0.78, 0.8, 0.85), perceptual_roughness: 0.85, ..default() }
+        Flat::lit(Color::srgb(0.78, 0.8, 0.85))
     } else {
-        StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() }
+        Flat::unlit(Color::WHITE)
     });
     // The flash is built while the page loads, not on the first hit (`camera::Warm`).
     let cube = kit.mesh(Solid::Cube([0.2; 3]), &mut meshes);
     commands.spawn((Warm, Mesh3d(cube), MeshMaterial3d(kit.flash.clone())));
     // A soft dark disc under the feet stands in for a shadow (no shadow map).
     kit.blob = meshes.add(Circle::new(0.42).mesh().resolution(24));
-    kit.blob_mat = mats.add(StandardMaterial {
-        base_color: Color::srgba(0.0, 0.0, 0.0, 0.4),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
+    kit.blob_mat = mats.add(Flat::unlit(Color::srgba(0.0, 0.0, 0.0, 0.4)).blend());
     // The player's ring (Q60): flat on the floor under the feet, in its paint (`Role::Ring`).
     kit.ring = meshes.add(Annulus::new(0.5, 0.64).mesh().resolution(48));
 }
@@ -227,7 +223,7 @@ fn dress_fighters(
     bombs: Res<bomb::view::Kit>,
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
     fighters: Query<(Entity, &Body, Option<&Brain>, Has<Player>, Has<BombHead>), Added<Body>>,
 ) {
     for (e, body, brain, is_player, bomb_head) in &fighters {
@@ -282,7 +278,7 @@ fn dress_debris(
     mut paints: ResMut<Paints>,
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
     pieces: Query<(Entity, &Piece), Added<Piece>>,
 ) {
     for (e, piece) in &pieces {
@@ -337,7 +333,7 @@ fn animate(
     )>,
     held: Query<&GlobalTransform, Without<Motion>>,
     mut rigs: Query<(&mut Transform, &Children), (With<Rig>, Without<Part>)>,
-    mut parts: Query<(&Part, &mut Transform, &mut MeshMaterial3d<StandardMaterial>), Without<Rig>>,
+    mut parts: Query<(&Part, &mut Transform, &mut MeshMaterial3d<Flat>), Without<Rig>>,
 ) {
     let dt = time.delta_secs();
     let k = pose::follow(dt);

@@ -18,6 +18,7 @@ use crate::bomb::Exploded;
 use crate::camera::{self, Warm};
 use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
 use crate::fighter::{Hit, Team};
+use crate::flat::Flat;
 use crate::look::Palette;
 use crate::paint::{Paints, Role, colour};
 use crate::score::Scored;
@@ -47,8 +48,8 @@ struct Popup {
 #[derive(Resource)]
 struct BurstKit {
     star: Handle<Mesh>,
-    outer: Handle<StandardMaterial>,
-    core: Handle<StandardMaterial>,
+    outer: Handle<Flat>,
+    core: Handle<Flat>,
 }
 
 pub fn plugin(app: &mut App) {
@@ -83,10 +84,10 @@ fn load(
     palette: Res<Palette>,
     mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
 ) {
     // Unlit, so they read at full strength with no bloom (research section 7); the outer star in the signal paint.
-    let core = StandardMaterial { base_color: Color::srgb(1.0, 0.97, 0.85), unlit: true, cull_mode: None, ..default() };
+    let core = Flat::unlit(Color::srgb(1.0, 0.97, 0.85));
     let kit = BurstKit {
         star: meshes.add(star(8, 0.42)),
         outer: paints.get(Role::Signal, &palette, &mut mats),

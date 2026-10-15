@@ -11,6 +11,7 @@ use game_core::palette::Rgb;
 use game_core::scheme::{self, Scheme};
 
 use crate::arena::{Kind, Slab, WALL};
+use crate::flat::Flat;
 use crate::paint::{Paints, Role};
 use crate::run::BoxStarted;
 
@@ -58,11 +59,12 @@ impl PageScheme {
 
 pub fn plugin(app: &mut App) {
     let page = PageScheme::read();
+    // No lights: `flat` shades every surface from one fixed key light and ambient of its own.
     app.insert_resource(ClearColor(Color::srgb(0.035, 0.04, 0.055)))
-        .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 900.0, ..default() })
         .insert_resource(Palette::nth(page.0))
         .insert_resource(page)
         .add_plugins((
+            crate::flat::plugin,
             crate::paint::plugin,
             crate::camera::plugin,
             crate::outline::plugin,
@@ -70,7 +72,7 @@ pub fn plugin(app: &mut App) {
             crate::impact::plugin,
             crate::hud::plugin,
         ))
-        .add_systems(Startup, (load_kit, spawn_light))
+        .add_systems(Startup, load_kit)
         .add_systems(Update, (rotate_scheme, dress_slabs, fade_walls).chain());
 }
 
@@ -87,11 +89,11 @@ fn rotate_scheme(mut started: MessageReader<BoxStarted>, page: Res<PageScheme>, 
 #[derive(Resource)]
 struct Kit {
     cube: Handle<Mesh>,
-    floor: Handle<StandardMaterial>,
-    wall: Handle<StandardMaterial>,
-    glass: Handle<StandardMaterial>,
+    floor: Handle<Flat>,
+    wall: Handle<Flat>,
+    glass: Handle<Flat>,
     /// Black, unlit: the rim and glass bars and the tile lines.
-    line: Handle<StandardMaterial>,
+    line: Handle<Flat>,
 }
 
 /// Makes the kit: the floor and walls in their shared paints (`paint`), the glass and the black lines.
@@ -100,34 +102,19 @@ fn load_kit(
     palette: Res<Palette>,
     mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
 ) {
     let floor = paints.get(Role::Floor, &palette, &mut mats);
     let wall = paints.get(Role::Wall, &palette, &mut mats);
-    let unlit = || StandardMaterial { unlit: true, ..default() };
     let kit = Kit {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         floor,
         wall,
         // Barely there: the pane's faces stack, and anything more washes out the floor behind it.
-        glass: mats.add(StandardMaterial {
-            base_color: Color::srgba(0.7, 0.85, 1.0, 0.035),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
-        }),
-        line: mats.add(StandardMaterial { base_color: Color::BLACK, ..unlit() }),
+        glass: mats.add(Flat::unlit(Color::srgba(0.7, 0.85, 1.0, 0.035)).blend()),
+        line: mats.add(Flat::unlit(Color::BLACK)),
     };
     commands.insert_resource(kit);
-}
-
-/// One directional light (WebGL2 keeps only one), from above and in front, a little to the right, so the two side
-/// walls' faces read apart; no shadow map.
-fn spawn_light(mut commands: Commands) {
-    commands.spawn((
-        DirectionalLight { illuminance: 9_000.0, shadow_maps_enabled: false, ..default() },
-        Transform::from_xyz(5.0, 14.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
 }
 
 /// The black bars along the rim and round the glass, metres thick (Rumble Box's thick black edges, Q66).
@@ -151,7 +138,7 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
     for (e, slab, at) in &slabs {
         let s = slab.size;
         commands.entity(e).insert(Visibility::default());
-        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<StandardMaterial>, face: Option<WallFace>| {
+        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<Flat>, face: Option<WallFace>| {
             let mut c = commands.spawn((
                 Mesh3d(kit.cube.clone()),
                 MeshMaterial3d(mat.clone()),
@@ -223,7 +210,7 @@ fn lines(len: f32) -> impl Iterator<Item = f32> {
 fn fade_walls(
     kit: Res<Kit>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
-    mut faces: Query<(&WallFace, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+    mut faces: Query<(&WallFace, &mut MeshMaterial3d<Flat>, &mut Visibility)>,
 ) {
     let Some(eye) = cameras.iter().next().map(|c| c.translation().xz()) else { return };
     for (face, mut mat, mut shown) in &mut faces {

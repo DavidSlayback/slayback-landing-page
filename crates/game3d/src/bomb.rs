@@ -165,6 +165,7 @@ pub mod view {
     use bevy::prelude::*;
 
     use super::{LitBomb, RADIUS};
+    use crate::flat::Flat;
     use crate::look::Palette;
     use crate::paint::{Paints, Role, colour};
 
@@ -173,13 +174,13 @@ pub mod view {
     pub struct Kit {
         shell_mesh: Handle<Mesh>,
         fuse_mesh: Handle<Mesh>,
-        shell: Handle<StandardMaterial>,
-        fuse: Handle<StandardMaterial>,
+        shell: Handle<Flat>,
+        fuse: Handle<Flat>,
     }
 
     /// A lit bomb's own shell material, which blinks.
     #[derive(Component)]
-    struct Light(Handle<StandardMaterial>);
+    struct Light(Handle<Flat>);
 
     /// The shell's colour: near-black, so the fuse and the blink stand out.
     const SHELL: Color = Color::srgb(0.07, 0.07, 0.09);
@@ -188,8 +189,8 @@ pub mod view {
         app.add_systems(Startup, load).add_systems(Update, (dress, blink).chain());
     }
 
-    fn shell(base_color: Color) -> StandardMaterial {
-        StandardMaterial { base_color, perceptual_roughness: 0.3, ..default() }
+    fn shell(color: Color) -> Flat {
+        Flat::lit(color)
     }
 
     fn load(
@@ -197,7 +198,7 @@ pub mod view {
         palette: Res<Palette>,
         mut paints: ResMut<Paints>,
         mut meshes: ResMut<Assets<Mesh>>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
     ) {
         commands.insert_resource(Kit {
             // Faceted like the figures' cubes.
@@ -209,7 +210,7 @@ pub mod view {
     }
 
     /// A bomb's look, its shell in `shell`: the ball, and the fuse stub leaning out of its top.
-    pub fn bomb(kit: &Kit, shell: Handle<StandardMaterial>) -> impl Bundle {
+    pub fn bomb(kit: &Kit, shell: Handle<Flat>) -> impl Bundle {
         (
             Mesh3d(kit.shell_mesh.clone()),
             MeshMaterial3d(shell),
@@ -230,7 +231,7 @@ pub mod view {
     fn dress(
         mut commands: Commands,
         kit: Res<Kit>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
         bombs: Query<Entity, Added<LitBomb>>,
     ) {
         for e in &bombs {
@@ -240,14 +241,14 @@ pub mod view {
     }
 
     /// Lit bombs blink in the warning accent, faster as the fuse runs out (`Fuse::blink`).
-    fn blink(palette: Res<Palette>, bombs: Query<(&LitBomb, &Light)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    fn blink(palette: Res<Palette>, bombs: Query<(&LitBomb, &Light)>, mut mats: ResMut<Assets<Flat>>) {
         let hot = colour(Role::Signal, &palette).to_linear() * 1.5;
         for (lit, light) in &bombs {
             let glow = if lit.fuse.blink() { hot } else { LinearRgba::BLACK };
             if let Some(mut m) = mats.get_mut(&light.0)
-                && m.emissive != glow
+                && m.glow != glow
             {
-                m.emissive = glow;
+                m.glow = glow;
             }
         }
     }

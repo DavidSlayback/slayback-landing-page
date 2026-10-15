@@ -252,6 +252,7 @@ mod view {
     use game_core::doors::{Door, WARNING};
 
     use super::WallDoor;
+    use crate::flat::Flat;
     use crate::look::Palette;
     use crate::paint::{Role, colour};
 
@@ -260,7 +261,7 @@ mod view {
 
     /// Each door's own material, recoloured as it warns.
     #[derive(Component)]
-    struct Panel(Handle<StandardMaterial>);
+    struct Panel(Handle<Flat>);
 
     pub fn plugin(app: &mut App) {
         app.add_systems(Update, (dress, pulse, fade).chain());
@@ -275,10 +276,10 @@ mod view {
         palette: Res<Palette>,
         doors: Query<(Entity, &WallDoor), Added<WallDoor>>,
         mut meshes: ResMut<Assets<Mesh>>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
     ) {
         for (e, door) in &doors {
-            let mat = mats.add(StandardMaterial { base_color: closed(&palette), unlit: true, ..default() });
+            let mat = mats.add(Flat::unlit(closed(&palette)));
             commands.entity(e).insert((Panel(mat.clone()), Visibility::default()));
             commands.spawn((
                 Mesh3d(meshes.add(Cuboid::from_size(PANEL))),
@@ -290,7 +291,7 @@ mod view {
         }
     }
 
-    fn pulse(palette: Res<Palette>, doors: Query<(&WallDoor, &Panel)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    fn pulse(palette: Res<Palette>, doors: Query<(&WallDoor, &Panel)>, mut mats: ResMut<Assets<Flat>>) {
         for (door, panel) in &doors {
             let colour = match door.door {
                 Door::Closed => closed(&palette),
@@ -302,10 +303,11 @@ mod view {
                 }
                 Door::Open(_) => Color::BLACK,
             };
+            let colour = LinearRgba::from(colour);
             if let Some(mut m) = mats.get_mut(&panel.0)
-                && m.base_color != colour
+                && m.color != colour
             {
-                m.base_color = colour;
+                m.color = colour;
             }
         }
     }

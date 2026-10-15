@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use bevy::prelude::*;
 use game_core::palette::{self, Fighter, Rgb};
 
+use crate::flat::Flat;
 use crate::look::{Palette, srgb};
 
 /// Which of a fighter's colours a part of its figure wears.
@@ -71,35 +72,27 @@ fn furthest(accents: [Rgb; 4], from: Rgb) -> Rgb {
     accents.into_iter().max_by(|a, b| d(a).total_cmp(&d(b))).unwrap_or(from)
 }
 
-/// The material a role is drawn with, in `colour`: lit and matte for surfaces, unlit (full strength, no bloom,
-/// research section 7) for marks and glows. Unlit ones draw both faces, for the bursts' flat stars.
-fn material(role: Role, colour: Color) -> StandardMaterial {
+/// The material a role is drawn with, in `colour`: shaded by the light for surfaces and fighters, unlit (full
+/// strength, no bloom, research section 7) for marks and glows.
+fn material(role: Role, colour: Color) -> Flat {
     match role {
-        Role::Signal | Role::Ring | Role::Windup(_) => {
-            StandardMaterial { base_color: colour, unlit: true, cull_mode: None, ..default() }
-        }
-        Role::Floor | Role::Wall => StandardMaterial { base_color: colour, perceptual_roughness: 0.9, ..default() },
-        _ => StandardMaterial { base_color: colour, perceptual_roughness: 0.85, ..default() },
+        Role::Signal | Role::Ring | Role::Windup(_) => Flat::unlit(colour),
+        _ => Flat::lit(colour),
     }
 }
 
 /// One shared material per role, so everything wearing it batches and repaints together.
 #[derive(Resource, Default)]
-pub struct Paints(HashMap<Role, Handle<StandardMaterial>>);
+pub struct Paints(HashMap<Role, Handle<Flat>>);
 
 impl Paints {
     /// `role`'s material, made on first use in the current scheme.
-    pub fn get(
-        &mut self,
-        role: Role,
-        palette: &Palette,
-        mats: &mut Assets<StandardMaterial>,
-    ) -> Handle<StandardMaterial> {
+    pub fn get(&mut self, role: Role, palette: &Palette, mats: &mut Assets<Flat>) -> Handle<Flat> {
         self.0.entry(role).or_insert_with(|| mats.add(material(role, colour(role, palette)))).clone()
     }
 
     /// `role`'s material if something has made it.
-    pub fn made(&self, role: Role) -> Option<&Handle<StandardMaterial>> {
+    pub fn made(&self, role: Role) -> Option<&Handle<Flat>> {
         self.0.get(&role)
     }
 }
@@ -109,10 +102,10 @@ pub fn plugin(app: &mut App) {
 }
 
 /// Recolours every role's material when a box changes the scheme.
-fn repaint(paints: Res<Paints>, palette: Res<Palette>, mut mats: ResMut<Assets<StandardMaterial>>) {
+fn repaint(paints: Res<Paints>, palette: Res<Palette>, mut mats: ResMut<Assets<Flat>>) {
     for (&role, handle) in &paints.0 {
         if let Some(mut m) = mats.get_mut(handle) {
-            m.base_color = colour(role, &palette);
+            m.color = colour(role, &palette).into();
         }
     }
 }
@@ -140,20 +133,20 @@ mod tests {
     fn a_shared_material_is_made_once_and_repaints_with_the_scheme() {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default()))
-            .init_asset::<StandardMaterial>()
+            .init_asset::<Flat>()
             .insert_resource(Palette::nth(0))
             .add_plugins(plugin);
         app.update();
         let world = app.world_mut();
         let (a, b) = world.resource_scope(|world, mut paints: Mut<Paints>| {
             let palette = *world.resource::<Palette>();
-            let mut mats = world.resource_mut::<Assets<StandardMaterial>>();
+            let mut mats = world.resource_mut::<Assets<Flat>>();
             (paints.get(Role::Signal, &palette, &mut mats), paints.get(Role::Signal, &palette, &mut mats))
         });
         assert_eq!(a, b, "one material per role");
         *app.world_mut().resource_mut::<Palette>() = Palette::nth(1);
         app.update();
-        let now = app.world().resource::<Assets<StandardMaterial>>().get(&a).unwrap().base_color;
-        assert_eq!(now, colour(Role::Signal, &Palette::nth(1)), "repainted in the new scheme");
+        let now = app.world().resource::<Assets<Flat>>().get(&a).unwrap().color;
+        assert_eq!(now, colour(Role::Signal, &Palette::nth(1)).into(), "repainted in the new scheme");
     }
 }
