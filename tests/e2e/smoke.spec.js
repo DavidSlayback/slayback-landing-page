@@ -121,6 +121,44 @@ test.describe('/play', () => {
     });
   });
 
+  // A visitor's browser starts the game's audio suspended until they interact (the autoplay policy); test browsers
+  // let it run, so these suspend it themselves. Sound is muted by default; `slayback-sound` turns it on.
+  test("suspended game audio wakes on the first key press", async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    const logs = [];
+    page.on('console', m => logs.push(m.text()));
+    await page.goto('/play/');
+    await expect.poll(() => logs.some(l => l.includes('phase start')), { timeout: 150_000 }).toBe(true);
+    const states = () => page.evaluate(() => (window.gameAudio || []).map(c => c.state));
+    expect((await states()).length, 'the game made its audio context').toBeGreaterThan(0);
+    await page.evaluate(() => Promise.all(window.gameAudio.map(c => c.suspend())));
+    expect(await states()).not.toContain('running');
+    await page.keyboard.press('Enter');
+    await expect.poll(states).toEqual((await states()).map(() => 'running'));
+  });
+
+  test('with sound on, the demo fight is audible', async ({ page }) => {
+    test.setTimeout(180_000);
+    const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
+    if (process.env.REQUIRE_GAME) expect(built).toBe(true);
+    test.skip(!built, 'game not in this build');
+    // The loudest sample the game hands the browser (cpal writes each block with copyToChannel).
+    await page.addInitScript(() => {
+      localStorage.setItem('slayback-sound', 'on');
+      window.peak = 0;
+      const copy = AudioBuffer.prototype.copyToChannel;
+      AudioBuffer.prototype.copyToChannel = function (src, ...rest) {
+        for (const v of src) window.peak = Math.max(window.peak, Math.abs(v));
+        return copy.call(this, src, ...rest);
+      };
+    });
+    await page.goto('/play/?demo=1');
+    await expect.poll(() => page.evaluate(() => window.peak), { timeout: 150_000 }).toBeGreaterThan(0.1);
+  });
+
   test('a scripted run climbs out to box 2 with no console errors', async ({ page }) => {
     test.setTimeout(180_000);
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));

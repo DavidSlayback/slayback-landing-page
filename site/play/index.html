@@ -32,6 +32,17 @@
 <a class="back" href="../">← Back</a>
 <p class="turn">Turn your phone sideways to play</p>
 <script>
+  { // Sound: browsers start audio suspended until the visitor interacts (the autoplay policy), and the game's audio
+    // backend (cpal) creates its AudioContext while the game loads and asks to resume it only then, so it would stay
+    // silent for good. Keep each context the game makes and resume it on every click, key or tap until it runs.
+    const Native = window.AudioContext || window.webkitAudioContext;
+    if (Native) {
+      const contexts = window.gameAudio = [];
+      window.AudioContext = class extends Native { constructor(...a) { super(...a); contexts.push(this); } };
+      const wake = () => { for (const c of contexts) if (c.state === 'suspended') c.resume().catch(() => {}); };
+      for (const type of ['pointerdown', 'keydown', 'touchend']) addEventListener(type, wake, { capture: true });
+    }
+  }
   { // Size the stage: 16:9, at most 1280 px wide in layout, then scaled to fill the viewport. On a touch screen it
     // fills the whole screen instead (still at most 1280x720 in layout), so the touch controls reach its edges.
     const stage = document.getElementById('stage');
