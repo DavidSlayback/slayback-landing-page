@@ -109,7 +109,7 @@ mod view {
     pub fn plugin(app: &mut App) {
         app.add_systems(Startup, spawn)
             .add_systems(PostStartup, hold_warm)
-            .add_systems(Update, drop_warm)
+            .add_systems(Update, drop_warm.in_set(crate::Frame::Show))
             .add_systems(PostUpdate, fit.before(TransformSystems::Propagate));
     }
 

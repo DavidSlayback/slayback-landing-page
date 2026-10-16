@@ -26,7 +26,7 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, |store: Res<Store>, mut sound: ResMut<Sound>| {
             sound.on = store.get(SOUND_KEY).is_some_and(|s| s.trim() == "on");
         })
-        .add_systems(Update, toggle.run_if(in_state(Phase::Paused)));
+        .add_systems(Update, toggle.in_set(crate::Frame::Show).run_if(in_state(Phase::Paused)));
 }
 
 fn toggle(actions: Res<Actions>, store: Res<Store>, mut sound: ResMut<Sound>) {
@@ -62,7 +62,7 @@ mod effects {
 
     /// Plays the effects (the window's audio output; not in headless runs).
     pub fn playback(app: &mut App) {
-        app.add_systems(Startup, load).add_systems(Update, play.after(crate::fighter::Combat));
+        app.add_systems(Startup, load).add_systems(Update, play.in_set(crate::Frame::Show));
     }
 
     fn load(mut commands: Commands, mut sources: ResMut<Assets<AudioSource>>) {

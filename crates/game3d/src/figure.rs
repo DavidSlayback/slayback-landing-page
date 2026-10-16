@@ -149,7 +149,7 @@ impl Kit {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Kit>()
         .add_systems(Startup, load)
-        .add_systems(Update, (dress_fighters, dress_debris, animate).chain());
+        .add_systems(Update, (dress_fighters, dress_debris, animate).chain().in_set(crate::Frame::Show));
 }
 
 fn load(

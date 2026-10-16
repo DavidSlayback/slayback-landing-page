@@ -9,6 +9,7 @@ use game_core::debris::solid::{Settle, Solid, at_rest, figure, frozen_over_cap, 
 use game_core::enemy::Kind;
 use game_core::grab::Held;
 
+use crate::Frame;
 use crate::bomb::{BombHead, lit_bomb};
 use crate::carry::Grabbable;
 use crate::enemy::Brain;
@@ -39,7 +40,7 @@ const BURST_UP: f32 = 5.0;
 const CARRY: f32 = 0.3;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Update, (burst, settle, cap_moving, cap_frozen).chain().after(Combat));
+    app.add_systems(Update, (burst, settle, cap_moving, cap_frozen).chain().in_set(Frame::Resolve).after(Combat));
 }
 
 /// A loose piece of debris (as a burst spawns it; tests build piles with it too).

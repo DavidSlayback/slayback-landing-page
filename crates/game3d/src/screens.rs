@@ -13,7 +13,7 @@ use crate::sound::Sound;
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, (spawn, |mut next: ResMut<NextState<Phase>>| next.set(Phase::Start)))
-        .add_systems(Update, (show, write_sound, write_prompts))
+        .add_systems(Update, (show, write_sound, write_prompts).in_set(crate::Frame::Show))
         // Every frame while over: the run's final numbers can land a frame after the screen appears.
         .add_systems(Update, write_game_over.run_if(in_state(Phase::Over)));
 }

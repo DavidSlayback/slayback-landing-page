@@ -46,7 +46,7 @@ pub fn plugin(app: &mut App) {
             crate::touchpad::plugin,
         ))
         .add_systems(Startup, load_kit)
-        .add_systems(Update, (next_stage, dress_slabs, fade_walls, clear_glass).chain());
+        .add_systems(Update, (next_stage, dress_slabs, fade_walls, clear_glass).chain().in_set(crate::Frame::Show));
 }
 
 /// Each box takes its stage.

@@ -16,9 +16,10 @@ use game_core::climb::{MAX_STEP, walkable};
 use game_core::combat::Move;
 use game_core::plane::{self, Dash, run_velocity};
 
+use crate::Frame;
 use crate::carry::{Carried, Carry};
 use crate::enemy::Brain;
-use crate::fighter::{Attack, Combat, Hp, Layer, Team, body};
+use crate::fighter::{Attack, Hp, Layer, Team, body};
 use crate::input::Actions;
 use crate::{on_floor, plane as to_plane};
 
@@ -50,8 +51,8 @@ pub const SPAWN: Vec3 = Vec3::new(0.0, HEIGHT / 2.0 + 0.3, 1.5);
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn)
-        // Only while playing: the click or Space that leaves a screen must not also punch or dash.
-        .add_systems(Update, control.before(Combat).run_if(in_state(crate::flow::Phase::Playing)))
+        // Only while playing (`Frame::Decide`): the click or Space that leaves a screen must not also punch or dash.
+        .add_systems(Update, control.in_set(Frame::Decide))
         .add_systems(FixedUpdate, walk);
 }
 

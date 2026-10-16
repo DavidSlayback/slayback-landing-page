@@ -10,7 +10,7 @@ use crate::hud::{EDGE, INK};
 use crate::input::Touch;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, update);
+    app.add_systems(Startup, spawn).add_systems(Update, update.in_set(crate::Frame::Show));
 }
 
 #[derive(Component)]

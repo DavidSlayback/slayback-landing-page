@@ -2,6 +2,10 @@
 
 The game's domain words, as the code uses them. Decisions live in `docs/planning/game-decisions.md`; this file names things.
 
+## The frame
+
+- **Frame**: the order of one game frame, declared once in `game3d/src/lib.rs`. **Decide** (the player's control, the brains, the doors), **Act** (the carry and the bombs), **Resolve** (swings and strikes land, in `Combat`, then debris, the run and the score follow) and **Show** (the look, sound, shake, HUD and screens, plus the bookkeeping that runs on every screen). The first three run only while playing.
+
 ## Fighting
 
 - **Blow**: anything that lands on a fighter. It might be a swing (punch, kick, drop-kick, an enemy's smash, slash or jab), a thrown thing, or a bomb blast. A blow is just numbers: damage, stun, launch, hit-stop, which armour shrugs it off, whether it reaches what the player holds, and its feel. Where it came from only decides those numbers. `game_core::combat::Blow`; built by `Blow::swing`, `grab::blow` and `bomb::blow`.

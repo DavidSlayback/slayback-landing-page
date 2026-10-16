@@ -104,9 +104,8 @@ pub struct Defeated {
 #[derive(Resource, Default)]
 pub struct HitStopClock(pub HitStop);
 
-/// Swings advance, land and end here, and every [`Strike`] lands; whatever starts a swing (the player's control,
-/// enemy brains) or sends a strike (a throw, a blast) runs before it, and whatever reacts to hits and defeats (debris,
-/// score) after it.
+/// Swings advance, land and end here, and every [`Strike`] lands: the first part of `Frame::Resolve`, so whatever
+/// reacts to hits and defeats in the same frame (debris, the run, the score) runs `.after(Combat)`.
 #[derive(SystemSet, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Combat;
 
@@ -123,8 +122,9 @@ pub fn plugin(app: &mut App) {
                 land,
                 finish_swings,
                 tick_health,
-                // Only while playing: the screens hold the clock paused, and the hit-stop would let it go.
-                hit_stop.run_if(in_state(crate::flow::Phase::Playing)),
+                // Only while playing (as all of `Combat`): the screens hold the clock paused, and the hit-stop
+                // would let it go.
+                hit_stop,
             )
                 .chain()
                 .in_set(Combat),

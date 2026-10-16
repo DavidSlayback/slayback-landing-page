@@ -13,8 +13,9 @@ use bevy::prelude::*;
 use game_core::impact::{self, BLAST_TRAUMA, SQUASH_TIME};
 use game_core::quality::{Level, Scaler};
 
+use crate::Frame;
 use crate::bomb::Exploded;
-use crate::fighter::{Combat, Hit};
+use crate::fighter::Hit;
 
 /// Whether the visitor asked for reduced motion. Tests insert their own before the first update.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -110,7 +111,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<Shake>()
         .init_resource::<Quality>()
         .add_systems(Startup, announce)
-        .add_systems(Update, ((add_trauma, start_squash).after(Combat), scale_quality));
+        .add_systems(Update, (add_trauma, start_squash, scale_quality).in_set(Frame::Show));
     #[cfg(feature = "render")]
     app.add_systems(Update, view::apply_quality.after(scale_quality));
 }

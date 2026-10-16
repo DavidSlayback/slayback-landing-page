@@ -328,7 +328,7 @@ fn fight(
 /// The stairs run: no enemies, a staircase in each box, and the player walking right.
 pub fn stairs(app: &mut App) {
     app.insert_resource(Waves { enabled: false, ..default() })
-        .add_systems(Update, build_stairs)
+        .add_systems(Update, build_stairs.in_set(crate::Frame::Show))
         .add_systems(PreUpdate, walk_right.after(ReadActions));
 }
 

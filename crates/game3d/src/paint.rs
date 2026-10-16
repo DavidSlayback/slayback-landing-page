@@ -125,7 +125,8 @@ impl Paints {
 }
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Paints>().add_systems(Update, repaint.run_if(resource_changed::<Palette>));
+    app.init_resource::<Paints>()
+        .add_systems(Update, repaint.in_set(crate::Frame::Show).run_if(resource_changed::<Palette>));
 }
 
 /// Recolours every role's material, and the sky, when a box changes the stage.

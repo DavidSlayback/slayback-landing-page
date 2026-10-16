@@ -54,7 +54,10 @@ struct BurstKit {
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load)
-        .add_systems(Update, ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain())
+        .add_systems(
+            Update,
+            ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain().in_set(crate::Frame::Show),
+        )
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
 

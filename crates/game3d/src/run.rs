@@ -14,6 +14,7 @@ use game_core::combat::{Health, HitOutcome};
 use game_core::doors::Door;
 use game_core::run::{BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
 
+use crate::Frame;
 use crate::arena::Arena;
 use crate::bomb::LitBomb;
 use crate::debris::Piece;
@@ -55,7 +56,8 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, |run: Res<RunState>, mut started: MessageWriter<BoxStarted>| {
             started.write(BoxStarted(run.0.spec));
         })
-        .add_systems(Update, ((clock, escape, die).chain().after(Combat).run_if(in_state(Phase::Playing)), announce))
+        .add_systems(Update, (clock, escape, die).chain().in_set(Frame::Resolve).after(Combat))
+        .add_systems(Update, announce.in_set(Frame::Show))
         // Leaving the game-over screen starts a fresh run.
         .add_systems(OnExit(Phase::Over), restart);
 }

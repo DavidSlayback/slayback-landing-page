@@ -1389,7 +1389,7 @@ fn watch(
 /// A headless app that records what happens (`Seen`), with `extra` set up first, after a second to land.
 fn watched(extra: impl FnOnce(&mut App)) -> App {
     let mut app = headless_and(fresh_store(), |app| {
-        app.init_resource::<Seen>().add_systems(Update, watch.after(game3d::fighter::Combat));
+        app.init_resource::<Seen>().add_systems(Update, watch.in_set(game3d::Frame::Show));
         extra(app);
     });
     step(&mut app, 1.0);

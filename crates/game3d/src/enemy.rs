@@ -17,10 +17,11 @@ use game_core::plane::{RUN_ACCEL, RUN_SPEED, approach, heading};
 use game_core::run::{box_spec, pick_kind};
 use game_core::steer::{circle, steer};
 
+use crate::Frame;
 use crate::arena::Arena;
 use crate::bomb::BombHead;
 use crate::carry::{Carried, Grabbable};
-use crate::fighter::{Attack, Combat, Hp, Team, body};
+use crate::fighter::{Attack, Hp, Team, body};
 use crate::player::{Facing, Player};
 use crate::run::RunState;
 use crate::{on_floor, plane};
@@ -77,7 +78,7 @@ impl Default for Waves {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Waves>()
         .add_systems(Startup, spawn_doors)
-        .add_systems(Update, (request_entries, open_doors, think.before(Combat)));
+        .add_systems(Update, (request_entries, open_doors, think).in_set(Frame::Decide));
     #[cfg(feature = "render")]
     app.add_plugins(view::plugin);
 }
@@ -264,7 +265,7 @@ mod view {
     struct Panel(Handle<Flat>);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Update, (dress, pulse, fade).chain());
+        app.add_systems(Update, (dress, pulse, fade).chain().in_set(crate::Frame::Show));
     }
 
     fn closed(palette: &Palette) -> Color {

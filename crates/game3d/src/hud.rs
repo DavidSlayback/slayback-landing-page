@@ -13,7 +13,7 @@ use crate::run::RunState;
 use crate::score::RunScore;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, update);
+    app.add_systems(Startup, spawn).add_systems(Update, update.in_set(crate::Frame::Show));
 }
 
 #[derive(Component)]

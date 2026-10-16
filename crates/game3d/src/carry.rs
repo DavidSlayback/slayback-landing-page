@@ -20,13 +20,14 @@ use game_core::debris::solid::{Settle, Solid};
 use game_core::grab::{FLIGHT, Held, SPIN, impact};
 use game_core::grab::{blow, passes, pick, stops, swing, throw_heading, throw_velocity};
 
+use crate::Frame;
 use crate::arena::Arena;
 use crate::bomb;
 use crate::debris::Piece;
 use crate::enemy::Brain;
-use crate::fighter::{Attack, Body, Combat, Defeated, Hp, Layer, Strike, Team};
+use crate::fighter::{Attack, Body, Defeated, Hp, Layer, Strike, Team};
 use crate::input::Actions;
-use crate::player::{self, Facing, HEIGHT, Player, RADIUS};
+use crate::player::{Facing, HEIGHT, Player, RADIUS};
 use crate::{on_floor, plane};
 
 /// The player has something in hand: what, and where in the carry it is.
@@ -99,13 +100,9 @@ const SWAY: f32 = 0.12;
 const SWAY_RATE: f32 = 7.0;
 
 pub fn plugin(app: &mut App) {
-    // Grabbing and throwing only while playing: L or a click on a screen must not pick anything up or throw it. The
-    // throw starts before the grab, so an attack in the frame a grab lands doesn't also throw.
-    let playing = in_state(crate::flow::Phase::Playing);
-    app.add_systems(
-        Update,
-        (throw.run_if(playing.clone()), grab.run_if(playing), carry, fly).chain().after(player::control).before(Combat),
-    );
+    // Only while playing (`Frame::Act`): L or a click on a screen must not pick anything up or throw it. The throw
+    // starts before the grab, so an attack in the frame a grab lands doesn't also throw.
+    app.add_systems(Update, (throw, grab, carry, fly).chain().in_set(Frame::Act));
 }
 
 /// A thing's radius across the floor, for carrying it, metres.

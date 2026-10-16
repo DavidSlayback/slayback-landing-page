@@ -12,10 +12,10 @@ use game_core::bomb::{Fuse, HITSTOP, blow, push};
 use game_core::debris::solid::Settle;
 use game_core::grab::Held;
 
+use crate::Frame;
 use crate::carry::{Carried, Grabbable};
 use crate::debris::Piece;
-use crate::fighter::{Combat, HitStopClock, Layer, Strike, Team};
-use crate::flow::Phase;
+use crate::fighter::{HitStopClock, Layer, Strike, Team};
 use crate::{on_floor, plane};
 
 /// This enemy's head is a bomb.
@@ -38,8 +38,8 @@ pub struct Exploded {
 pub const RADIUS: f32 = 0.22;
 
 pub fn plugin(app: &mut App) {
-    // Fuses burn on the game clock, which stops outside play anyway; the gate keeps blasts out of the screens too.
-    app.add_message::<Exploded>().add_systems(Update, burn.before(Combat).run_if(in_state(Phase::Playing)));
+    // Fuses burn on the game clock, which stops outside play anyway; `Frame::Act` keeps blasts out of the screens too.
+    app.add_message::<Exploded>().add_systems(Update, burn.in_set(Frame::Act));
     #[cfg(feature = "render")]
     app.add_plugins(view::plugin);
 }
@@ -164,7 +164,7 @@ pub mod view {
     const SHELL: Color = Color::srgb(0.07, 0.07, 0.09);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Startup, load).add_systems(Update, (dress, blink).chain());
+        app.add_systems(Startup, load).add_systems(Update, (dress, blink).chain().in_set(crate::Frame::Show));
     }
 
     fn shell(color: Color) -> Flat {
