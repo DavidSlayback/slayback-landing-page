@@ -1554,7 +1554,8 @@ fn a_gamepad_plays_every_verb_dash_punch_kick_grab_throw_and_pause() {
     assert_eq!(phase(&app), Phase::Playing);
 }
 
-/// Punches a fodder in front; the screen shake's trauma afterwards, and whether the fodder squashed.
+/// Punches a fodder in front; the screen shake's trauma afterwards, and whether the fodder squashed at any point (a
+/// squash runs out in `SQUASH_TIME`).
 fn punch_one(reduced_motion: bool) -> (f32, bool) {
     let mut app = watched(|app| {
         app.insert_resource(Comfort { reduced_motion });
@@ -1563,9 +1564,13 @@ fn punch_one(reduced_motion: bool) -> (f32, bool) {
     stun(&mut app, foe);
     step(&mut app, 0.05);
     tap(&mut app, KeyCode::KeyJ);
-    step(&mut app, 0.3);
+    let mut squashed = false;
+    for _ in 0..(0.3 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        squashed |= app.world().get::<Squash>(foe).is_some();
+    }
     assert!(hp(&app, foe) < FULL, "the punch landed");
-    (app.world().resource::<Shake>().trauma, app.world().get::<Squash>(foe).is_some())
+    (app.world().resource::<Shake>().trauma, squashed)
 }
 
 #[test]

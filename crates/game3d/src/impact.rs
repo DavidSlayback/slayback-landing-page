@@ -12,12 +12,12 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use game_core::impact::{BLAST_BURST, pop, squash};
+use game_core::impact::{BLAST_BURST, pop};
 
 use crate::bomb::Exploded;
 use crate::camera::{self, Warm};
-use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
-use crate::fighter::{Hit, Team};
+use crate::comfort::{Comfort, Quality, Shake, Thin, burst_share};
+use crate::fighter::Hit;
 use crate::flat::Flat;
 use crate::look::Palette;
 use crate::paint::{Paints, Role, colour};
@@ -56,7 +56,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load)
         .add_systems(
             Update,
-            ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain().in_set(crate::Frame::Show),
+            ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups)).chain().in_set(crate::Frame::Show),
         )
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
@@ -175,27 +175,6 @@ fn grow_bursts(mut commands: Commands, real: Res<Time<Real>>, mut bursts: Query<
         }
 
         tf.scale = Vec3::splat(burst.size * pop(1.0 - burst.life / BURST_LIFE));
-    }
-}
-
-/// Squashes each struck fighter's figure (the player's from `look`, enemies' from `figure`) and lets it spring back.
-#[allow(clippy::type_complexity)]
-fn ease_squash(
-    mut commands: Commands,
-    real: Res<Time<Real>>,
-    mut fighters: Query<(Entity, &mut Squash, &Children), With<Team>>,
-    mut rigs: Query<&mut Transform, With<crate::figure::Rig>>,
-) {
-    for (e, mut s, children) in &mut fighters {
-        s.0 = (s.0 - real.delta_secs()).max(0.0);
-        if s.0 == 0.0 {
-            commands.entity(e).remove::<Squash>();
-        }
-        for &c in children {
-            if let Ok(mut tf) = rigs.get_mut(c) {
-                tf.scale = Vec3::from_array(squash(s.0));
-            }
-        }
     }
 }
 

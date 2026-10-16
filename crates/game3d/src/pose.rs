@@ -3,13 +3,18 @@
 //! pulls back; a kick does the same with a leg; a drop-kick lays the body back with both feet out; a held thing goes
 //! up in both fists; the walk is a big, snappy step with a bob.
 //!
-//! Everything here is a plain function of the figure's state, so it is tested headless; `look` (the player) and
-//! `figure` (enemies) apply it. Figure space: +x forward, +y up, +z the right-hand side; offsets are metres, added to
-//! each part's rest position.
+//! Everything here is a plain function of the figure's state, so it is tested headless. [`look`] is the whole
+//! decision for one fighter in one frame: from what it is doing ([`FigureState`]) and how it was moving ([`Motion`]),
+//! its [`Look`]: which way the figure turns, its lift, lean and squash, what it is doing with its limbs, and its tint.
+//! `figure` only gathers the state and writes the look onto the parts. Figure space: +x forward, +y up, +z the
+//! right-hand side; offsets are metres, added to each part's rest position.
 
 use bevy::prelude::*;
 use game_core::combat::{Move, Swing};
 use game_core::debris::solid::Limb;
+use game_core::grab::SPIN;
+
+use crate::carry::CarryPhase;
 
 /// What the figure is doing besides walking.
 #[derive(Clone, Copy, Debug)]
@@ -177,6 +182,166 @@ pub fn part(limb: Limb, reach: f32, rest: Vec3, phase: f32, amount: f32, act: Ac
     }
 }
 
+/// A fighter's motion between frames: walk phase; the side its last blow came from and how far into the swing it was
+/// last frame (negative for none), so a new swing can switch arms; whether it was holding something and seconds since
+/// it let go; and the ground speed at which its stride is full.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Motion {
+    phase: f32,
+    side: f32,
+    last: f32,
+    held: bool,
+    released: Option<f32>,
+    full_stride: f32,
+    /// Whether blows alternate arms (the player's) or always come from the right (an enemy's, whose wind-up shows).
+    alternate: bool,
+}
+
+impl Motion {
+    pub fn new(full_stride: f32, alternate: bool) -> Self {
+        let side = if alternate { -1.0 } else { 1.0 };
+        Self { phase: 0.0, side, last: -1.0, held: false, released: None, full_stride, alternate }
+    }
+}
+
+/// What a fighter is doing this frame, as its figure needs it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FigureState {
+    /// Its facing, a yaw (radians).
+    pub yaw: f32,
+    /// Its speed across the floor, m/s.
+    pub speed: f32,
+    pub swing: Option<Swing>,
+    /// The player's carry, if it holds something.
+    pub carry: Option<CarryPhase>,
+    /// Held up by the player.
+    pub carried: bool,
+    pub dashing: bool,
+    /// A hit's flash is on.
+    pub flashing: bool,
+    /// An enemy's blow and how far its telegraph is (0..=1); `None` for the player.
+    pub windup: Option<(Move, f32)>,
+    /// Seconds left of a hit's squash (`game_core::impact::squash`).
+    pub squash: f32,
+}
+
+/// What colours a figure's parts wear this frame: a hit's flash over everything, then the wind-up glow, then each
+/// part's own paint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tint {
+    Flash,
+    Windup,
+    Own,
+}
+
+/// How far into its telegraph an enemy glows.
+pub const GLOW: f32 = 0.3;
+
+/// A figure's pose this frame.
+#[derive(Clone, Copy, Debug)]
+pub struct Look {
+    /// Which way the figure faces (a whirl turns it with the held thing).
+    pub turn: Quat,
+    /// The rig's lift (figure space) and lean, and its squash (scale).
+    pub lift: Vec3,
+    pub lean: Quat,
+    pub scale: Vec3,
+    pub act: Act,
+    pub tint: Tint,
+    phase: f32,
+    amount: f32,
+    /// An enemy's striking (right) arm's wind-up: the offset at the shoulder and at the hand.
+    wind: (Vec3, Vec3),
+}
+
+impl Look {
+    /// The rig's place and turn under the fighter.
+    pub fn rig(&self) -> (Vec3, Quat) {
+        (self.turn * self.lift, self.turn * self.lean)
+    }
+
+    /// Where a part on `limb`, `reach` down it and resting at `rest`, goes: its offset from rest.
+    pub fn part(&self, limb: Limb, reach: f32, rest: Vec3) -> Vec3 {
+        let wind = if limb == Limb::RightArm { self.wind.0.lerp(self.wind.1, reach) } else { Vec3::ZERO };
+        part(limb, reach, rest, self.phase, self.amount, self.act) + wind
+    }
+}
+
+/// An enemy's striking (right) arm's wind-up before a blow comes out (`telegraph`, 0..=1): pulled back, or for a
+/// thug's smash raised overhead. The offset from rest at the shoulder and at the hand; the pieces between take their
+/// share.
+fn windup(mv: Move, telegraph: f32) -> (Vec3, Vec3) {
+    if mv == Move::Smash {
+        (Vec3::new(-0.06, 0.18, 0.0) * telegraph, Vec3::new(-0.12, 0.62, 0.0) * telegraph)
+    } else {
+        let back = Vec3::new(-0.16, 0.04, 0.0) * telegraph;
+        (back, back)
+    }
+}
+
+/// One fighter's look this frame, `dt` seconds of game time on: the walk; each blow from the arm or leg it uses (the
+/// player's punches alternate); an enemy's wind-up; a held thing in the fists, a held enemy dangling, a whirl (the body
+/// turning with the thing, from the throw's heading) and the throw's follow-through; a lean while dashing; a hit's
+/// squash; and the tint (the flash over the wind-up glow over the paint). Moves `m` on.
+pub fn look(m: &mut Motion, s: &FigureState, dt: f32) -> Look {
+    // A held enemy's legs kick as fast as a run.
+    let (amount, pace) = if s.carried { (0.8, 9.0) } else { ((s.speed / m.full_stride).min(1.0), s.speed * 3.0) };
+    m.phase += pace * dt;
+    let mut turn = Quat::from_rotation_y(s.yaw);
+    let act = match (s.carry, s.swing) {
+        _ if s.carried => Act::Dangle,
+        (Some(c), _) => {
+            m.held = true;
+            match c {
+                // Facing the thing as it goes round: one turn from the throw's heading (`game_core::grab::swing`).
+                CarryPhase::Whirl { t, heading } => {
+                    turn = Quat::from_rotation_y(heading + std::f32::consts::TAU * (t / SPIN).min(1.0));
+                    Act::Whirl
+                }
+                CarryPhase::Hold => Act::Hold,
+            }
+        }
+        (None, Some(swing)) => {
+            if m.alternate && (swing.elapsed < m.last || m.last < 0.0) {
+                m.side = -m.side;
+            }
+            m.last = swing.elapsed;
+            Act::Strike { swing, side: m.side }
+        }
+        (None, None) => Act::None,
+    };
+    if s.swing.is_none() {
+        m.last = -1.0;
+    }
+    if s.carry.is_none() && std::mem::take(&mut m.held) {
+        m.released = Some(0.0);
+    }
+    let act = match (act, m.released) {
+        (Act::None, Some(t)) => Act::Release { t },
+        (act, _) => act,
+    };
+    m.released = m.released.map(|t| t + dt).filter(|t| *t < RELEASE);
+    let (lift, mut lean) = body(m.phase, amount, act);
+    if s.dashing && matches!(act, Act::None) {
+        lean = Quat::from_rotation_z(-0.3);
+    }
+    // An enemy telegraphs its blow: the arm winds up and the figure glows. Not one held up, which can't fight.
+    let telegraph = if s.carried { 0.0 } else { s.windup.map_or(0.0, |w| w.1) };
+    let wind = match s.windup {
+        Some((mv, _)) if s.swing.is_none() => windup(mv, telegraph),
+        _ => (Vec3::ZERO, Vec3::ZERO),
+    };
+    let tint = if s.flashing {
+        Tint::Flash
+    } else if telegraph > GLOW {
+        Tint::Windup
+    } else {
+        Tint::Own
+    };
+    let scale = Vec3::from_array(game_core::impact::squash(s.squash));
+    Look { turn, lift, lean, scale, act, tint, phase: m.phase, amount, wind }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +436,89 @@ mod tests {
         let foot = |phase| part(Limb::RightLeg, 1.0, Vec3::ZERO, phase, 0.8, Act::Dangle);
         assert_ne!(foot(0.0), foot(1.5), "the legs kick");
         assert!(part(Limb::RightArm, 1.0, Vec3::ZERO, 0.0, 0.0, Act::Dangle).y > 0.2, "the arms reach up");
+    }
+
+    const FRAME: f32 = 1.0 / 60.0;
+
+    fn player() -> Motion {
+        Motion::new(6.0, true)
+    }
+
+    #[test]
+    fn a_hit_flashes_over_the_wind_up_glow_and_the_glow_over_the_paint() {
+        let mut m = Motion::new(3.0, false);
+        let winding = |t| Some((Move::Jab, t));
+        let tint = |m: &mut Motion, s: FigureState| look(m, &s, FRAME).tint;
+        assert_eq!(tint(&mut m, FigureState { flashing: true, windup: winding(1.0), ..default() }), Tint::Flash);
+        assert_eq!(tint(&mut m, FigureState { windup: winding(GLOW + 0.1), ..default() }), Tint::Windup);
+        assert_eq!(tint(&mut m, FigureState { windup: winding(GLOW - 0.1), ..default() }), Tint::Own);
+        let held = FigureState { carried: true, windup: winding(1.0), ..default() };
+        assert_eq!(tint(&mut m, held), Tint::Own, "held up, it can't fight, so it doesn't glow");
+        assert!(matches!(look(&mut m, &held, FRAME).act, Act::Dangle));
+    }
+
+    #[test]
+    fn an_enemys_wind_up_pulls_its_striking_arm_back_and_a_smash_raises_it() {
+        let mut m = Motion::new(3.0, false);
+        let hand = |m: &mut Motion, mv| {
+            look(m, &FigureState { windup: Some((mv, 1.0)), ..default() }, FRAME).part(Limb::RightArm, 1.0, FIST)
+        };
+        assert!(hand(&mut m, Move::Jab).x < -0.1, "pulled back");
+        assert!(hand(&mut m, Move::Smash).y > 0.5, "raised overhead");
+        let other = look(&mut m, &FigureState { windup: Some((Move::Jab, 1.0)), ..default() }, FRAME);
+        assert_eq!(other.part(Limb::LeftArm, 1.0, FIST), Vec3::ZERO, "only the striking arm");
+    }
+
+    #[test]
+    fn the_players_punches_alternate_arms_and_an_enemys_all_come_from_the_right() {
+        let sides = |mut m: Motion| -> Vec<f32> {
+            (0..3)
+                .map(|_| {
+                    let side =
+                        match look(&mut m, &FigureState { swing: Some(at(Move::Punch, 0.05)), ..default() }, FRAME).act
+                        {
+                            Act::Strike { side, .. } => side,
+                            _ => panic!("striking"),
+                        };
+                    look(&mut m, &FigureState::default(), FRAME); // the swing ends
+                    side
+                })
+                .collect()
+        };
+        assert_eq!(sides(player()), [1.0, -1.0, 1.0]);
+        assert_eq!(sides(Motion::new(3.0, false)), [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn letting_go_follows_through_then_stops() {
+        let mut m = player();
+        let hold = FigureState { carry: Some(CarryPhase::Hold), ..default() };
+        assert!(matches!(look(&mut m, &hold, FRAME).act, Act::Hold));
+        assert!(matches!(look(&mut m, &FigureState::default(), FRAME).act, Act::Release { .. }));
+        for _ in 0..((RELEASE / FRAME) as usize + 2) {
+            look(&mut m, &FigureState::default(), FRAME);
+        }
+        assert!(matches!(look(&mut m, &FigureState::default(), FRAME).act, Act::None));
+    }
+
+    #[test]
+    fn a_whirl_turns_the_figure_once_round_from_the_throws_heading() {
+        let mut m = player();
+        let whirl = |t| FigureState { yaw: 2.0, carry: Some(CarryPhase::Whirl { t, heading: 0.5 }), ..default() };
+        let facing = |l: Look| l.turn * Vec3::X;
+        let start = facing(look(&mut m, &whirl(0.0), FRAME));
+        let half = facing(look(&mut m, &whirl(SPIN / 2.0), FRAME));
+        let end = facing(look(&mut m, &whirl(SPIN), FRAME));
+        let heading = Quat::from_rotation_y(0.5) * Vec3::X;
+        assert!(start.distance(heading) < 1e-4 && end.distance(heading) < 1e-4, "from the heading back to it");
+        assert!(half.distance(-heading) < 1e-4, "facing away halfway round");
+    }
+
+    #[test]
+    fn a_hit_squashes_the_figure_and_it_springs_back() {
+        let mut m = player();
+        let squashed = look(&mut m, &FigureState { squash: game_core::impact::SQUASH_TIME, ..default() }, FRAME);
+        assert!(squashed.scale.y < 1.0 && squashed.scale.x > 1.0);
+        assert_eq!(look(&mut m, &FigureState::default(), FRAME).scale, Vec3::ONE);
     }
 }

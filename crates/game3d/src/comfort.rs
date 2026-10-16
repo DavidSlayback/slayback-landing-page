@@ -111,7 +111,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<Shake>()
         .init_resource::<Quality>()
         .add_systems(Startup, announce)
-        .add_systems(Update, (add_trauma, start_squash, scale_quality).in_set(Frame::Show));
+        .add_systems(Update, (add_trauma, (start_squash, ease_squash).chain(), scale_quality).in_set(Frame::Show));
     #[cfg(feature = "render")]
     app.add_systems(Update, view::apply_quality.after(scale_quality));
 }
@@ -155,6 +155,16 @@ fn start_squash(mut commands: Commands, comfort: Res<Comfort>, mut hits: Message
         // The victim may already be gone (a kill bursts it this frame).
         if !comfort.reduced_motion {
             commands.entity(hit.victim).try_insert(Squash(SQUASH_TIME));
+        }
+    }
+}
+
+/// Runs each squash down on real time, so it plays through hit-stop (`figure` draws it from what is left).
+fn ease_squash(mut commands: Commands, real: Res<Time<Real>>, mut squashed: Query<(Entity, &mut Squash)>) {
+    for (e, mut s) in &mut squashed {
+        s.0 = (s.0 - real.delta_secs()).max(0.0);
+        if s.0 == 0.0 {
+            commands.entity(e).remove::<Squash>();
         }
     }
 }
