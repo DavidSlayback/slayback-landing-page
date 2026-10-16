@@ -5,6 +5,7 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use game_core::climb::{Placed, pile_height};
 use game_core::debris::solid::{Settle, Solid, at_rest, figure, frozen_over_cap, moving_over_cap};
 use game_core::enemy::Kind;
 use game_core::grab::Held;
@@ -15,6 +16,7 @@ use crate::carry::Grabbable;
 use crate::enemy::Brain;
 use crate::fighter::{Combat, Defeated, Layer, Team};
 use crate::player::Facing;
+use crate::run::InBox;
 
 /// One piece of a broken figure: what it is, which figure part it was, and its settling clock.
 #[derive(Component, Clone, Copy, Debug)]
@@ -43,6 +45,27 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Update, (burst, settle, cap_moving, cap_frozen).chain().in_set(Frame::Resolve).after(Combat));
 }
 
+/// Pieces centred further than this across the floor from a point can't be under a footprint there, metres: a
+/// footprint plus the reach of the largest piece (a demo stair, about 0.7 m from its centre), with room to spare.
+const NEAR: f32 = 1.5;
+
+/// The top of the debris pile under `spot` (floor x and z), over a footprint `footprint` wide, counting only pile at
+/// or below `below` (`game_core::climb::pile_height`), 0 (the floor) if nothing is under it. Debris is the only thing
+/// that counts: not the floor, the walls, or fighters.
+pub fn pile_under<'a>(
+    pieces: impl IntoIterator<Item = (&'a Piece, &'a Transform)>,
+    spot: Vec2,
+    footprint: f32,
+    below: f32,
+) -> f32 {
+    let under: Vec<Placed> = pieces
+        .into_iter()
+        .filter(|(_, t)| t.translation.xz().distance(spot) < NEAR)
+        .map(|(p, t)| Placed { solid: p.solid, centre: t.translation.to_array(), rotation: t.rotation.to_array() })
+        .collect();
+    pile_height(&under, spot.to_array(), footprint, below)
+}
+
 /// A loose piece of debris (as a burst spawns it; tests build piles with it too).
 pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> impl Bundle {
     let collider = match solid {
@@ -51,6 +74,7 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
     };
     (
         Piece { born, solid, part, settle: Settle::default() },
+        InBox,
         // Frozen or loose, a piece can be picked up and thrown (frozen ones thaw).
         Grabbable(Held::Debris),
         Name::new("debris"),

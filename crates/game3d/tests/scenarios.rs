@@ -27,7 +27,7 @@ use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
-use game3d::run::RunState;
+use game3d::run::{InBox, RunState};
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
 use game3d::store::Store;
@@ -2005,4 +2005,17 @@ fn a_punch_already_swinging_when_the_player_grabs_does_not_hit_what_is_now_held(
     assert!(app.world().get::<Carried>(foe).is_some(), "grabbed mid-punch");
     step(&mut app, 0.3);
     assert_eq!(hp(&app, foe), FULL, "the player's own punch never lands on what it holds");
+}
+
+#[test]
+fn everything_a_box_holds_is_marked_as_the_boxs_so_the_box_clears_it() {
+    let mut app = watched(|app| {
+        app.add_plugins(Demo { bombs: true, ..default() });
+    });
+    step(&mut app, 6.0);
+    let mut held = app.world_mut().query_filtered::<(), Or<(With<Brain>, With<Piece>, With<LitBomb>)>>();
+    assert!(held.iter(app.world()).count() > 10, "a fight's worth of enemies, debris and bombs");
+    let mut unmarked =
+        app.world_mut().query_filtered::<Entity, (Or<(With<Brain>, With<Piece>, With<LitBomb>)>, Without<InBox>)>();
+    assert_eq!(unmarked.iter(app.world()).count(), 0, "every one is InBox");
 }

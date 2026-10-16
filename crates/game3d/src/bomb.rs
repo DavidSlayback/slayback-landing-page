@@ -16,6 +16,7 @@ use crate::Frame;
 use crate::carry::{Carried, Grabbable};
 use crate::debris::Piece;
 use crate::fighter::{HitStopClock, Layer, Strike, Team};
+use crate::run::InBox;
 use crate::{on_floor, plane};
 
 /// This enemy's head is a bomb.
@@ -48,6 +49,7 @@ pub fn plugin(app: &mut App) {
 pub fn lit_bomb(at: Vec3, velocity: Vec3) -> impl Bundle {
     (
         LitBomb { fuse: Fuse::default() },
+        InBox,
         Grabbable(Held::Bomb),
         Name::new("bomb"),
         RigidBody::Dynamic,

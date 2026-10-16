@@ -20,7 +20,7 @@
 
 use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
-use game_core::climb::{MAX_STEP, Placed, pile_height};
+use game_core::climb::MAX_STEP;
 use game_core::combat::Health;
 use game_core::controls::Verbs;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, Solid};
@@ -28,7 +28,7 @@ use game_core::enemy::Kind;
 
 use crate::arena::Arena;
 use crate::bomb::BombHead;
-use crate::debris::{Piece, piece};
+use crate::debris::{Piece, piece, pile_under};
 use crate::enemy::{Brain, RADIUS, Waves, enemy};
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
@@ -279,16 +279,7 @@ fn fight(
         for (i, gap) in std::iter::once(beat.gap).chain(beat.beyond).enumerate() {
             let spot = Vec2::new((me.x + s.side * gap).clamp(-inside.x, inside.x), me.z.clamp(-inside.y, inside.y));
             // On top of whatever debris lies there, not inside it (which would fling it out).
-            let under: Vec<Placed> = pieces
-                .iter()
-                .filter(|(_, t)| t.translation.xz().distance(spot) < 1.5)
-                .map(|(p, t)| Placed {
-                    solid: p.solid,
-                    centre: t.translation.to_array(),
-                    rotation: t.rotation.to_array(),
-                })
-                .collect();
-            let ground = pile_height(&under, spot.to_array(), RADIUS + 0.15, f32::MAX);
+            let ground = pile_under(pieces.iter(), spot, RADIUS + 0.15, f32::MAX);
             let at = Vec3::new(spot.x, ground + FODDER_HEIGHT / 2.0 + 0.05, spot.y);
             let mut health = Health::new(DEMO_FODDER_HP);
             // The throw's target stands dazed until the throw comes, rather than walking in to punch first.

@@ -22,7 +22,7 @@ use crate::bomb::BombHead;
 use crate::carry::{Carried, Grabbable};
 use crate::fighter::{Attack, Hp, Team, body};
 use crate::player::{Facing, Player};
-use crate::run::RunState;
+use crate::run::{InBox, RunState};
 use crate::{on_floor, plane};
 
 #[derive(Component)]
@@ -109,6 +109,7 @@ pub fn enemy(kind: Kind, at: Vec3, yaw: f32) -> impl Bundle {
     facing.snap(yaw);
     (
         Brain(Mind::new(kind)),
+        InBox,
         Grabbable(Held::Enemy),
         Name::new(s.name),
         body(Team::Enemy, s.radius, s.height, s.max_hp),

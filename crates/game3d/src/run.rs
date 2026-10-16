@@ -9,16 +9,14 @@
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use game_core::climb::{Placed, pile_height};
 use game_core::combat::{Health, HitOutcome};
 use game_core::doors::Door;
 use game_core::run::{BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
 
 use crate::Frame;
 use crate::arena::Arena;
-use crate::bomb::LitBomb;
-use crate::debris::Piece;
-use crate::enemy::{Brain, WallDoor, Waves};
+use crate::debris::{Piece, pile_under};
+use crate::enemy::{WallDoor, Waves};
 use crate::fighter::{Combat, Defeated, Hp, Team};
 use crate::flow::Phase;
 use crate::player::{HEIGHT, MAX_HP, Player, SPAWN};
@@ -45,9 +43,11 @@ pub const FOOTPRINT: f32 = 0.25;
 /// A pile top this far above the feet still counts as under them (the controller keeps a skin's gap, and the feet
 /// may rest on an edge below the footprint's highest point).
 const FEET: f32 = 0.08;
-/// Pieces centred further than this across the floor from the player can't be under its footprint, metres: the
-/// footprint plus the reach of the largest piece (a demo stair, about 0.7 m from its centre), with room to spare.
-const NEAR: f32 = 1.5;
+
+/// Belongs to the box it's in, and goes when the box ends: every enemy, debris piece and lit bomb carries it from its
+/// bundle (`enemy::enemy`, `debris::piece`, `bomb::lit_bomb`), so a new kind of thing in the box only needs it there.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct InBox;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<RunState>()
@@ -77,8 +77,6 @@ fn clock(
     }
 }
 
-/// What one box holds that the next doesn't: enemies, debris and lit bombs.
-type BoxContents = Or<(With<Brain>, With<Piece>, With<LitBomb>)>;
 /// The player's parts a box's end touches.
 type PlayerParts = (&'static mut Transform, &'static mut Position, &'static mut LinearVelocity, &'static mut Hp);
 
@@ -87,7 +85,7 @@ type PlayerParts = (&'static mut Transform, &'static mut Position, &'static mut 
 #[derive(SystemParam)]
 struct BoxReset<'w, 's> {
     commands: Commands<'w, 's>,
-    contents: Query<'w, 's, Entity, BoxContents>,
+    contents: Query<'w, 's, Entity, With<InBox>>,
     doors: Query<'w, 's, &'static mut WallDoor>,
     player: Query<'w, 's, PlayerParts, With<Player>>,
     started: MessageWriter<'w, BoxStarted>,
@@ -121,13 +119,8 @@ fn escape(
 ) {
     let Ok((_, &Position(at), _, hp)) = reset.player.single() else { return };
     let hp = hp.0;
-    let under: Vec<Placed> = pieces
-        .iter()
-        .filter(|(_, t)| t.translation.xz().distance(at.xz()) < NEAR)
-        .map(|(p, t)| Placed { solid: p.solid, centre: t.translation.to_array(), rotation: t.rotation.to_array() })
-        .collect();
     let feet = at.y - HEIGHT / 2.0;
-    if !escaped(pile_height(&under, [at.x, at.z], FOOTPRINT, feet + FEET), arena.rim) {
+    if !escaped(pile_under(pieces.iter(), at.xz(), FOOTPRINT, feet + FEET), arena.rim) {
         return;
     }
     ended.write(BoxEnded::Escaped { number: run.0.spec.number, time_left: run.0.time_left });
