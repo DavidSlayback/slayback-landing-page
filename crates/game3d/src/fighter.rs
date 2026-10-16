@@ -14,8 +14,8 @@ use game_core::enemy::Armour;
 use game_core::impact::Feel;
 use game_core::plane::heading;
 
+use crate::carry::Carried;
 use crate::enemy::Brain;
-use crate::grab::Carried;
 use crate::player::Facing;
 use crate::{on_floor, plane};
 

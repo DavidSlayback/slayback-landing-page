@@ -18,15 +18,15 @@ use game_core::plane::RUN_SPEED;
 use game_core::touch::{Button, Layout};
 use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
+use game3d::carry::{Carried, Carry, Thrown};
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
 use game3d::debris::{Piece, piece};
 use game3d::demo::Demo;
 use game3d::enemy::{Brain, Waves, enemy, fodder, size};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
-use game3d::grab::{Carried, Thrown};
 use game3d::input::{Actions, ViewYaw};
-use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
+use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
 use game3d::run::RunState;
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
@@ -781,8 +781,8 @@ fn carried(app: &App, e: Entity) -> bool {
     app.world().get::<Carried>(e).is_some()
 }
 
-fn holding(app: &mut App) -> Option<Holding> {
-    app.world_mut().query_filtered::<&Holding, With<Player>>().single(app.world()).ok().copied()
+fn holding(app: &mut App) -> Option<Carry> {
+    app.world_mut().query_filtered::<&Carry, With<Player>>().single(app.world()).ok().copied()
 }
 
 fn at_of(app: &App, e: Entity) -> Vec3 {
@@ -845,6 +845,21 @@ fn the_player_grabs_a_fodder_in_front_carries_it_in_the_fists_and_sets_it_down()
     assert!(at.xz().distance(me.xz()) < 1.0, "set down by the player: {at}, player {me}");
     let half = Arena::default().floor / 2.0;
     assert!(at.x.abs() <= half.x && at.z.abs() <= half.y, "inside the box: {at}");
+}
+
+#[test]
+fn a_throw_is_aimed_when_the_attack_starts_it_and_steering_during_the_whirl_doesnt_turn_it() {
+    let mut app = standing();
+    let held = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    tap(&mut app, KeyCode::KeyJ);
+    assert!(holding(&mut app).is_some_and(|c| c.whirling()), "the attack started the whirl");
+    // Pushing up the screen for the whole whirl: the player stands still and the throw still goes right (+x).
+    hold(&mut app, &[KeyCode::KeyW], game_core::grab::SPIN + 0.1);
+    assert!(app.world().get::<Thrown>(held).is_some(), "let go");
+    let v = app.world().get::<LinearVelocity>(held).unwrap().0;
+    assert!(v.x > 5.0 && v.z.abs() < 0.1, "flew along the heading it was aimed at: {v}");
 }
 
 #[test]

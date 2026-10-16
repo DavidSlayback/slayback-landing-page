@@ -1,10 +1,15 @@
-//! Grab and spin-throw in 3D (rules: `game_core::grab`, its `flat` module for the floor). The grab verb (L, the middle
-//! mouse button or B) picks up the nearest [`Grabbable`] thing in front: a live enemy or a debris part, and frozen
-//! debris thaws. It is held out in front in the fists, an enemy lifted off its feet and tipped back, swaying (Q77);
-//! an attack whirls it once round the player (`player::control` aims it) and lets go straight ahead, flying flat. In flight it hurts every enemy it passes through, once each, and a thrown
-//! enemy is hurt by its first impact; then it lands as what it was (a stunned enemy, or loose debris back under the
-//! debris rules). A lit bomb (`bomb`) grabs and throws the same way, but stops at the first enemy it hits and lies
-//! there until its fuse runs out. Grab again while carrying to set the thing down in front.
+//! Carrying, from the grab to the throw's landing (rules: `game_core::grab`). This module owns the whole of it: the
+//! player's [`Carry`] (holding, then whirling), the held thing's [`Carried`] and the thrown thing's [`Thrown`]. Nothing
+//! else writes them; the player's control and the figure only read the carry's phase.
+//!
+//! The grab verb (L, the middle mouse button or B) picks up the nearest [`Grabbable`] thing in front: a live enemy or
+//! a debris part, and frozen debris thaws. It is held out in front in the fists, an enemy lifted off its feet and
+//! tipped back, swaying (Q77). An attack starts the throw: aimed at once toward the biggest enemy group ahead (Q62),
+//! the player turned to face it, the thing whirls once round and lets go straight along that heading, flying flat. In
+//! flight it strikes every enemy it passes through, once each (`fighter::land`), and a thrown enemy is hurt by its
+//! first impact; then it lands as what it was (a stunned enemy, or loose debris back under the debris rules). A lit
+//! bomb (`bomb`) grabs and throws the same way, but stops at the first enemy it hits and lies there until its fuse
+//! runs out. Grab again while holding to set the thing down in front.
 
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
@@ -13,15 +18,47 @@ use game_core::aim::level;
 use game_core::combat::HitOutcome;
 use game_core::debris::solid::{Settle, Solid};
 use game_core::grab::{FLIGHT, Held, SPIN, impact};
-use game_core::grab::{blow, passes, pick, stops, swing, throw_velocity};
+use game_core::grab::{blow, passes, pick, stops, swing, throw_heading, throw_velocity};
 
 use crate::arena::Arena;
 use crate::bomb;
 use crate::debris::Piece;
+use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Combat, Defeated, Hp, Layer, Strike, Team};
 use crate::input::Actions;
-use crate::player::{self, Facing, HEIGHT, Holding, Player, RADIUS};
+use crate::player::{self, Facing, HEIGHT, Player, RADIUS};
 use crate::{on_floor, plane};
+
+/// The player has something in hand: what, and where in the carry it is.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Carry {
+    pub target: Entity,
+    pub kind: Held,
+    pub phase: CarryPhase,
+}
+
+/// Where a carry is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CarryPhase {
+    /// Out in front in the fists.
+    Hold,
+    /// `t` seconds into the throw's whirl, which lets go along `heading` (a yaw, radians) at [`SPIN`].
+    Whirl { t: f32, heading: f32 },
+}
+
+impl Carry {
+    pub fn whirling(&self) -> bool {
+        matches!(self.phase, CarryPhase::Whirl { .. })
+    }
+
+    /// How far through the whirl (0 to 1) and along which heading, while whirling.
+    pub fn whirl(&self) -> Option<(f32, f32)> {
+        match self.phase {
+            CarryPhase::Whirl { t, heading } => Some(((t / SPIN).min(1.0), heading)),
+            CarryPhase::Hold => None,
+        }
+    }
+}
 
 /// Something the player can pick up, and what it is when held. Enemies, debris parts and lit bombs carry it from their
 /// bundles (a lit bomb is `Grabbable(Held::Bomb)`).
@@ -62,9 +99,13 @@ const SWAY: f32 = 0.12;
 const SWAY_RATE: f32 = 7.0;
 
 pub fn plugin(app: &mut App) {
-    // Grabbing only while playing: L or a middle click on a screen must not pick anything up.
+    // Grabbing and throwing only while playing: L or a click on a screen must not pick anything up or throw it. The
+    // throw starts before the grab, so an attack in the frame a grab lands doesn't also throw.
     let playing = in_state(crate::flow::Phase::Playing);
-    app.add_systems(Update, (grab.run_if(playing), carry, fly).chain().after(player::control).before(Combat));
+    app.add_systems(
+        Update,
+        (throw.run_if(playing.clone()), grab.run_if(playing), carry, fly).chain().after(player::control).before(Combat),
+    );
 }
 
 /// A thing's radius across the floor, for carrying it, metres.
@@ -108,7 +149,7 @@ fn grab(
     actions: Res<Actions>,
     time: Res<Time>,
     arena: Res<Arena>,
-    players: Query<(Entity, &Transform, &Facing, &Hp, Option<&Holding>), With<Player>>,
+    players: Query<(Entity, &Transform, &Facing, &Hp, Option<&Carry>), With<Player>>,
     mut things: Query<Candidates, (Without<Player>, Without<Carried>, Without<Thrown>)>,
     mut held: Query<(&mut Transform, &mut Position, &mut Rotation, &Carried), Without<Player>>,
 ) {
@@ -119,7 +160,7 @@ fn grab(
     let (here, yaw) = (at.translation, facing.0.yaw);
     if let Some(h) = holding {
         // Set it down in front, at the player's middle and upright: it drops from there.
-        if !h.spinning()
+        if !h.whirling()
             && let Ok((mut t, mut p, mut r, carried)) = held.get_mut(h.target)
         {
             t.translation = hold_at(&arena, here, yaw, carried, Some(1.0));
@@ -127,7 +168,7 @@ fn grab(
             (t.rotation, r.0) = (Quat::IDENTITY, Quat::IDENTITY);
             let layers = carried.layers;
             commands.entity(h.target).remove::<Carried>().insert((RigidBody::Dynamic, layers, LinearVelocity::ZERO));
-            commands.entity(me).remove::<Holding>();
+            commands.entity(me).remove::<Carry>();
         }
         return;
     }
@@ -158,7 +199,27 @@ fn grab(
         LinearVelocity::ZERO,
         AngularVelocity::ZERO,
     ));
-    commands.entity(me).insert(Holding { target, kind, spin: None });
+    commands.entity(me).insert(Carry { target, kind, phase: CarryPhase::Hold });
+}
+
+/// An attack while holding starts the throw: aimed now, toward the biggest enemy group within 30° of the facing (Q62),
+/// with the player turned to face it. The whirl then lets go along that heading whatever else happens meanwhile.
+#[allow(clippy::type_complexity)]
+fn throw(
+    actions: Res<Actions>,
+    mut players: Query<(&Transform, &mut Facing, &Hp, &mut Carry), With<Player>>,
+    enemies: Query<&Transform, (With<Brain>, Without<Player>, Without<Carried>)>,
+) {
+    let Ok((at, mut facing, hp, mut carry)) = players.single_mut() else { return };
+    if !(actions.verbs.punch || actions.verbs.kick) || hp.0.stunned() || carry.whirling() {
+        return;
+    }
+    let me = at.translation;
+    let enemies: Vec<[f32; 2]> =
+        enemies.iter().map(|t| t.translation).filter(|e| level(me.y, e.y)).map(plane).collect();
+    let heading = throw_heading(plane(me), facing.0.yaw, &enemies);
+    facing.0.snap(heading);
+    carry.phase = CarryPhase::Whirl { t: 0.0, heading };
 }
 
 /// Keeps the held thing in the fists or whirling round the player, and at the end of the spin throws it straight
@@ -168,7 +229,7 @@ fn carry(
     mut commands: Commands,
     time: Res<Time>,
     arena: Res<Arena>,
-    mut players: Query<(Entity, &Transform, &Facing, &mut Holding), With<Player>>,
+    mut players: Query<(Entity, &Transform, &Facing, &mut Carry), With<Player>>,
     mut held: Query<
         (&mut Transform, &mut Position, &mut Rotation, &Carried, Option<&mut Hp>, Option<&mut Facing>),
         Without<Player>,
@@ -176,22 +237,26 @@ fn carry(
 ) {
     let Ok((me, at, facing, mut h)) = players.single_mut() else { return };
     let Ok((mut t, mut p, mut r, carried, hp, held_facing)) = held.get_mut(h.target) else {
-        commands.entity(me).remove::<Holding>(); // gone (the box emptied)
+        commands.entity(me).remove::<Carry>(); // gone (the box emptied)
         return;
     };
-    if let Some(s) = h.spin.as_mut() {
-        *s += time.delta_secs();
+    if let CarryPhase::Whirl { t, .. } = &mut h.phase {
+        *t += time.delta_secs();
     }
-    let progress = h.spin.map(|s| s / SPIN);
-    let yaw = facing.0.yaw;
+    // Held out along the facing; whirling, round from the throw's heading and back to it.
+    let (progress, yaw) = match h.phase {
+        CarryPhase::Hold => (None, facing.0.yaw),
+        CarryPhase::Whirl { t, heading } => (Some(t / SPIN), heading),
+    };
     t.translation = hold_at(&arena, at.translation, yaw, carried, progress);
     p.0 = t.translation;
     if h.kind == Held::Enemy {
         let out = (t.translation - at.translation).with_y(0.0).normalize_or(on_floor([yaw.cos(), yaw.sin()]));
         // It faces the player who holds it.
-        if let Some(mut f) = held_facing {
-            let [x, y] = plane(-out);
-            f.0.yaw = y.atan2(x);
+        if let Some(mut f) = held_facing
+            && let Some(towards) = game_core::plane::heading(plane(-out))
+        {
+            f.0.snap(towards);
         }
         let sway = SWAY * (time.elapsed_secs() * SWAY_RATE).sin();
         r.0 = Quat::from_axis_angle(Vec3::Y.cross(out).normalize(), TILT + sway);
@@ -200,7 +265,7 @@ fn carry(
     if progress.is_none_or(|p| p < 1.0) {
         return;
     }
-    // Let go: a projectile flying flat along the facing that passes through fighters (it hurts them in `fly`).
+    // Let go: a projectile flying flat along the heading that passes through fighters (it strikes them in `fly`).
     let layers = carried.layers;
     let mut flying = layers;
     flying.filters.remove(Layer::Fighter);
@@ -227,7 +292,7 @@ fn carry(
     if let Some(mut hp) = hp {
         hp.0.stun = hp.0.stun.max(FLIGHT);
     }
-    commands.entity(me).remove::<Holding>();
+    commands.entity(me).remove::<Carry>();
 }
 
 /// What a throw sets off: a strike on each enemy it passes through, and the thrown enemy's own defeat if its first

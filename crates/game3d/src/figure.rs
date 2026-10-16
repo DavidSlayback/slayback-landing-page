@@ -20,15 +20,15 @@ use game_core::palette::Fighter;
 
 use crate::bomb::{self, BombHead};
 use crate::camera::Warm;
+use crate::carry::{Carried, Carry};
 use crate::comfort::Comfort;
 use crate::debris::{Kin, Piece};
 use crate::enemy::Brain;
 use crate::fighter::{Attack, Body, Flash};
 use crate::flat::Flat;
-use crate::grab::Carried;
 use crate::look::Palette;
 use crate::paint::{Paint, Paints, Role};
-use crate::player::{Dasher, Facing, Holding, Player};
+use crate::player::{Dasher, Facing, Player};
 use crate::pose::{self, Act};
 
 /// How much smaller than its solid each part is drawn, and how far its limbs spread sideways from the middle, so the
@@ -338,25 +338,23 @@ fn animate(
     kit: Res<Kit>,
     paints: Res<Paints>,
     mut fighters: Query<(
-        &GlobalTransform,
         &Facing,
         &LinearVelocity,
         &Attack,
         &Flash,
-        Option<&Holding>,
+        Option<&Carry>,
         Option<&Dasher>,
         Option<&Brain>,
         Has<Carried>,
         &mut Motion,
         &Children,
     )>,
-    held: Query<&GlobalTransform>,
     mut rigs: Query<(&mut Transform, &Children), (With<Rig>, Without<Part>)>,
     mut parts: Query<(&Part, &mut Transform, &mut MeshMaterial3d<Flat>), Without<Rig>>,
 ) {
     let dt = time.delta_secs();
     let k = pose::follow(dt);
-    for (me, facing, v, attack, flash, holding, dasher, brain, carried, mut m, children) in &mut fighters {
+    for (facing, v, attack, flash, holding, dasher, brain, carried, mut m, children) in &mut fighters {
         let who = brain.map_or(Fighter::Player, |b| Fighter::Enemy(b.0.style().kind));
         let speed = v.0.with_y(0.0).length();
         // A held enemy's legs kick as fast as a run.
@@ -365,19 +363,15 @@ fn animate(
         let mut turn = facing.rotation();
         let act = match (holding, attack.swing) {
             _ if carried => Act::Dangle,
-            (Some(h), _) => {
+            (Some(c), _) => {
                 m.held = true;
-                if h.spinning() {
-                    // Face the thing as it goes round.
-                    if let Ok(t) = held.get(h.target) {
-                        let to = (t.translation() - me.translation()).with_y(0.0);
-                        if to.length() > 1e-3 {
-                            turn = Quat::from_rotation_arc(Vec3::X, to.normalize());
-                        }
+                match c.whirl() {
+                    // Face the thing as it goes round: one turn from the throw's heading (`game_core::grab::swing`).
+                    Some((t, heading)) => {
+                        turn = Quat::from_rotation_y(heading + std::f32::consts::TAU * t);
+                        Act::Whirl
                     }
-                    Act::Whirl
-                } else {
-                    Act::Hold
+                    None => Act::Hold,
                 }
             }
             (None, Some(swing)) => {

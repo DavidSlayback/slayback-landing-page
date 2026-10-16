@@ -8,6 +8,7 @@
 pub mod arena;
 pub mod bomb;
 pub mod camera;
+pub mod carry;
 pub mod comfort;
 pub mod debris;
 pub mod demo;
@@ -18,7 +19,6 @@ pub mod figure;
 #[cfg(feature = "render")]
 pub mod flat;
 pub mod flow;
-pub mod grab;
 #[cfg(feature = "render")]
 pub mod hud;
 #[cfg(feature = "render")]
@@ -62,7 +62,7 @@ pub fn plugin(app: &mut App) {
             arena::plugin,
             fighter::plugin,
             player::plugin,
-            grab::plugin,
+            carry::plugin,
             bomb::plugin,
             enemy::plugin,
             debris::plugin,

@@ -12,10 +12,10 @@ use game_core::bomb::{Fuse, HITSTOP, blow, push};
 use game_core::debris::solid::Settle;
 use game_core::grab::Held;
 
+use crate::carry::{Carried, Grabbable};
 use crate::debris::Piece;
 use crate::fighter::{Combat, HitStopClock, Layer, Strike, Team};
 use crate::flow::Phase;
-use crate::grab::{Carried, Grabbable};
 use crate::{on_floor, plane};
 
 /// This enemy's head is a bomb.

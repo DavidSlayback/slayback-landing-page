@@ -10,9 +10,9 @@ use game_core::enemy::Kind;
 use game_core::grab::Held;
 
 use crate::bomb::{BombHead, lit_bomb};
+use crate::carry::Grabbable;
 use crate::enemy::Brain;
 use crate::fighter::{Combat, Defeated, Layer, Team};
-use crate::grab::Grabbable;
 use crate::player::Facing;
 
 /// One piece of a broken figure: what it is, which figure part it was, and its settling clock.
