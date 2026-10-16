@@ -42,7 +42,55 @@ const BURST_UP: f32 = 5.0;
 const CARRY: f32 = 0.3;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Update, (burst, settle, cap_moving, cap_frozen).chain().in_set(Frame::Resolve).after(Combat));
+    app.add_message::<Clack>().add_systems(
+        Update,
+        (burst, settle, cap_moving, cap_frozen, listen).chain().in_set(Frame::Resolve).after(Combat),
+    );
+}
+
+/// A loose debris piece struck something hard enough to hear (the floor, the pile, a wall, a fighter): where, how hard
+/// (the jump in its velocity beyond what gravity gave it, m/s), and how big it is (its longest side, metres). `sound`
+/// knocks for it, louder the harder and higher the smaller.
+#[derive(Message, Clone, Copy, Debug)]
+pub struct Clack {
+    pub at: Vec3,
+    pub strength: f32,
+    pub size: f32,
+}
+
+/// The least velocity jump that clacks, m/s: a piece rocking or sliding to rest stays quiet.
+pub const CLACK: f32 = 1.5;
+/// How long after a piece breaks off before it can clack, seconds: a burst's fling isn't a landing.
+const SETTLE_IN: f32 = 0.05;
+
+/// A piece's velocity last frame, to hear it strike something.
+#[derive(Component, Default)]
+pub struct Heard(Vec3);
+
+/// Every loose piece whose velocity jumped this frame (beyond gravity's pull) struck something: a [`Clack`]. Not one
+/// in the player's hands or flying from a throw (the carry moves those).
+#[allow(clippy::type_complexity)]
+fn listen(
+    time: Res<Time>,
+    mut pieces: Query<
+        (&Transform, &Piece, &RigidBody, &LinearVelocity, &mut Heard),
+        (Without<crate::carry::Carried>, Without<crate::carry::Thrown>),
+    >,
+    mut clacks: MessageWriter<Clack>,
+) {
+    let (now, dt) = (time.elapsed_secs(), time.delta_secs());
+    let fall = Vec3::NEG_Y * crate::GRAVITY * dt;
+    for (t, piece, body, v, mut heard) in &mut pieces {
+        let jump = (v.0 - heard.0 - fall).length();
+        heard.0 = v.0;
+        if *body == RigidBody::Dynamic && dt > 0.0 && now - piece.born > SETTLE_IN && jump > CLACK {
+            let size = match piece.solid {
+                Solid::Cube(s) => s.into_iter().fold(0.0, f32::max),
+                Solid::Ball(r) => 2.0 * r,
+            };
+            clacks.write(Clack { at: t.translation, strength: jump, size });
+        }
+    }
 }
 
 /// Pieces centred further than this across the floor from a point can't be under a footprint there, metres: a
@@ -74,6 +122,7 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
     };
     (
         Piece { born, solid, part, settle: Settle::default() },
+        Heard::default(),
         InBox,
         // Frozen or loose, a piece can be picked up and thrown (frozen ones thaw).
         Grabbable(Held::Debris),

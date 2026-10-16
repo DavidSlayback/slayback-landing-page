@@ -20,7 +20,7 @@ use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
 use game3d::carry::{Carried, Carry, Thrown};
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
-use game3d::debris::{Piece, piece};
+use game3d::debris::{Clack, Piece, piece};
 use game3d::demo::Demo;
 use game3d::enemy::{Brain, Waves, enemy, fodder};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
@@ -2018,4 +2018,30 @@ fn everything_a_box_holds_is_marked_as_the_boxs_so_the_box_clears_it() {
     let mut unmarked =
         app.world_mut().query_filtered::<Entity, (Or<(With<Brain>, With<Piece>, With<LitBomb>)>, Without<InBox>)>();
     assert_eq!(unmarked.iter(app.world()).count(), 0, "every one is InBox");
+}
+
+/// Every debris knock heard so far.
+#[derive(Resource, Default)]
+struct Heard(Vec<Clack>);
+
+fn hear(mut heard: ResMut<Heard>, mut clacks: MessageReader<Clack>) {
+    heard.0.extend(clacks.read().copied());
+}
+
+#[test]
+fn a_falling_block_knocks_when_it_lands_and_is_quiet_at_rest() {
+    let mut app = standing();
+    app.init_resource::<Heard>().add_systems(Update, hear.in_set(game3d::Frame::Show));
+    let solid = FODDER[0].solid;
+    // Dropped from 3 m, clear of the player.
+    let e = app.world_mut().spawn(piece(solid, 0, Vec3::new(-4.0, 3.0, -2.0), Quat::IDENTITY, 0.0)).id();
+    step(&mut app, 1.5);
+    let heard = std::mem::take(&mut app.world_mut().resource_mut::<Heard>().0);
+    let landing = heard.iter().map(|c| c.strength).fold(0.0, f32::max);
+    // From 3 m at 15 m/s^2 it lands at about 9 m/s.
+    assert!(landing > 6.0, "it knocked as it hit the floor: {heard:?}");
+    assert!(heard.iter().all(|c| c.at.distance(Vec3::new(-4.0, 0.0, -2.0)) < 1.5), "where it fell: {heard:?}");
+    step(&mut app, 3.0);
+    assert_eq!(app.world().resource::<Heard>().0.len(), 0, "and then lies quiet");
+    assert!(app.world().get::<Transform>(e).is_some());
 }
