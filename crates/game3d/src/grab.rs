@@ -10,15 +10,15 @@ use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use game_core::aim::level;
-use game_core::combat::{FINISHER_HITSTOP, HitOutcome, Move};
+use game_core::combat::HitOutcome;
 use game_core::debris::solid::{Settle, Solid};
-use game_core::grab::{FLIGHT, HITSTOP, Held, SPIN, impact};
-use game_core::grab::{knock, passes, pick, stops, swing, throw_velocity};
+use game_core::grab::{FLIGHT, Held, SPIN, impact};
+use game_core::grab::{blow, passes, pick, stops, swing, throw_velocity};
 
 use crate::arena::Arena;
 use crate::bomb;
 use crate::debris::Piece;
-use crate::fighter::{Attack, Body, Combat, Defeated, FLASH, Flash, Hit, HitStopClock, Hp, Layer, Team};
+use crate::fighter::{Attack, Body, Combat, Defeated, Hp, Layer, Strike, Team};
 use crate::input::Actions;
 use crate::player::{self, Facing, HEIGHT, Holding, Player, RADIUS};
 use crate::{on_floor, plane};
@@ -53,8 +53,6 @@ pub struct Thrown {
 const GRAZE: f32 = 0.05;
 /// How hard a thrown debris part tumbles, rad/s.
 const TUMBLE: f32 = 9.0;
-/// How long a thrown thing's victims lose control, seconds (as in the 2.5D game).
-const VICTIM_STUN: f32 = 0.35;
 /// How high above the player's centre a held thing is, metres: a held enemy's feet clear the floor, and a debris part
 /// or a bomb sits in the fists at chest height.
 const LIFT: f32 = 0.3;
@@ -232,11 +230,11 @@ fn carry(
     commands.entity(me).remove::<Holding>();
 }
 
-/// What landing a hit sets off: hit-stop, impact effects (`Hit`) and, when it was the last of its health, a defeat.
+/// What a throw sets off: a strike on each enemy it passes through, and the thrown enemy's own defeat if its first
+/// impact finishes it.
 #[derive(SystemParam)]
 struct Impacts<'w> {
-    stop: ResMut<'w, HitStopClock>,
-    hits: MessageWriter<'w, Hit>,
+    strikes: MessageWriter<'w, Strike>,
     defeated: MessageWriter<'w, Defeated>,
 }
 
@@ -248,7 +246,7 @@ fn fly(
     time: Res<Time>,
     mut thrown: Query<(Entity, &mut Thrown, &Transform)>,
     targets: Query<(Entity, &Team, &Body, &Transform), (Without<Thrown>, Without<Carried>)>,
-    mut hurt: Query<(&mut Hp, &mut LinearVelocity, &mut Flash), Without<Thrown>>,
+    standing: Query<&Hp, Without<Thrown>>,
     mut self_hurt: Query<&mut Hp, With<Thrown>>,
     mut out: Impacts,
 ) {
@@ -264,28 +262,13 @@ fn fly(
             {
                 continue;
             }
-            let Ok((mut hp, mut v, mut flash)) = hurt.get_mut(target) else { continue };
-            if hp.0.defeated() {
+            if standing.get(target).is_ok_and(|hp| hp.0.defeated()) {
                 continue;
             }
             t.victims.push(target);
-            let (across, up) = knock(t.kind, t.heading);
-            v.0 = on_floor(across).with_y(up);
-            flash.0 = FLASH;
-            hp.0.stun = hp.0.stun.max(VICTIM_STUN);
-            let finisher = hp.0.hurt(spec.damage) == HitOutcome::Defeated;
-            out.stop.0.trigger(if finisher { HITSTOP.max(FINISHER_HITSTOP) } else { HITSTOP });
             let dir = on_floor([t.heading.cos(), t.heading.sin()]);
-            out.hits.write(Hit {
-                at: (them - dir * body.radius).with_y(now.y),
-                mv: Move::Kick,
-                dir,
-                victim: target,
-                finisher,
-            });
-            if finisher {
-                out.defeated.write(Defeated { entity: target, team: Team::Enemy, at: them });
-            }
+            let at = (them - dir * body.radius).with_y(now.y);
+            out.strikes.write(Strike { target, blow: blow(t.kind, t.heading), at, dir });
             // The thrown body takes its own knock on its first impact.
             if t.victims.len() == 1
                 && spec.self_damage > 0.0

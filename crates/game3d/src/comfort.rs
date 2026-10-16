@@ -10,7 +10,7 @@
 //! Both log what they do, so the browser harness can check them.
 
 use bevy::prelude::*;
-use game_core::impact::{self, BLAST_TRAUMA, SQUASH_TIME, trauma};
+use game_core::impact::{self, BLAST_TRAUMA, SQUASH_TIME};
 use game_core::quality::{Level, Scaler};
 
 use crate::bomb::Exploded;
@@ -143,7 +143,7 @@ fn add_trauma(
     mut blasts: MessageReader<Exploded>,
 ) {
     let amount =
-        hits.read().map(|h| trauma(h.mv, h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
+        hits.read().map(|h| h.feel.shake(h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
     if amount > 0.0 && !comfort.reduced_motion {
         shake.add(amount);
     }

@@ -45,7 +45,6 @@ mod effects {
 
     use bevy::audio::Volume;
     use bevy::prelude::*;
-    use game_core::combat::Move;
 
     use super::Sound;
     use crate::bomb::Exploded;
@@ -91,8 +90,7 @@ mod effects {
         let mut queue: Vec<(&Handle<AudioSource>, f32)> = Vec::new();
         // At most one of each per frame: a crowd going down at once shouldn't stack ten identical clicks.
         if let Some(h) = hits.read().last() {
-            let light = matches!(h.mv, Move::Punch | Move::Jab | Move::Slash);
-            queue.push(if light { (&effects.hit, 0.5) } else { (&effects.heavy, 0.6) });
+            queue.push(if h.feel.heavy { (&effects.heavy, 0.6) } else { (&effects.hit, 0.5) });
         }
         // A kill: the figure breaks into its pieces.
         if defeats.read().any(|d| d.team == Team::Enemy) {

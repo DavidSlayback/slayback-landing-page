@@ -1,5 +1,12 @@
 //! Attacks, hits, health and hit-stop: the rules of a single exchange of blows. Lengths are metres and speeds m/s,
 //! with +y up.
+//!
+//! A [`Blow`] is anything that lands on a fighter: a swing ([`Blow::swing`]), a thrown thing (`grab::blow`) or a bomb
+//! blast (`bomb::blow`). [`land`] is the one rule for what any of them does to the fighter it reaches.
+
+use crate::aim::launch;
+use crate::enemy::{Armour, staggers};
+use crate::impact::Feel;
 
 /// An attack the player or an enemy can throw.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,10 +176,77 @@ impl Swing {
 /// Freeze for a finishing blow: longer than any move's own, so a kill always lands as a beat.
 pub const FINISHER_HITSTOP: f32 = 0.16;
 
-/// Hit-stop for a blow of `mv` that did (`finished`) or didn't defeat its target.
-pub fn hitstop(mv: Move, finished: bool) -> f32 {
-    let own = mv.spec().hitstop;
-    if finished { own.max(FINISHER_HITSTOP) } else { own }
+/// A blow about to land: what it does to whatever fighter it reaches. Where it came from (a swing, a throw, a
+/// blast) only decides these numbers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Blow {
+    pub damage: f32,
+    /// Hit-stun it leaves, seconds (a fighter keeps the longer of this and any stun it already has).
+    pub stun: f32,
+    /// The launch it gives: across the floor (a plane vector) and up, m/s.
+    pub launch: ([f32; 2], f32),
+    /// The hit-stop it triggers, seconds, raised to [`FINISHER_HITSTOP`] if it defeats; `None` for a blow whose
+    /// source freezes the game once for all it hits (a blast).
+    pub freeze: Option<f32>,
+    /// Armour that shrugs it off: the damage lands, but no stun or launch, so a telegraph keeps going.
+    pub shrugged_by: Option<Armour>,
+    /// Whether it reaches a fighter in the player's hands (only a blast does; even then it isn't launched).
+    pub reaches_held: bool,
+    /// How it reads on screen and in the speakers, or `None` if it raises no hit of its own (a blast's victims:
+    /// the blast is the spectacle).
+    pub feel: Option<Feel>,
+}
+
+impl Blow {
+    /// A swing of `mv` landing along `yaw` (the direction it pushes).
+    pub fn swing(mv: Move, yaw: f32) -> Blow {
+        let s = mv.spec();
+        Blow {
+            damage: s.damage,
+            stun: s.hitstun,
+            launch: launch(mv, yaw),
+            freeze: Some(s.hitstop),
+            shrugged_by: [Armour::Punches].into_iter().find(|&a| !staggers(mv, a)),
+            reaches_held: false,
+            feel: Some(Feel::of(mv)),
+        }
+    }
+}
+
+/// What a blow did.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Landed {
+    pub outcome: HitOutcome,
+    /// The launch to give the fighter, if it is launched at all (not when armour shrugs the blow off, nor in the
+    /// player's hands).
+    pub launch: Option<([f32; 2], f32)>,
+    /// The hit-stop to trigger, seconds.
+    pub freeze: Option<f32>,
+}
+
+impl Landed {
+    pub fn finisher(&self) -> bool {
+        self.outcome == HitOutcome::Defeated
+    }
+}
+
+/// `blow` landing on a fighter with `health`, wearing `armour`, `held` or not in the player's hands. `None` if it
+/// can't land: the fighter is already down, or held and the blow doesn't reach held things.
+pub fn land(blow: &Blow, health: &mut Health, armour: Armour, held: bool) -> Option<Landed> {
+    if health.defeated() || (held && !blow.reaches_held) {
+        return None;
+    }
+    let shrugged = blow.shrugged_by == Some(armour);
+    if !shrugged {
+        health.stun = health.stun.max(blow.stun);
+    }
+    let outcome = health.hurt(blow.damage);
+    let finished = outcome == HitOutcome::Defeated;
+    Some(Landed {
+        outcome,
+        launch: (!shrugged && !held).then_some(blow.launch),
+        freeze: blow.freeze.map(|f| if finished { f.max(FINISHER_HITSTOP) } else { f }),
+    })
 }
 
 /// What a hit did to its target.
@@ -195,14 +269,7 @@ impl Health {
         Health { hp: max, max, stun: 0.0 }
     }
 
-    pub fn take(&mut self, mv: Move) -> HitOutcome {
-        let s = mv.spec();
-        self.hp -= s.damage;
-        self.stun = self.stun.max(s.hitstun);
-        if self.defeated() { HitOutcome::Defeated } else { HitOutcome::Hurt }
-    }
-
-    /// Damage that isn't a blow (a timeout penalty): no stun.
+    /// Damage with no stun (a timeout penalty, a thrown body's own knock); a blow lands through [`land`].
     pub fn hurt(&mut self, amount: f32) -> HitOutcome {
         self.hp -= amount;
         if self.defeated() { HitOutcome::Defeated } else { HitOutcome::Hurt }
@@ -243,13 +310,57 @@ impl HitStop {
 mod tests {
     use super::*;
 
+    const ALL: [Move; 6] = [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash, Move::Jab];
+
     #[test]
     fn a_finishing_blow_freezes_longer_than_any_ordinary_hit() {
-        for mv in [Move::Punch, Move::Kick, Move::DropKick, Move::Smash, Move::Slash, Move::Jab] {
-            assert_eq!(hitstop(mv, false), mv.spec().hitstop);
+        for mv in ALL {
+            let blow = Blow::swing(mv, 0.0);
+            let hurt = land(&blow, &mut Health::new(100.0), Armour::None, false).unwrap();
+            assert_eq!(hurt.freeze, Some(mv.spec().hitstop));
             assert!(FINISHER_HITSTOP > mv.spec().hitstop, "{mv:?} must not out-freeze a kill");
-            assert_eq!(hitstop(mv, true), FINISHER_HITSTOP);
+            let killed = land(&blow, &mut Health::new(1.0), Armour::None, false).unwrap();
+            assert!(killed.finisher());
+            assert_eq!(killed.freeze, Some(FINISHER_HITSTOP));
         }
+    }
+
+    #[test]
+    fn a_swing_lands_its_damage_stun_and_launch() {
+        for mv in ALL {
+            let s = mv.spec();
+            let mut h = Health::new(100.0);
+            let landed = land(&Blow::swing(mv, 0.0), &mut h, Armour::None, false).unwrap();
+            assert_eq!(h.hp, 100.0 - s.damage, "{mv:?}");
+            assert_eq!(h.stun, s.hitstun, "{mv:?}");
+            assert_eq!(landed.launch, Some(launch(mv, 0.0)), "{mv:?}");
+        }
+    }
+
+    #[test]
+    fn armour_shrugs_off_a_punch_but_not_a_kick() {
+        let mut h = Health::new(100.0);
+        let punch = land(&Blow::swing(Move::Punch, 0.0), &mut h, Armour::Punches, false).unwrap();
+        assert_eq!((h.hp, h.stun, punch.launch), (100.0 - Move::Punch.spec().damage, 0.0, None), "hurt, not staggered");
+        let kick = land(&Blow::swing(Move::Kick, 0.0), &mut h, Armour::Punches, false).unwrap();
+        assert!(h.stunned() && kick.launch.is_some(), "a kick staggers it");
+    }
+
+    #[test]
+    fn only_a_blow_that_reaches_held_things_lands_in_the_players_hands_and_it_never_launches_them() {
+        let mut h = Health::new(100.0);
+        assert_eq!(land(&Blow::swing(Move::Kick, 0.0), &mut h, Armour::None, true), None);
+        assert_eq!(h.hp, 100.0, "untouched");
+        let blast = Blow { reaches_held: true, ..Blow::swing(Move::Kick, 0.0) };
+        let landed = land(&blast, &mut h, Armour::None, true).unwrap();
+        assert!(h.hp < 100.0 && h.stunned() && landed.launch.is_none());
+    }
+
+    #[test]
+    fn nothing_lands_on_the_defeated() {
+        let mut h = Health::new(1.0);
+        assert!(land(&Blow::swing(Move::Punch, 0.0), &mut h, Armour::None, false).unwrap().finisher());
+        assert_eq!(land(&Blow::swing(Move::Punch, 0.0), &mut h, Armour::None, false), None);
     }
 
     #[test]
@@ -314,11 +425,12 @@ mod tests {
     #[test]
     fn hits_hurt_and_stun_until_hit_points_run_out() {
         let mut h = Health::new(20.0);
-        assert_eq!(h.take(Move::Punch), HitOutcome::Hurt);
+        let hit = |h: &mut Health, mv| land(&Blow::swing(mv, 0.0), h, Armour::None, false).unwrap().outcome;
+        assert_eq!(hit(&mut h, Move::Punch), HitOutcome::Hurt);
         assert!(h.stunned() && h.hp < 20.0);
         h.tick(1.0);
         assert!(!h.stunned());
-        assert_eq!(h.take(Move::Kick), HitOutcome::Defeated);
+        assert_eq!(hit(&mut h, Move::Kick), HitOutcome::Defeated);
         assert!(h.defeated());
     }
 

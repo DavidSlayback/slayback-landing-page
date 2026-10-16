@@ -74,8 +74,8 @@ mod metres {
         for (mv, base) in
             [(Move::Punch, 18.0), (Move::Slash, 18.0), (Move::Kick, 26.0), (Move::DropKick, 30.0), (Move::Smash, 32.0)]
         {
-            assert!(close(crate::impact::burst_size(mv, false), base), "{mv:?}");
-            assert!(close(crate::impact::burst_size(mv, true), base * 1.8), "{mv:?} finisher");
+            assert!(close(crate::impact::Feel::of(mv).burst(false), base), "{mv:?}");
+            assert!(close(crate::impact::Feel::of(mv).burst(true), base * 1.8), "{mv:?} finisher");
         }
     }
 

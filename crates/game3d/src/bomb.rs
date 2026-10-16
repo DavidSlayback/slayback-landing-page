@@ -8,14 +8,12 @@
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use game_core::bomb::{Fuse, HITSTOP};
-use game_core::bomb::{damage, push};
-use game_core::combat::HitOutcome;
+use game_core::bomb::{Fuse, HITSTOP, blow, push};
 use game_core::debris::solid::Settle;
 use game_core::grab::Held;
 
 use crate::debris::Piece;
-use crate::fighter::{Combat, Defeated, FLASH, Flash, HitStopClock, Hp, Layer, Team};
+use crate::fighter::{Combat, HitStopClock, Layer, Strike, Team};
 use crate::flow::Phase;
 use crate::grab::{Carried, Grabbable};
 use crate::{on_floor, plane};
@@ -38,8 +36,6 @@ pub struct Exploded {
 
 /// A bomb's radius, metres: a little bigger than the fodder's ball head (0.19 m), so it reads as a bomb.
 pub const RADIUS: f32 = 0.22;
-/// How long a blast stuns those it hurts, seconds (as in the 2.5D game).
-const STUN: f32 = 0.4;
 
 pub fn plugin(app: &mut App) {
     // Fuses burn on the game clock, which stops outside play anyway; the gate keeps blasts out of the screens too.
@@ -67,24 +63,17 @@ pub fn lit_bomb(at: Vec3, velocity: Vec3) -> impl Bundle {
     )
 }
 
-/// What a blast sets off besides the push: a freeze, defeats, and the shake and burst (via `Exploded`).
+/// What a blast sets off besides the push: a freeze, a strike on each fighter in range, and the shake and burst (via
+/// `Exploded`).
 #[derive(SystemParam)]
 struct BlastEffects<'w> {
     stop: ResMut<'w, HitStopClock>,
-    defeated: MessageWriter<'w, Defeated>,
+    strikes: MessageWriter<'w, Strike>,
     exploded: MessageWriter<'w, Exploded>,
 }
 
-/// Fighters a blast can reach.
-type Fighters = (
-    Entity,
-    &'static Team,
-    &'static Transform,
-    &'static mut Hp,
-    &'static mut LinearVelocity,
-    &'static mut Flash,
-    Has<Carried>,
-);
+/// Fighters a blast can reach (`fighter::land` decides what it does to each, held ones included).
+type Fighters = (Entity, &'static Transform);
 /// Lit bombs: their fuses, and the push a blast gives them.
 type Bombs = (Entity, &'static mut LitBomb, &'static Transform, &'static mut LinearVelocity, Has<Carried>);
 /// Debris pieces a blast can knock loose (not one in the player's hands).
@@ -96,7 +85,7 @@ fn burn(
     mut commands: Commands,
     time: Res<Time>,
     mut bombs: Query<Bombs, Without<Team>>,
-    mut fighters: Query<Fighters>,
+    fighters: Query<Fighters, With<Team>>,
     mut pieces: Query<Pieces, (Without<Team>, Without<LitBomb>, Without<Carried>)>,
     mut out: BlastEffects,
 ) {
@@ -115,21 +104,10 @@ fn burn(
             let offset = at - centre;
             push(plane(offset), offset.y).map(|(across, up)| on_floor(across).with_y(up))
         };
-        for (e, team, t, mut hp, mut v, mut flash, carried) in &mut fighters {
-            let (Some(hurt), Some(fling)) = (damage(t.translation.distance(centre)), launch(t.translation)) else {
-                continue;
-            };
-            if hp.0.defeated() {
-                continue;
-            }
-            flash.0 = FLASH;
-            hp.0.stun = hp.0.stun.max(STUN);
-            if !carried {
-                v.0 = fling;
-            }
-            if hp.0.hurt(hurt) == HitOutcome::Defeated {
-                out.defeated.write(Defeated { entity: e, team: *team, at: t.translation });
-            }
+        for (target, t) in &fighters {
+            let offset = t.translation - centre;
+            let Some(blow) = blow(plane(offset), offset.y) else { continue };
+            out.strikes.write(Strike { target, blow, at: t.translation, dir: offset.normalize_or_zero() });
         }
         // Other lit bombs in range go off a moment later, and are flung (unless in the player's hands).
         for (e, mut lit, t, mut v, carried) in &mut bombs {

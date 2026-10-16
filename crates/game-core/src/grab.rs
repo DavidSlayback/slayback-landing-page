@@ -9,6 +9,8 @@
 use std::f32::consts::PI;
 
 use crate::aim::{Cone, shove};
+use crate::combat::{Blow, Move};
+use crate::impact::Feel;
 use crate::plane::{heading, wrap};
 
 /// What the player can hold (decision Q33; lit bomb-heads join with D9).
@@ -146,6 +148,23 @@ pub fn throw_velocity(heading: f32) -> [f32; 2] {
 /// The launch a thrown `held` thing gives each enemy it hits, flying along `heading`: across the floor and up, m/s.
 pub fn knock(held: Held, heading: f32) -> ([f32; 2], f32) {
     shove(impact(held).knockback, heading)
+}
+
+/// How long a thrown thing stuns each enemy it hits, seconds.
+pub const STUN: f32 = 0.35;
+
+/// The blow a thrown `held` thing deals each enemy it hits, flying along `heading`. Armour never shrugs it off, and it
+/// reads as a kick.
+pub fn blow(held: Held, heading: f32) -> Blow {
+    Blow {
+        damage: impact(held).damage,
+        stun: STUN,
+        launch: knock(held, heading),
+        freeze: Some(HITSTOP),
+        shrugged_by: None,
+        reaches_held: false,
+        feel: Some(Feel::of(Move::Kick)),
+    }
 }
 
 /// Whether a thrown `held` thing stops at the first enemy it hits instead of flying on through the crowd. A lit

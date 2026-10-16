@@ -13,6 +13,7 @@ use game_core::combat::Move;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid, figure};
 use game_core::enemy::{Kind, THUG};
 use game_core::grab::{Held, impact};
+use game_core::impact::Feel;
 use game_core::plane::RUN_SPEED;
 use game_core::touch::{Button, Layout};
 use game3d::arena::{Arena, Slab};
@@ -1348,10 +1349,11 @@ fn a_blast_on_the_last_of_the_players_health_ends_the_run_on_the_game_over_scree
 
 // Gamepad, comfort and demo mode (G9).
 
-/// What happened in the box: blows that landed on enemies, enemy kills, and whether anything was thrown.
+/// What happened in the box: how the blows that landed on enemies read (a move's `Feel`; a throw reads as a kick),
+/// enemy kills, and whether anything was thrown.
 #[derive(Resource, Default)]
 struct Seen {
-    blows: Vec<Move>,
+    blows: Vec<Feel>,
     kills: usize,
     thrown: bool,
 }
@@ -1361,9 +1363,10 @@ fn watch(
     mut hits: MessageReader<Hit>,
     mut defeats: MessageReader<Defeated>,
     thrown: Query<(), With<Thrown>>,
-    enemies: Query<(), With<Brain>>,
+    players: Query<(), With<Player>>,
 ) {
-    seen.blows.extend(hits.read().filter(|h| enemies.contains(h.victim)).map(|h| h.mv));
+    // Anyone but the player: a killed enemy may already be debris (no brain) by the time this reads its hit.
+    seen.blows.extend(hits.read().filter(|h| !players.contains(h.victim)).map(|h| h.feel));
     seen.kills += defeats.read().filter(|d| d.team == Team::Enemy).count();
     seen.thrown |= !thrown.is_empty();
 }
@@ -1513,7 +1516,7 @@ fn a_gamepad_plays_every_verb_dash_punch_kick_grab_throw_and_pause() {
     pad_tap(&mut app, pad, GamepadButton::North);
     step(&mut app, 0.4);
     assert!(hp(&app, second) < FULL, "Y kicked the next");
-    assert_eq!(app.world().resource::<Seen>().blows[..2], [Move::Punch, Move::Kick]);
+    assert_eq!(app.world().resource::<Seen>().blows[..2], [Feel::of(Move::Punch), Feel::of(Move::Kick)]);
     // Grab one, then throw it with an attack.
     fresh(&mut app, 0.9);
     pad_tap(&mut app, pad, GamepadButton::East);
@@ -1585,7 +1588,7 @@ fn the_demo_fight_punches_kicks_drop_kicks_and_spin_throws_with_a_kill_each_beat
     step(&mut app, 13.0);
     let seen = app.world().resource::<Seen>();
     for mv in [Move::Punch, Move::Kick, Move::DropKick] {
-        assert!(seen.blows.contains(&mv), "a {mv:?} landed: {:?}", seen.blows);
+        assert!(seen.blows.contains(&Feel::of(mv)), "a {mv:?} landed: {:?}", seen.blows);
     }
     assert!(seen.thrown, "a fodder was spin-thrown");
     assert!(seen.kills >= 9, "every beat killed (the throw two): {} kills, {:?}", seen.kills, seen.blows);
@@ -1969,4 +1972,17 @@ fn a_touch_held_on_the_pad_grabs() {
     finger(&mut app, 1, TouchPhase::Started, [900.0, 300.0]);
     step(&mut app, 0.4);
     assert!(app.world().get::<Carried>(foe).is_some(), "held still, the touch grabbed the fodder in front");
+}
+
+#[test]
+fn a_punch_already_swinging_when_the_player_grabs_does_not_hit_what_is_now_held() {
+    let mut app = standing();
+    let foe = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    // Grab during the punch's startup, before its blow comes out: the fodder is in the fists when it would land.
+    tap(&mut app, KeyCode::KeyJ);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(app.world().get::<Carried>(foe).is_some(), "grabbed mid-punch");
+    step(&mut app, 0.3);
+    assert_eq!(hp(&app, foe), FULL, "the player's own punch never lands on what it holds");
 }

@@ -6,6 +6,7 @@
 //! on a pile doesn't reach the floor far below.
 
 use crate::aim::shove;
+use crate::combat::Blow;
 use crate::plane::heading;
 
 /// Seconds from defeat to blast.
@@ -21,6 +22,8 @@ pub const LIFT: f32 = 0.35;
 pub const CHAIN: f32 = 0.15;
 /// Hit-stop when a bomb goes off, seconds.
 pub const HITSTOP: f32 = 0.12;
+/// How long a blast stuns those it hurts, seconds (as in the 2.5D game).
+pub const STUN: f32 = 0.4;
 
 /// A lit fuse.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -84,6 +87,22 @@ pub fn push(across: [f32; 2], up: f32) -> Option<([f32; 2], f32)> {
     Some(match heading(across) {
         Some(yaw) => shove((away, lift), yaw),
         None => shove((0.0, lift), 0.0),
+    })
+}
+
+/// The blow a blast deals a fighter `across` (a plane vector) and `up` from its centre, or `None` out of range. It
+/// reaches even what the player holds, armour never shrugs it off, and it raises no hit of its own: the blast itself
+/// freezes the game once ([`HITSTOP`]) and is the spectacle.
+pub fn blow(across: [f32; 2], up: f32) -> Option<Blow> {
+    let distance = across[0].hypot(across[1]).hypot(up);
+    Some(Blow {
+        damage: damage(distance)?,
+        stun: STUN,
+        launch: push(across, up)?,
+        freeze: None,
+        shrugged_by: None,
+        reaches_held: true,
+        feel: None,
     })
 }
 
