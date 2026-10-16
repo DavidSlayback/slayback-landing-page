@@ -22,7 +22,7 @@ use game3d::carry::{Carried, Carry, Thrown};
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
 use game3d::debris::{Piece, piece};
 use game3d::demo::Demo;
-use game3d::enemy::{Brain, Waves, enemy, fodder, size};
+use game3d::enemy::{Brain, Waves, enemy, fodder};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
 use game3d::input::{Actions, ViewYaw};
@@ -294,7 +294,7 @@ fn fodder_at(app: &mut App, offset: [f32; 2]) -> Entity {
 
 /// Puts an enemy of `kind` on the floor at `offset` from the player, facing it.
 fn enemy_at(app: &mut App, kind: Kind, offset: [f32; 2]) -> Entity {
-    let at = player(app).0.with_y(size(kind).1 / 2.0 + 0.02) + game3d::on_floor(offset);
+    let at = player(app).0.with_y(kind.style().height / 2.0 + 0.02) + game3d::on_floor(offset);
     let yaw = (-offset[1]).atan2(-offset[0]);
     app.world_mut().spawn(enemy(kind, at, yaw)).id()
 }

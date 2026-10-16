@@ -38,10 +38,16 @@ pub fn staggers(mv: Move, armour: Armour) -> bool {
     !(armour == Armour::Punches && mv == Move::Punch)
 }
 
-/// How a melee enemy looks for a fight: its body, toughness, pace and blow.
+/// Everything a kind of enemy is, in one place: its body, toughness, pace and blow. (Its figure's pieces are
+/// `debris::solid::figure`; its colours, the palette's.)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style {
     pub kind: Kind,
+    /// What it's called (entity names, logs).
+    pub name: &'static str,
+    /// Its capsule's radius and full height, metres (the height is its figure's).
+    pub radius: f32,
+    pub height: f32,
     pub max_hp: f32,
     /// Distance to the player, centre to centre across the floor (metres), at which it stops and starts its telegraph.
     pub range: f32,
@@ -57,6 +63,9 @@ pub struct Style {
 /// Walks straight at the player, telegraphs briefly, then punches.
 pub const FODDER: Style = Style {
     kind: Kind::Fodder,
+    name: "fodder",
+    radius: 0.35,
+    height: crate::debris::solid::FODDER_HEIGHT,
     max_hp: 30.0,
     range: 1.625,
     windup: 0.35,
@@ -69,6 +78,10 @@ pub const FODDER: Style = Style {
 /// Slow, tough and wide: a long, obvious wind-up into an overhead smash that punches can't interrupt.
 pub const THUG: Style = Style {
     kind: Kind::Thug,
+    name: "thug",
+    // The 2.5D bodies' widths converted as the fodder's was, so its arms just fit inside.
+    radius: 0.55,
+    height: crate::debris::solid::THUG_HEIGHT,
     max_hp: 60.0,
     range: 2.0625,
     windup: 0.6,
@@ -81,6 +94,9 @@ pub const THUG: Style = Style {
 /// Fast and fragile: closes in quicker than the player runs, strikes after a brief tell, then backs off.
 pub const NINJA: Style = Style {
     kind: Kind::Ninja,
+    name: "ninja",
+    radius: 0.3,
+    height: crate::debris::solid::NINJA_HEIGHT,
     max_hp: 18.0,
     range: 1.375,
     windup: 0.2,

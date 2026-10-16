@@ -196,8 +196,8 @@ fn dress_fighters(
         if matches!(who, Fighter::Enemy(_)) {
             paints.get(Role::Windup(who), &palette, &mut mats);
         }
-        // The player's stride is full at its run speed; enemies walk slower, so theirs is full at half that.
-        let full = game_core::plane::RUN_SPEED * if is_player { 1.0 } else { 0.5 };
+        // A stride is full at the fighter's own top speed: the player's run, each kind's walk (`Style::walk`).
+        let full = game_core::plane::RUN_SPEED * brain.map_or(1.0, |b| b.0.style().walk);
         commands.entity(e).insert((Visibility::default(), Motion::new(full, is_player)));
         let flat = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
         let feet = -body.height / 2.0;

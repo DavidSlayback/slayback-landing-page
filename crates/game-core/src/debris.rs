@@ -151,15 +151,6 @@ pub mod solid {
         }
     }
 
-    /// `kind`'s height, metres, feet to crown.
-    pub fn height(kind: Kind) -> f32 {
-        match kind {
-            Kind::Fodder => FODDER_HEIGHT,
-            Kind::Thug => THUG_HEIGHT,
-            Kind::Ninja => NINJA_HEIGHT,
-        }
-    }
-
     /// Whether a piece moving at `speed` and spinning at `spin` is at rest.
     pub fn at_rest(speed: f32, spin: f32) -> bool {
         speed < REST_SPEED && spin < REST_SPIN
@@ -214,7 +205,7 @@ pub mod solid {
                 let balls: Vec<_> = pieces.iter().filter(|p| matches!(p.solid, Solid::Ball(_))).collect();
                 assert_eq!(balls.len(), 1, "{kind:?}: one ball, the head");
                 assert_eq!(balls[0].limb, Limb::Trunk, "{kind:?}");
-                let half = height(kind) / 2.0;
+                let half = kind.style().height / 2.0;
                 let (mut low, mut high) = (f32::MAX, f32::MIN);
                 for p in pieces {
                     let e = half_extent(p);
