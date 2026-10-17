@@ -4,7 +4,8 @@
 # https://rc-<n>.slayback.pages.dev.
 #   bash scripts/deploy.sh                 # production -> https://slayback.pages.dev
 #   bash scripts/deploy.sh rc 5            # preview    -> https://rc-5.slayback.pages.dev (the one preview)
-# rc-1 is the frozen archive of the retired 2.5D game (Q64): it is never redeployed, so `rc 1` is refused.
+# There is one preview, rc-5 (David, 2026-10-15/17); the older previews, rc-1 (the 2.5D archive) to rc-4, were deleted
+# on 2026-10-17 at his request.
 # With no CI behind it, this runs the browser harness (tests/e2e) on exactly the build it is about to ship and
 # refuses to deploy on a failure. Needs Cloudflare credentials for wrangler: `npx wrangler@4 login` once on this
 # machine, or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in .env.local (git-ignored).
@@ -12,10 +13,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [ "${1:-}" = rc ]; then
   n="${2:?usage: deploy.sh rc <n>}"
-  if [ "$n" = 1 ]; then
-    echo "rc-1 is the frozen archive of the 2.5D game (Q64), which is no longer in this repo; deploy to another rc" >&2
-    exit 1
-  fi
   branch="rc-$n"
   GAME_RELEASE=1 bash scripts/build.sh
   harness_env=(GAME_RELEASE=1 REQUIRE_GAME=1)

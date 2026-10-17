@@ -111,7 +111,7 @@ David, after the look and impact passes: "Take inspiration from rumble box for t
 | Q61 | Figures | **A: several cubes per limb, Rumble Box style:** fodder ~11 parts, thugs ~14, ninjas ~9. | |
 | Q62 | Throws | **A: flat along the facing, with aim assist toward the biggest enemy group within ~30°.** | Same assist rule as Q49. |
 | Q63 | Enemy movement | **A: steering:** seek the player, separate from each other, avoid walls. Ninjas circle to flank; thugs plough straight in. | No pathfinding. |
-| Q64 | Retiring 2.5D | **A: delete `game`, and `/play` serves 3D with no fallback.** rc-1 stays up as an archive of the 2.5D game. | |
+| Q64 | Retiring 2.5D | **A: delete `game`, and `/play` serves 3D with no fallback.** rc-1 stays up as an archive of the 2.5D game. | Superseded 2026-10-17 (David: "Drop all but the newest site"): rc-1 to rc-4 deleted; rc-5 is the one preview. |
 
 ## Round 6: feel pass (2026-10-14)
 
