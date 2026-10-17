@@ -8,6 +8,7 @@
 pub mod arena;
 pub mod bomb;
 pub mod camera;
+pub mod carry;
 pub mod comfort;
 pub mod debris;
 pub mod demo;
@@ -15,8 +16,9 @@ pub mod enemy;
 pub mod fighter;
 #[cfg(feature = "render")]
 pub mod figure;
+#[cfg(feature = "render")]
+pub mod flat;
 pub mod flow;
-pub mod grab;
 #[cfg(feature = "render")]
 pub mod hud;
 #[cfg(feature = "render")]
@@ -36,9 +38,37 @@ pub mod score;
 pub mod screens;
 pub mod sound;
 pub mod store;
+#[cfg(feature = "render")]
+pub mod touchpad;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+
+use crate::fighter::Combat;
+use crate::flow::Phase;
+
+/// The game's frame (`Update`), in order. A module puts each system in the set it belongs to, and this is the only
+/// place the sets are ordered:
+///
+/// 1. [`Frame::Decide`]: the player's control and the enemies' brains turn intent into moves and swings; the doors
+///    call in the crowd.
+/// 2. [`Frame::Act`]: what was decided plays out: the carry (grab, whirl, throw, flight) and the bombs' fuses and
+///    blasts, which send their strikes.
+/// 3. [`Frame::Resolve`]: swings advance and every strike lands ([`Combat`], first), then what follows from it:
+///    debris, the box clock and escape or death, the score.
+/// 4. [`Frame::Show`]: whatever shows the settled frame or keeps books across the screens: the look, the camera,
+///    impacts, sound, shake, the HUD and screens, the arena's rebuild, the score's tally.
+///
+/// The first three run only while playing; `Show` always runs. Pausing is one rule: off `Playing` the gameplay sets
+/// stop, and the virtual clock (also the hit-stop's freeze, `fighter`) stops physics. Input is read before the frame
+/// (`input::ReadActions`, `PreUpdate`), and `flow`'s phase changes sit outside it: they only queue the next phase.
+#[derive(SystemSet, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Frame {
+    Decide,
+    Act,
+    Resolve,
+    Show,
+}
 
 /// Gravity, m/s²: heavier than Earth's, so falls and tumbles read snappily at this camera distance.
 pub const GRAVITY: f32 = 15.0;
@@ -50,6 +80,9 @@ pub fn plugin(app: &mut App) {
     // Every rigid body's transform is interpolated between physics steps (64 Hz), so fighters and tumbling debris
     // move smoothly at any frame rate.
     app.add_plugins(PhysicsPlugins::default().set(PhysicsInterpolationPlugin::interpolate_all()))
+        .configure_sets(Update, (Frame::Decide, Frame::Act, Frame::Resolve, Frame::Show).chain())
+        .configure_sets(Update, (Frame::Decide, Frame::Act, Frame::Resolve).run_if(in_state(Phase::Playing)))
+        .configure_sets(Update, Combat.in_set(Frame::Resolve))
         .insert_resource(Gravity(Vec3::NEG_Y * GRAVITY))
         .add_plugins((
             input::plugin,
@@ -58,7 +91,7 @@ pub fn plugin(app: &mut App) {
             arena::plugin,
             fighter::plugin,
             player::plugin,
-            grab::plugin,
+            carry::plugin,
             bomb::plugin,
             enemy::plugin,
             debris::plugin,

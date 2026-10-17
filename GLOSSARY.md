@@ -1,0 +1,24 @@
+# Glossary
+
+The game's domain words, as the code uses them. Decisions live in `docs/planning/game-decisions.md`; this file names things.
+
+## The frame
+
+- **Frame**: the order of one game frame, declared once in `game3d/src/lib.rs`. **Decide** (the player's control, the brains, the doors), **Act** (the carry and the bombs), **Resolve** (swings and strikes land, in `Combat`, then debris, the run and the score follow) and **Show** (the look, sound, shake, HUD and screens, plus the bookkeeping that runs on every screen). The first three run only while playing.
+
+## Fighting
+
+- **Blow**: anything that lands on a fighter. It might be a swing (punch, kick, drop-kick, an enemy's smash, slash or jab), a thrown thing, or a bomb blast. A blow is just numbers: damage, stun, launch, hit-stop, which armour shrugs it off, whether it reaches what the player holds, and its feel. Where it came from only decides those numbers. `game_core::combat::Blow`; built by `Blow::swing`, `grab::blow` and `bomb::blow`.
+- **Land**: what a blow does to the fighter it reaches, the same for every source (`game_core::combat::land`):
+  - nothing on the defeated;
+  - nothing on what the player holds, unless the blow reaches held things (only blasts do, and then without launching it);
+  - armour shrugs a blow off by taking its damage without stun or launch;
+  - a finishing blow freezes for at least the finisher's hit-stop.
+- **Strike**: a blow on its way to one fighter, with where it shows and which way it pushes (`game3d::fighter::Strike`). Swings, throws and blasts send strikes, and `fighter::land` applies them all.
+- **Hit**: a blow that landed, raised for the burst, the shake and the sound (`game3d::fighter::Hit`). A blast's victims raise no hit, because the blast itself is the spectacle (`Exploded`).
+- **Feel**: how a blow reads, meaning its star burst, its screen shake and whether it sounds heavy (`game_core::impact::Feel`). It's set from what struck: a move's own, while a thrown thing reads as a kick.
+- **Carry**: the player holding something, from the grab to the throw's release (`game3d::carry::Carry`). It is in one of two phases: **Hold** (out in front in the fists) or **Whirl** (the throw, aimed when the attack starts it, going once round before letting go along that heading). `carry.rs` is the only writer of the carry, of the held thing's **Carried** marker and of the thrown thing's **Thrown** flight.
+- **Look**: one fighter's figure in one frame, decided by `pose::look` from its **FigureState** (facing, speed, swing, carry, flash, wind-up, squash) and its **Motion** (walk phase, which arm swings next, the throw's follow-through). It holds the turn, lift, lean and squash, each limb's pose, and the **Tint** (Flash, then Windup, then Own: the part's own paint).
+- **Kind** and **Style**: an enemy's kind (fodder, thug, ninja) and everything it is, in one table (`game_core::enemy::Style`): name, capsule radius and height, health, reach, wind-up, walk speed, blow and armour. Only its figure's pieces (`debris::solid::figure`) and colours (the palette) live elsewhere.
+- **InBox**: belongs to the current box and goes when it ends (`game3d::run::InBox`): every enemy, debris piece and lit bomb, from its bundle.
+- **Armour**: a kind's resistance to being staggered. A thug's armour shrugs off punches but not kicks, throws or blasts.

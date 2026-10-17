@@ -9,6 +9,8 @@
 use std::f32::consts::PI;
 
 use crate::aim::{Cone, shove};
+use crate::combat::{Blow, Move};
+use crate::impact::Feel;
 use crate::plane::{heading, wrap};
 
 /// What the player can hold (decision Q33; lit bomb-heads join with D9).
@@ -57,7 +59,7 @@ pub const ASSIST: f32 = 30.0 * PI / 180.0;
 /// Enemies this close to one another across the floor (centre to centre, metres) belong to one group: about two
 /// fighters' widths, so a crowd jostling round the player is one group and a straggler is not.
 pub const GROUP_GAP: f32 = 1.5;
-/// The share of the spin spent bringing the held thing down from overhead and out to arm's length.
+/// The share of the spin spent swinging the held thing out from the fists to arm's length and down.
 const DROP: f32 = 0.3;
 
 /// Of `bodies` (centres and radii), the index of the nearest one a player of `radius` at `apex` facing `yaw` can
@@ -127,14 +129,15 @@ pub fn throw_heading(me: [f32; 2], yaw: f32, enemies: &[[f32; 2]]) -> f32 {
 }
 
 /// The held thing's offset from the player's centre: across the floor (a plane vector) and up. Carried
-/// (`spin` `None`), it rides `overhead`. During the spin (`spin` 0..=1) it comes down to the player's centre height
-/// and out to `reach` while it whirls once and a half round the body, from behind, to finish straight ahead along
-/// `yaw`, where it is let go.
-pub fn swing(yaw: f32, overhead: f32, reach: f32, spin: Option<f32>) -> ([f32; 2], f32) {
-    let Some(t) = spin.map(|t| t.clamp(0.0, 1.0)) else { return ([0.0, 0.0], overhead) };
+/// (`spin` `None`), it is held out in front in the fists, `hold` ahead along `yaw` and `lift` up (Q77). During the
+/// spin (`spin` 0..=1) it swings out to `reach` and down to the player's centre height while it whirls once round the
+/// body, to finish straight ahead along `yaw`, where it is let go.
+pub fn swing(yaw: f32, lift: f32, hold: f32, reach: f32, spin: Option<f32>) -> ([f32; 2], f32) {
+    let t = spin.map_or(0.0, |t| t.clamp(0.0, 1.0));
     let out = (t / DROP).min(1.0);
-    let a = yaw + PI * (1.0 + 3.0 * t);
-    ([reach * out * a.cos(), reach * out * a.sin()], overhead * (1.0 - out))
+    let r = hold + (reach - hold) * out;
+    let a = yaw + 2.0 * PI * t;
+    ([r * a.cos(), r * a.sin()], lift * (1.0 - out))
 }
 
 /// A throw's velocity along `heading`: flat across the floor, m/s.
@@ -145,6 +148,23 @@ pub fn throw_velocity(heading: f32) -> [f32; 2] {
 /// The launch a thrown `held` thing gives each enemy it hits, flying along `heading`: across the floor and up, m/s.
 pub fn knock(held: Held, heading: f32) -> ([f32; 2], f32) {
     shove(impact(held).knockback, heading)
+}
+
+/// How long a thrown thing stuns each enemy it hits, seconds.
+pub const STUN: f32 = 0.35;
+
+/// The blow a thrown `held` thing deals each enemy it hits, flying along `heading`. Armour never shrugs it off, and it
+/// reads as a kick.
+pub fn blow(held: Held, heading: f32) -> Blow {
+    Blow {
+        damage: impact(held).damage,
+        stun: STUN,
+        launch: knock(held, heading),
+        freeze: Some(HITSTOP),
+        shrugged_by: None,
+        reaches_held: false,
+        feel: Some(Feel::of(Move::Kick)),
+    }
 }
 
 /// Whether a thrown `held` thing stops at the first enemy it hits instead of flying on through the crowd. A lit
@@ -245,17 +265,18 @@ mod throw_tests {
     }
 
     #[test]
-    fn the_held_thing_rides_overhead_then_whirls_round_to_release_straight_ahead() {
-        let (across, up) = swing(0.0, 1.5, 0.9, None);
-        assert_eq!(across, [0.0, 0.0]);
-        assert_eq!(up, 1.5, "overhead while carried");
-        let (across, up) = swing(FRAC_PI_2, 1.5, 0.9, Some(1.0));
+    fn the_held_thing_is_held_out_in_front_then_whirls_round_to_release_straight_ahead() {
+        let (across, up) = swing(FRAC_PI_2, 0.4, 0.6, 0.9, None);
+        assert!(across[0].abs() < 1e-4 && (across[1] - 0.6).abs() < 1e-4, "in front, in the fists: {across:?}");
+        assert_eq!(up, 0.4, "lifted, feet off the floor");
+        assert_eq!(swing(FRAC_PI_2, 0.4, 0.6, 0.9, Some(0.0)), (across, up), "the spin starts where it is held");
+        let (across, up) = swing(FRAC_PI_2, 0.4, 0.6, 0.9, Some(1.0));
         assert!(across[0].abs() < 1e-4 && (across[1] - 0.9).abs() < 1e-4, "ahead along the facing: {across:?}");
         assert!(up.abs() < 1e-6, "at the player's centre height");
-        let (across, up) = swing(0.0, 1.5, 0.9, Some(0.3));
+        let (across, up) = swing(0.0, 0.4, 0.6, 0.9, Some(0.3));
         assert!(up.abs() < 1e-6 && (across[0].hypot(across[1]) - 0.9).abs() < 1e-4, "down and out by 30%");
         // Then it sweeps all the way round: every side of the player in turn.
-        let sides: Vec<f32> = (3..=10).map(|i| swing(0.0, 1.5, 0.9, Some(i as f32 / 10.0)).0[0]).collect();
+        let sides: Vec<f32> = (3..=10).map(|i| swing(0.0, 0.4, 0.6, 0.9, Some(i as f32 / 10.0)).0[0]).collect();
         assert!(sides.iter().any(|x| *x < -0.5) && sides.iter().any(|x| *x > 0.5), "{sides:?}");
     }
 

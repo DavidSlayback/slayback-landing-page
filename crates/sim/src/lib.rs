@@ -36,6 +36,9 @@ pub struct Params {
     pub wander: f32,      // px/s² per-particle random steering (each particle's heading drifts on its own)
     pub flow_scale: f32,  // wavelength of the current field, px (smaller = tighter, more circuitous swirls)
     pub inward: f32,      // px/s² pull toward the screen centre, fading over a particle's first ~2 s
+    /// Emitters only above and below the screen, alternating, so half are always on each edge: the light keeps
+    /// coming from the same two directions while each torch still jumps along its edge at random.
+    pub top_bottom: bool,
 }
 
 impl Default for Params {
@@ -65,6 +68,7 @@ impl Default for Params {
             wander: 0.0,
             flow_scale: 360.0,
             inward: 0.0,
+            top_bottom: false,
         }
     }
 }
@@ -88,6 +92,8 @@ pub struct Emitter {
     pub ttl: f32,
     pub phase: f32,
     pub hue: f32,
+    /// Which emitter this is (0, 1, ...): with `Params::top_bottom`, even ones sit above the screen, odd ones below.
+    pub slot: usize,
 }
 
 impl Emitter {
@@ -223,14 +229,25 @@ impl World {
 
     pub fn set_params(&mut self, p: Params) {
         let regrid = p.radius != self.params.radius;
+        let resided = p.top_bottom != self.params.top_bottom;
         self.params = p;
         if regrid {
             self.resize_grid();
         }
+        if resided {
+            // Torches already lit move to the edges the new rule gives them.
+            let mut list = std::mem::take(&mut self.emitters);
+            for e in list.iter_mut() {
+                self.relocate(e);
+                e.age = self.rand() * e.ttl * 0.8;
+            }
+            self.emitters = list;
+        }
         let n = p.emitters as usize;
         self.emitters.truncate(n);
         while self.emitters.len() < n {
-            let mut e = Emitter { hue: self.emitters.len() as f32 * 0.25 + 0.1, ..Emitter::default() };
+            let slot = self.emitters.len();
+            let mut e = Emitter { hue: slot as f32 * 0.25 + 0.1, slot, ..Emitter::default() };
             self.relocate(&mut e);
             e.age = self.rand() * e.ttl * 0.8; // staggered: torches don't all jump at once
             self.emitters.push(e);
@@ -264,6 +281,7 @@ impl World {
             20 => p.wander = v,
             21 => p.flow_scale = v.max(40.0),
             22 => p.inward = v,
+            23 => p.top_bottom = v != 0.0,
             _ => return,
         }
         self.set_params(p);
@@ -284,11 +302,13 @@ impl World {
         sides
     }
 
-    /// Moves an emitter just outside a random open edge of the screen, aimed inward within a random cone.
+    /// Moves an emitter just outside a random open edge of the screen (its own edge with `top_bottom`), aimed inward
+    /// within a random cone.
     fn relocate(&mut self, e: &mut Emitter) {
         let (w, h) = (self.w, self.h);
         let sides = self.open_sides();
-        let side = sides[(self.rand() * sides.len() as f32) as usize % sides.len()];
+        let pick = (self.rand() * sides.len() as f32) as usize % sides.len();
+        let side = if self.params.top_bottom { e.slot as u32 % 2 } else { sides[pick] };
         let t = self.rand();
         let (x, y, inward) = match side {
             0 => (w * t, -EMITTER_OFFSET, TAU * 0.25), // above the top edge, aiming down
@@ -1169,6 +1189,22 @@ mod tests {
             let outside = world.x[i] < 0.0 || world.x[i] > world.w || world.y[i] < 0.0 || world.y[i] > world.h;
             assert!(outside, "spark born on screen at ({}, {})", world.x[i], world.y[i]);
         }
+    }
+
+    #[test]
+    fn top_and_bottom_torches_stay_on_their_own_edges_and_both_edges_always_have_one() {
+        let mut world = sparks(400);
+        world.set_params(Params { emitters: 4, open_floor: true, top_bottom: true, ..world.params });
+        let mut xs = Vec::new();
+        for _ in 0..1200 {
+            world.step(1.0 / 60.0);
+            let above = world.emitters.iter().filter(|e| e.y < 0.0).count();
+            let below = world.emitters.iter().filter(|e| e.y > world.h).count();
+            assert_eq!((above, below), (2, 2), "two torches on each edge, none at the sides");
+            xs.push(world.emitters[0].x);
+        }
+        xs.dedup();
+        assert!(xs.len() > 2, "each still jumps along its edge: {xs:?}");
     }
 
     #[test]

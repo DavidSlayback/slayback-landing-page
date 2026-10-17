@@ -14,8 +14,9 @@ export function collectErrors(page) {
 
 export const hasGl = page => page.evaluate(() => document.documentElement.classList.contains('gl'));
 
-/** Fraction of pixels in a PNG whose luminance exceeds `min` (decoded in the page; no image dependency). */
-export async function litFraction(page, png, min = 0.25) {
+/** Fraction of pixels in a PNG whose luminance exceeds `min` (decoded in the page; no image dependency). The default
+ *  sits under the hero's unlit lettering, dim grey until sparks light it (`INK` in site/hero.js), and above the dark. */
+export async function litFraction(page, png, min = 0.06) {
   return page.evaluate(async ([b64, min]) => {
     const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
     const ctx = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d');

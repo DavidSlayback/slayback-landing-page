@@ -50,7 +50,7 @@ pub struct EdgeOutline {
 impl Default for EdgeOutline {
     /// Rumble Box's thick black edges (Q66): ~6 px silhouettes and ~4 px creases at 720p.
     fn default() -> Self {
-        Self { color: Vec4::new(0.0, 0.0, 0.0, 1.0), width: 3.0, crease: 0.0008, silhouette: 0.008, crease_width: 2.0 }
+        Self { color: Vec4::new(0.0, 0.0, 0.0, 1.0), width: 2.0, crease: 0.0008, silhouette: 0.008, crease_width: 1.0 }
     }
 }
 

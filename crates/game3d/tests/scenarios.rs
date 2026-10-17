@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use avian3d::prelude::*;
+use bevy::input::touch::{TouchInput, TouchPhase};
 use bevy::prelude::*;
 use bevy::time::TimeUpdateStrategy;
 use game_core::bomb::{CHAIN, DAMAGE, FUSE};
@@ -12,19 +13,21 @@ use game_core::combat::Move;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, MAX_FROZEN, MAX_MOVING, SETTLE, Solid, figure};
 use game_core::enemy::{Kind, THUG};
 use game_core::grab::{Held, impact};
+use game_core::impact::Feel;
 use game_core::plane::RUN_SPEED;
+use game_core::touch::{Button, Layout};
 use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
+use game3d::carry::{Carried, Carry, Thrown};
 use game3d::comfort::{Comfort, Quality, Shake, Shed, Squash};
-use game3d::debris::{Piece, piece};
+use game3d::debris::{Clack, Piece, piece};
 use game3d::demo::Demo;
-use game3d::enemy::{Brain, Waves, enemy, fodder, size};
+use game3d::enemy::{Brain, Waves, enemy, fodder};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
-use game3d::grab::{Carried, Thrown};
 use game3d::input::{Actions, ViewYaw};
-use game3d::player::{Facing, HEIGHT, Holding, Player, RADIUS, SPAWN};
-use game3d::run::RunState;
+use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
+use game3d::run::{InBox, RunState};
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
 use game3d::store::Store;
@@ -291,7 +294,7 @@ fn fodder_at(app: &mut App, offset: [f32; 2]) -> Entity {
 
 /// Puts an enemy of `kind` on the floor at `offset` from the player, facing it.
 fn enemy_at(app: &mut App, kind: Kind, offset: [f32; 2]) -> Entity {
-    let at = player(app).0.with_y(size(kind).1 / 2.0 + 0.02) + game3d::on_floor(offset);
+    let at = player(app).0.with_y(kind.style().height / 2.0 + 0.02) + game3d::on_floor(offset);
     let yaw = (-offset[1]).atan2(-offset[0]);
     app.world_mut().spawn(enemy(kind, at, yaw)).id()
 }
@@ -778,8 +781,8 @@ fn carried(app: &App, e: Entity) -> bool {
     app.world().get::<Carried>(e).is_some()
 }
 
-fn holding(app: &mut App) -> Option<Holding> {
-    app.world_mut().query_filtered::<&Holding, With<Player>>().single(app.world()).ok().copied()
+fn holding(app: &mut App) -> Option<Carry> {
+    app.world_mut().query_filtered::<&Carry, With<Player>>().single(app.world()).ok().copied()
 }
 
 fn at_of(app: &App, e: Entity) -> Vec3 {
@@ -802,7 +805,7 @@ fn bearing(deg: f32, dist: f32) -> [f32; 2] {
 }
 
 #[test]
-fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
+fn the_player_grabs_a_fodder_in_front_carries_it_in_the_fists_and_sets_it_down() {
     let mut app = standing();
     let behind = fodder_at(&mut app, [-0.9, 0.0]);
     step(&mut app, 0.05);
@@ -815,12 +818,17 @@ fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
     tap(&mut app, KeyCode::KeyL);
     assert!(carried(&app, held), "grabbed the fodder in front");
     assert_eq!(holding(&mut app).map(|h| h.target), Some(held));
-    // Carried about for a while, into the back-left corner: it rides overhead and can't fight.
+    // Carried about for a while, into the back-left corner: it is held out in front, off its feet and tipped back
+    // (Q77), and can't fight.
     hold(&mut app, &[KeyCode::KeyW, KeyCode::KeyA], 1.5);
     step(&mut app, 0.5);
     let (me, _, _) = player(&mut app);
     let at = at_of(&app, held);
-    assert!(at.xz().distance(me.xz()) < 0.05 && at.y > me.y + HEIGHT / 2.0, "overhead: {at}, player {me}");
+    let ahead = at.xz().distance(me.xz());
+    assert!((0.4..1.0).contains(&ahead), "in the fists, not on the head: {ahead} m out");
+    assert!(at.y - FODDER_HEIGHT / 2.0 > 0.2 && at.y < me.y + HEIGHT / 2.0, "lifted off its feet: {at}, player {me}");
+    let tipped = app.world().get::<Transform>(held).unwrap().rotation * Vec3::Y;
+    assert!(tipped.y < 0.95, "tipped back: {tipped}");
     assert!(me.distance(SPAWN) > 2.0, "carried along: {me}");
     let (hp, full) = player_hp(&mut app);
     assert_eq!(hp, full, "a held fodder doesn't punch");
@@ -832,9 +840,26 @@ fn the_player_grabs_a_fodder_in_front_carries_it_overhead_and_sets_it_down() {
     let at = at_of(&app, held);
     let me = player(&mut app).0;
     assert!((at.y - FODDER_HEIGHT / 2.0).abs() < 0.1, "back on the floor: {at}");
+    let up = app.world().get::<Transform>(held).unwrap().rotation * Vec3::Y;
+    assert!(up.y > 0.999, "upright again: {up}");
     assert!(at.xz().distance(me.xz()) < 1.0, "set down by the player: {at}, player {me}");
     let half = Arena::default().floor / 2.0;
     assert!(at.x.abs() <= half.x && at.z.abs() <= half.y, "inside the box: {at}");
+}
+
+#[test]
+fn a_throw_is_aimed_when_the_attack_starts_it_and_steering_during_the_whirl_doesnt_turn_it() {
+    let mut app = standing();
+    let held = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    tap(&mut app, KeyCode::KeyL);
+    tap(&mut app, KeyCode::KeyJ);
+    assert!(holding(&mut app).is_some_and(|c| c.whirling()), "the attack started the whirl");
+    // Pushing up the screen for the whole whirl: the player stands still and the throw still goes right (+x).
+    hold(&mut app, &[KeyCode::KeyW], game_core::grab::SPIN + 0.1);
+    assert!(app.world().get::<Thrown>(held).is_some(), "let go");
+    let v = app.world().get::<LinearVelocity>(held).unwrap().0;
+    assert!(v.x > 5.0 && v.z.abs() < 0.1, "flew along the heading it was aimed at: {v}");
 }
 
 #[test]
@@ -1339,10 +1364,11 @@ fn a_blast_on_the_last_of_the_players_health_ends_the_run_on_the_game_over_scree
 
 // Gamepad, comfort and demo mode (G9).
 
-/// What happened in the box: blows that landed on enemies, enemy kills, and whether anything was thrown.
+/// What happened in the box: how the blows that landed on enemies read (a move's `Feel`; a throw reads as a kick),
+/// enemy kills, and whether anything was thrown.
 #[derive(Resource, Default)]
 struct Seen {
-    blows: Vec<Move>,
+    blows: Vec<Feel>,
     kills: usize,
     thrown: bool,
 }
@@ -1352,9 +1378,10 @@ fn watch(
     mut hits: MessageReader<Hit>,
     mut defeats: MessageReader<Defeated>,
     thrown: Query<(), With<Thrown>>,
-    enemies: Query<(), With<Brain>>,
+    players: Query<(), With<Player>>,
 ) {
-    seen.blows.extend(hits.read().filter(|h| enemies.contains(h.victim)).map(|h| h.mv));
+    // Anyone but the player: a killed enemy may already be debris (no brain) by the time this reads its hit.
+    seen.blows.extend(hits.read().filter(|h| !players.contains(h.victim)).map(|h| h.feel));
     seen.kills += defeats.read().filter(|d| d.team == Team::Enemy).count();
     seen.thrown |= !thrown.is_empty();
 }
@@ -1362,7 +1389,7 @@ fn watch(
 /// A headless app that records what happens (`Seen`), with `extra` set up first, after a second to land.
 fn watched(extra: impl FnOnce(&mut App)) -> App {
     let mut app = headless_and(fresh_store(), |app| {
-        app.init_resource::<Seen>().add_systems(Update, watch.after(game3d::fighter::Combat));
+        app.init_resource::<Seen>().add_systems(Update, watch.in_set(game3d::Frame::Show));
         extra(app);
     });
     step(&mut app, 1.0);
@@ -1504,7 +1531,7 @@ fn a_gamepad_plays_every_verb_dash_punch_kick_grab_throw_and_pause() {
     pad_tap(&mut app, pad, GamepadButton::North);
     step(&mut app, 0.4);
     assert!(hp(&app, second) < FULL, "Y kicked the next");
-    assert_eq!(app.world().resource::<Seen>().blows[..2], [Move::Punch, Move::Kick]);
+    assert_eq!(app.world().resource::<Seen>().blows[..2], [Feel::of(Move::Punch), Feel::of(Move::Kick)]);
     // Grab one, then throw it with an attack.
     fresh(&mut app, 0.9);
     pad_tap(&mut app, pad, GamepadButton::East);
@@ -1527,7 +1554,8 @@ fn a_gamepad_plays_every_verb_dash_punch_kick_grab_throw_and_pause() {
     assert_eq!(phase(&app), Phase::Playing);
 }
 
-/// Punches a fodder in front; the screen shake's trauma afterwards, and whether the fodder squashed.
+/// Punches a fodder in front; the screen shake's trauma afterwards, and whether the fodder squashed at any point (a
+/// squash runs out in `SQUASH_TIME`).
 fn punch_one(reduced_motion: bool) -> (f32, bool) {
     let mut app = watched(|app| {
         app.insert_resource(Comfort { reduced_motion });
@@ -1536,9 +1564,13 @@ fn punch_one(reduced_motion: bool) -> (f32, bool) {
     stun(&mut app, foe);
     step(&mut app, 0.05);
     tap(&mut app, KeyCode::KeyJ);
-    step(&mut app, 0.3);
+    let mut squashed = false;
+    for _ in 0..(0.3 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        squashed |= app.world().get::<Squash>(foe).is_some();
+    }
     assert!(hp(&app, foe) < FULL, "the punch landed");
-    (app.world().resource::<Shake>().trauma, app.world().get::<Squash>(foe).is_some())
+    (app.world().resource::<Shake>().trauma, squashed)
 }
 
 #[test]
@@ -1576,7 +1608,7 @@ fn the_demo_fight_punches_kicks_drop_kicks_and_spin_throws_with_a_kill_each_beat
     step(&mut app, 13.0);
     let seen = app.world().resource::<Seen>();
     for mv in [Move::Punch, Move::Kick, Move::DropKick] {
-        assert!(seen.blows.contains(&mv), "a {mv:?} landed: {:?}", seen.blows);
+        assert!(seen.blows.contains(&Feel::of(mv)), "a {mv:?} landed: {:?}", seen.blows);
     }
     assert!(seen.thrown, "a fodder was spin-thrown");
     assert!(seen.kills >= 9, "every beat killed (the throw two): {} kills, {:?}", seen.kills, seen.blows);
@@ -1726,7 +1758,8 @@ fn doors_deliver_thugs_and_ninjas_when_the_box_calls_for_them() {
     let entered = |thugs: f32, ninjas: f32| {
         let mut app = standing();
         let mut run = app.world_mut().resource_mut::<RunState>();
-        (run.0.spec.thugs, run.0.spec.ninjas) = (thugs, ninjas);
+        // From the box's start: box 1 holds its thugs back for its opening (Q76).
+        (run.0.spec.thugs, run.0.spec.ninjas, run.0.spec.thugs_after) = (thugs, ninjas, 0.0);
         app.world_mut().resource_mut::<Waves>().enabled = true;
         step(&mut app, 4.0);
         let mut q = app.world_mut().query::<&Brain>();
@@ -1892,4 +1925,123 @@ fn standing_still_is_lethal_within_12_s_and_no_less_so_in_later_boxes() {
     // About 10 s in box 1 (three fodder alone took about 12 s) and a little less in box 3.
     assert!(first.is_some_and(|t| t < 12.0), "box 1 kills an idle player within 12 s (Q68): {first:?}");
     assert!(third.is_some_and(|t| t <= first.unwrap()), "box 3 no slower: {third:?} against {first:?}");
+}
+
+/// A finger `id` touching the screen at `at` (pixels, y down; the headless game lays its touch controls out on
+/// 1280x720), for the next frame.
+fn finger(app: &mut App, id: u64, phase: TouchPhase, at: [f32; 2]) {
+    let position = Vec2::from_array(at);
+    app.world_mut().write_message(TouchInput { phase, position, window: Entity::PLACEHOLDER, force: None, id });
+}
+
+/// A quick tap: down one frame, up the next.
+fn finger_tap(app: &mut App, id: u64, at: [f32; 2]) {
+    finger(app, id, TouchPhase::Started, at);
+    step(app, 1.0 / FPS);
+    finger(app, id, TouchPhase::Ended, at);
+    step(app, 1.0 / FPS);
+}
+
+#[test]
+fn on_a_touch_screen_the_left_thumb_walks_the_buttons_punch_a_swipe_dashes_and_the_hud_pauses() {
+    let mut app = standing();
+    let screen = Layout { size: [1280.0, 720.0] };
+    let (start, _, _) = player(&mut app);
+    finger(&mut app, 1, TouchPhase::Started, [200.0, 500.0]);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 1, TouchPhase::Moved, [270.0, 500.0]);
+    step(&mut app, 0.5);
+    let (walked, _, _) = player(&mut app);
+    let moved = (walked - start).xz();
+    assert!(moved.x > 1.0 && moved.y.abs() < 0.05, "dragging the stick right walks right: moved {moved}");
+    finger(&mut app, 1, TouchPhase::Ended, [270.0, 500.0]);
+    step(&mut app, 0.5);
+    assert!(player(&mut app).1.length() < 0.1, "letting go stops");
+
+    let ahead = fodder_at(&mut app, [1.1, 0.0]);
+    step(&mut app, 0.05);
+    finger_tap(&mut app, 2, screen.button(Button::Punch));
+    step(&mut app, 0.2);
+    assert!(hp(&app, ahead) < FULL, "the punch button punched");
+    step(&mut app, 0.5);
+
+    // A swipe down the screen on the right half: a dash toward the camera (+z), whichever way the player faced.
+    let pad = [900.0, 300.0];
+    finger(&mut app, 3, TouchPhase::Started, pad);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 3, TouchPhase::Moved, [pad[0], pad[1] + 60.0]);
+    step(&mut app, 2.0 / FPS);
+    let (_, v, _) = player(&mut app);
+    assert!(v.z > RUN_SPEED && v.x.abs() < 0.1, "dashed down the screen: {v}");
+    finger(&mut app, 3, TouchPhase::Ended, [pad[0], pad[1] + 60.0]);
+    step(&mut app, 0.5);
+
+    finger_tap(&mut app, 4, [1200.0, 30.0]);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Paused, "a tap on the HUD pauses");
+    finger_tap(&mut app, 5, [640.0, 360.0]);
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(phase(&app), Phase::Playing, "a tap anywhere resumes");
+}
+
+#[test]
+fn a_touch_held_on_the_pad_grabs() {
+    let mut app = standing();
+    let foe = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    finger(&mut app, 1, TouchPhase::Started, [900.0, 300.0]);
+    step(&mut app, 0.4);
+    assert!(app.world().get::<Carried>(foe).is_some(), "held still, the touch grabbed the fodder in front");
+}
+
+#[test]
+fn a_punch_already_swinging_when_the_player_grabs_does_not_hit_what_is_now_held() {
+    let mut app = standing();
+    let foe = fodder_at(&mut app, [0.9, 0.0]);
+    step(&mut app, 0.05);
+    // Grab during the punch's startup, before its blow comes out: the fodder is in the fists when it would land.
+    tap(&mut app, KeyCode::KeyJ);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(app.world().get::<Carried>(foe).is_some(), "grabbed mid-punch");
+    step(&mut app, 0.3);
+    assert_eq!(hp(&app, foe), FULL, "the player's own punch never lands on what it holds");
+}
+
+#[test]
+fn everything_a_box_holds_is_marked_as_the_boxs_so_the_box_clears_it() {
+    let mut app = watched(|app| {
+        app.add_plugins(Demo { bombs: true, ..default() });
+    });
+    step(&mut app, 6.0);
+    let mut held = app.world_mut().query_filtered::<(), Or<(With<Brain>, With<Piece>, With<LitBomb>)>>();
+    assert!(held.iter(app.world()).count() > 10, "a fight's worth of enemies, debris and bombs");
+    let mut unmarked =
+        app.world_mut().query_filtered::<Entity, (Or<(With<Brain>, With<Piece>, With<LitBomb>)>, Without<InBox>)>();
+    assert_eq!(unmarked.iter(app.world()).count(), 0, "every one is InBox");
+}
+
+/// Every debris knock heard so far.
+#[derive(Resource, Default)]
+struct Heard(Vec<Clack>);
+
+fn hear(mut heard: ResMut<Heard>, mut clacks: MessageReader<Clack>) {
+    heard.0.extend(clacks.read().copied());
+}
+
+#[test]
+fn a_falling_block_knocks_when_it_lands_and_is_quiet_at_rest() {
+    let mut app = standing();
+    app.init_resource::<Heard>().add_systems(Update, hear.in_set(game3d::Frame::Show));
+    let solid = FODDER[0].solid;
+    // Dropped from 3 m, clear of the player.
+    let e = app.world_mut().spawn(piece(solid, 0, Vec3::new(-4.0, 3.0, -2.0), Quat::IDENTITY, 0.0)).id();
+    step(&mut app, 1.5);
+    let heard = std::mem::take(&mut app.world_mut().resource_mut::<Heard>().0);
+    let landing = heard.iter().map(|c| c.strength).fold(0.0, f32::max);
+    // From 3 m at 15 m/s^2 it lands at about 9 m/s.
+    assert!(landing > 6.0, "it knocked as it hit the floor: {heard:?}");
+    assert!(heard.iter().all(|c| c.at.distance(Vec3::new(-4.0, 0.0, -2.0)) < 1.5), "where it fell: {heard:?}");
+    step(&mut app, 3.0);
+    assert_eq!(app.world().resource::<Heard>().0.len(), 0, "and then lies quiet");
+    assert!(app.world().get::<Transform>(e).is_some());
 }

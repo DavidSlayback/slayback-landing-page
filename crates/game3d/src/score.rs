@@ -6,6 +6,7 @@
 use bevy::prelude::*;
 use game_core::score::{Best, Score, iso_date};
 
+use crate::Frame;
 use crate::fighter::{Combat, Defeated, Team};
 use crate::flow::Phase;
 use crate::run::BoxEnded;
@@ -48,9 +49,10 @@ pub fn plugin(app: &mut App) {
         .add_systems(Startup, |store: Res<Store>, mut best: ResMut<BestScore>| {
             best.0 = store.get(BEST_KEY).as_deref().and_then(Best::from_record);
         })
-        .add_systems(Update, count.after(Combat).run_if(in_state(Phase::Playing)))
+        .add_systems(Update, count.in_set(Frame::Resolve).after(Combat))
         // In every phase: a death's message arrives as the game switches to the game-over screen.
-        .add_systems(Update, tally.after(Combat))
+        // Every phase: a death's tally lands as the game-over screen comes up.
+        .add_systems(Update, tally.in_set(Frame::Show))
         .add_systems(OnExit(Phase::Over), |mut score: ResMut<RunScore>| score.0 = Score::default());
 }
 

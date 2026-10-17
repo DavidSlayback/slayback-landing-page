@@ -5,14 +5,18 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use game_core::climb::{Placed, pile_height};
 use game_core::debris::solid::{Settle, Solid, at_rest, figure, frozen_over_cap, moving_over_cap};
+use game_core::enemy::Kind;
 use game_core::grab::Held;
 
+use crate::Frame;
 use crate::bomb::{BombHead, lit_bomb};
+use crate::carry::Grabbable;
 use crate::enemy::Brain;
 use crate::fighter::{Combat, Defeated, Layer, Team};
-use crate::grab::Grabbable;
 use crate::player::Facing;
+use crate::run::InBox;
 
 /// One piece of a broken figure: what it is, which figure part it was, and its settling clock.
 #[derive(Component, Clone, Copy, Debug)]
@@ -25,6 +29,10 @@ pub struct Piece {
     pub settle: Settle,
 }
 
+/// Which kind's figure a burst piece came from, so the look can colour it by the part it was.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Kin(pub Kind);
+
 /// How hard a burst throws pieces out from the body and up, m/s, and how much of the body's own velocity they keep.
 /// Rumble Box blows a figure apart, its parts flying high: 5 m/s up rises ~0.85 m against 15 m/s² of gravity. They
 /// fly about twice as long as they used to, so they go out about half as fast and land about as spread as before:
@@ -34,7 +42,76 @@ const BURST_UP: f32 = 5.0;
 const CARRY: f32 = 0.3;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Update, (burst, settle, cap_moving, cap_frozen).chain().after(Combat));
+    app.add_message::<Clack>().add_systems(
+        Update,
+        (burst, settle, cap_moving, cap_frozen, listen).chain().in_set(Frame::Resolve).after(Combat),
+    );
+}
+
+/// A loose debris piece struck something hard enough to hear (the floor, the pile, a wall, a fighter): where, how hard
+/// (the jump in its velocity beyond what gravity gave it, m/s), and how big it is (its longest side, metres). `sound`
+/// knocks for it, louder the harder and higher the smaller.
+#[derive(Message, Clone, Copy, Debug)]
+pub struct Clack {
+    pub at: Vec3,
+    pub strength: f32,
+    pub size: f32,
+}
+
+/// The least velocity jump that clacks, m/s: a piece rocking or sliding to rest stays quiet.
+pub const CLACK: f32 = 1.5;
+/// How long after a piece breaks off before it can clack, seconds: a burst's fling isn't a landing.
+const SETTLE_IN: f32 = 0.05;
+
+/// A piece's velocity last frame, to hear it strike something.
+#[derive(Component, Default)]
+pub struct Heard(Vec3);
+
+/// Every loose piece whose velocity jumped this frame (beyond gravity's pull) struck something: a [`Clack`]. Not one
+/// in the player's hands or flying from a throw (the carry moves those).
+#[allow(clippy::type_complexity)]
+fn listen(
+    time: Res<Time>,
+    mut pieces: Query<
+        (&Transform, &Piece, &RigidBody, &LinearVelocity, &mut Heard),
+        (Without<crate::carry::Carried>, Without<crate::carry::Thrown>),
+    >,
+    mut clacks: MessageWriter<Clack>,
+) {
+    let (now, dt) = (time.elapsed_secs(), time.delta_secs());
+    let fall = Vec3::NEG_Y * crate::GRAVITY * dt;
+    for (t, piece, body, v, mut heard) in &mut pieces {
+        let jump = (v.0 - heard.0 - fall).length();
+        heard.0 = v.0;
+        if *body == RigidBody::Dynamic && dt > 0.0 && now - piece.born > SETTLE_IN && jump > CLACK {
+            let size = match piece.solid {
+                Solid::Cube(s) => s.into_iter().fold(0.0, f32::max),
+                Solid::Ball(r) => 2.0 * r,
+            };
+            clacks.write(Clack { at: t.translation, strength: jump, size });
+        }
+    }
+}
+
+/// Pieces centred further than this across the floor from a point can't be under a footprint there, metres: a
+/// footprint plus the reach of the largest piece (a demo stair, about 0.7 m from its centre), with room to spare.
+const NEAR: f32 = 1.5;
+
+/// The top of the debris pile under `spot` (floor x and z), over a footprint `footprint` wide, counting only pile at
+/// or below `below` (`game_core::climb::pile_height`), 0 (the floor) if nothing is under it. Debris is the only thing
+/// that counts: not the floor, the walls, or fighters.
+pub fn pile_under<'a>(
+    pieces: impl IntoIterator<Item = (&'a Piece, &'a Transform)>,
+    spot: Vec2,
+    footprint: f32,
+    below: f32,
+) -> f32 {
+    let under: Vec<Placed> = pieces
+        .into_iter()
+        .filter(|(_, t)| t.translation.xz().distance(spot) < NEAR)
+        .map(|(p, t)| Placed { solid: p.solid, centre: t.translation.to_array(), rotation: t.rotation.to_array() })
+        .collect();
+    pile_height(&under, spot.to_array(), footprint, below)
 }
 
 /// A loose piece of debris (as a burst spawns it; tests build piles with it too).
@@ -45,6 +122,8 @@ pub fn piece(solid: Solid, part: usize, at: Vec3, rotation: Quat, born: f32) -> 
     };
     (
         Piece { born, solid, part, settle: Settle::default() },
+        Heard::default(),
+        InBox,
         // Frozen or loose, a piece can be picked up and thrown (frozen ones thaw).
         Grabbable(Held::Debris),
         Name::new("debris"),
@@ -73,7 +152,8 @@ fn burst(
         let centre = transform.translation;
         let turn = facing.rotation();
         commands.entity(d.entity).despawn();
-        for (i, p) in figure(brain.0.style().kind).iter().enumerate() {
+        let kind = brain.0.style().kind;
+        for (i, p) in figure(kind).iter().enumerate() {
             let offset = turn * Vec3::from_array(p.at);
             let out = offset.with_y(offset.y * 0.5).normalize_or_zero();
             let fling = velocity.0 * CARRY + out * BURST_OUT + Vec3::Y * BURST_UP;
@@ -91,6 +171,7 @@ fn burst(
             };
             commands.spawn((
                 piece(p.solid, i, centre + offset, turn, time.elapsed_secs()),
+                Kin(kind),
                 LinearVelocity(fling),
                 AngularVelocity(spin),
             ));

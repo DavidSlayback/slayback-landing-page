@@ -9,30 +9,28 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::debris::solid::height;
 use game_core::doors::Door;
-use game_core::enemy::{Intent, Kind, Mind, NinjaPhase};
+use game_core::enemy::{FODDER, Intent, Kind, Mind, NinjaPhase};
 use game_core::grab::Held;
 use game_core::plane::{RUN_ACCEL, RUN_SPEED, approach, heading};
 use game_core::run::{box_spec, pick_kind};
 use game_core::steer::{circle, steer};
 
+use crate::Frame;
 use crate::arena::Arena;
 use crate::bomb::BombHead;
-use crate::fighter::{Attack, Combat, Hp, Team, body};
-use crate::grab::{Carried, Grabbable};
+use crate::carry::{Carried, Grabbable};
+use crate::fighter::{Attack, Hp, Team, body};
 use crate::player::{Facing, Player};
-use crate::run::RunState;
+use crate::run::{InBox, RunState};
 use crate::{on_floor, plane};
 
 #[derive(Component)]
 pub struct Brain(pub Mind);
 
-/// The fodder's capsule radius, metres (its height is `game_core::debris::solid::FODDER_HEIGHT`, the figure's).
-pub const RADIUS: f32 = 0.35;
-/// The thug's and the ninja's: the 2.5D bodies' widths converted as the fodder's was, so their arms just fit inside.
-pub const THUG_RADIUS: f32 = 0.55;
-pub const NINJA_RADIUS: f32 = 0.3;
+/// The fodder's capsule radius, metres: what the player's aim assist and the demo's piles take an enemy's to be.
+/// Each kind's own is its `game_core::enemy::Style`'s.
+pub const RADIUS: f32 = FODDER.radius;
 /// The player counts as in front of an enemy when its facing is within this angle of the enemy (cos 60°).
 const IN_FRONT: f32 = 0.5;
 
@@ -51,8 +49,8 @@ pub struct WallDoor {
 impl WallDoor {
     /// Where an enemy of `kind` stands as it steps in: just inside the wall, on the floor.
     pub fn entry(&self, kind: Kind) -> Vec3 {
-        let (radius, height) = size(kind);
-        self.face + self.inward * (radius + 0.2) + Vec3::Y * (height / 2.0 + 0.05)
+        let s = kind.style();
+        self.face + self.inward * (s.radius + 0.2) + Vec3::Y * (s.height / 2.0 + 0.05)
     }
 }
 
@@ -77,19 +75,9 @@ impl Default for Waves {
 pub fn plugin(app: &mut App) {
     app.init_resource::<Waves>()
         .add_systems(Startup, spawn_doors)
-        .add_systems(Update, (request_entries, open_doors, think.before(Combat)));
+        .add_systems(Update, (request_entries, open_doors, think).in_set(Frame::Decide));
     #[cfg(feature = "render")]
     app.add_plugins(view::plugin);
-}
-
-/// An enemy's capsule radius and height (its figure's, `game_core::debris::solid::height`), metres.
-pub fn size(kind: Kind) -> (f32, f32) {
-    let radius = match kind {
-        Kind::Fodder => RADIUS,
-        Kind::Thug => THUG_RADIUS,
-        Kind::Ninja => NINJA_RADIUS,
-    };
-    (radius, height(kind))
 }
 
 /// The doors' feet on the walls' inner faces and their inward directions: two in the back wall, one in each side.
@@ -116,19 +104,15 @@ fn spawn_doors(mut commands: Commands, arena: Res<Arena>) {
 
 /// An enemy of `kind` standing at `at`, facing `yaw`.
 pub fn enemy(kind: Kind, at: Vec3, yaw: f32) -> impl Bundle {
-    let (radius, height) = size(kind);
-    let name = match kind {
-        Kind::Fodder => "fodder",
-        Kind::Thug => "thug",
-        Kind::Ninja => "ninja",
-    };
+    let s = kind.style();
     let mut facing = game_core::plane::Facing::default();
     facing.snap(yaw);
     (
         Brain(Mind::new(kind)),
+        InBox,
         Grabbable(Held::Enemy),
-        Name::new(name),
-        body(Team::Enemy, radius, height, kind.style().max_hp),
+        Name::new(s.name),
+        body(Team::Enemy, s.radius, s.height, s.max_hp),
         Transform::from_translation(at),
         Facing(facing),
     )
@@ -170,7 +154,7 @@ fn request_entries(
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;
-        door.next = pick_kind(&run.0.spec, (s & 0xFFFF) as f32 / 65536.0);
+        door.next = pick_kind(&run.0.spec, run.0.elapsed, (s & 0xFFFF) as f32 / 65536.0);
         door.bomb = ((s >> 16) as f32 / 65536.0) < waves.bombs.unwrap_or(run.0.spec.bombs);
         door.door.request();
     }
@@ -252,6 +236,7 @@ mod view {
     use game_core::doors::{Door, WARNING};
 
     use super::WallDoor;
+    use crate::flat::Flat;
     use crate::look::Palette;
     use crate::paint::{Role, colour};
 
@@ -260,10 +245,10 @@ mod view {
 
     /// Each door's own material, recoloured as it warns.
     #[derive(Component)]
-    struct Panel(Handle<StandardMaterial>);
+    struct Panel(Handle<Flat>);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Update, (dress, pulse, fade).chain());
+        app.add_systems(Update, (dress, pulse, fade).chain().in_set(crate::Frame::Show));
     }
 
     fn closed(palette: &Palette) -> Color {
@@ -275,10 +260,10 @@ mod view {
         palette: Res<Palette>,
         doors: Query<(Entity, &WallDoor), Added<WallDoor>>,
         mut meshes: ResMut<Assets<Mesh>>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
     ) {
         for (e, door) in &doors {
-            let mat = mats.add(StandardMaterial { base_color: closed(&palette), unlit: true, ..default() });
+            let mat = mats.add(Flat::unlit(closed(&palette)));
             commands.entity(e).insert((Panel(mat.clone()), Visibility::default()));
             commands.spawn((
                 Mesh3d(meshes.add(Cuboid::from_size(PANEL))),
@@ -290,7 +275,7 @@ mod view {
         }
     }
 
-    fn pulse(palette: Res<Palette>, doors: Query<(&WallDoor, &Panel)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    fn pulse(palette: Res<Palette>, doors: Query<(&WallDoor, &Panel)>, mut mats: ResMut<Assets<Flat>>) {
         for (door, panel) in &doors {
             let colour = match door.door {
                 Door::Closed => closed(&palette),
@@ -302,10 +287,11 @@ mod view {
                 }
                 Door::Open(_) => Color::BLACK,
             };
+            let colour = LinearRgba::from(colour);
             if let Some(mut m) = mats.get_mut(&panel.0)
-                && m.base_color != colour
+                && m.color != colour
             {
-                m.base_color = colour;
+                m.color = colour;
             }
         }
     }

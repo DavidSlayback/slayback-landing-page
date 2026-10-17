@@ -1,84 +1,59 @@
-//! The 3D look: the hybrid of decisions Q50 and Q66. Flat-shaded cubes under one directional light with no shadow map,
-//! no bloom (the WebGL2 budget, research section 7) and no tonemapping; thick black edges (`outline`, the tile grid
-//! and rim bars here); and the page's colour scheme by the rules in `game_core::palette`, rotating box by box. This
-//! module dresses the arena and owns the palette; `figure` dresses the fighters and their debris.
+//! The 3D look: the hybrid of decision Q50 in Rumble Box's colours (Q75). Flat-shaded cubes under one fixed light
+//! with no shadow map, no bloom (the WebGL2 budget, research section 7) and no tonemapping; thick black edges
+//! (`outline`, and the rim bars here); and each box in its stage's tiles (`game_core::palette`). This module dresses
+//! the arena and owns the palette; `figure` dresses the fighters and their debris.
 //!
 //! Gameplay entities carry no visuals; the look dresses them when they appear, so the headless scenarios run the same
 //! game without assets or a renderer.
 
 use bevy::prelude::*;
-use game_core::palette::Rgb;
-use game_core::scheme::{self, Scheme};
+use game_core::palette::Stage;
 
-use crate::arena::{Kind, Slab, WALL};
-use crate::paint::{Paints, Role};
+use crate::arena::{Arena, Kind, Slab, WALL};
+use crate::flat::Flat;
+use crate::paint::{Paints, Role, colour};
+use crate::player::Player;
 use crate::run::BoxStarted;
 
-/// The current box's colour scheme (`game_core::scheme`): the page's at the start, then rotating box by box (Q31).
-/// It changes as each box starts. Colour things through `paint`: `paint::colour(role, &palette)` for a colour, and
-/// `Paints::get` for a shared material that repaints with the scheme. Only `paint` reads the scheme's rules (a
-/// pre-commit check keeps it that way).
-#[derive(Resource, Clone, Copy, Debug)]
+/// The current box's stage (`game_core::palette::Stage`): Rumble Box's looks, box by box. It changes as each box
+/// starts. Colour things through `paint`: `paint::colour(role, &palette)` for a colour, and `Paints::get` for a shared
+/// material that repaints with the stage; `Palette::nth` for box `n`'s. Only `paint` reads the stage's rules (a pre-commit
+/// check keeps it that way).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
-    pub scheme: &'static Scheme,
+    pub stage: &'static Stage,
 }
 
-/// A `game_core::palette` colour as a Bevy colour.
-pub fn srgb([r, g, b]: Rgb) -> Color {
-    Color::srgb(r, g, b)
-}
-
-impl Palette {
-    pub fn nth(i: usize) -> Self {
-        let scheme = &scheme::SCHEMES[i % scheme::SCHEMES.len()];
-        Self { scheme }
-    }
-}
-
-/// The page's scheme, which the boxes rotate from: `?palette=` first, then the visitor's saved pick (the hero's
-/// `slayback-scheme`).
+/// How many stages on the run's colours start: the page's `stage=` (`demo`), for reviewing each box's look.
 #[derive(Resource)]
-struct PageScheme(usize);
-
-impl PageScheme {
-    fn read() -> Self {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let window = web_sys::window();
-            let query = window.as_ref().and_then(|w| w.location().search().ok()).unwrap_or_default();
-            let saved = window.as_ref().and_then(|w| w.local_storage().ok()??.get_item("slayback-scheme").ok()?);
-            Self(scheme::page_choice(&query, saved.as_deref()))
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            Self(0)
-        }
-    }
-}
+struct FirstStage(usize);
 
 pub fn plugin(app: &mut App) {
-    let page = PageScheme::read();
-    app.insert_resource(ClearColor(Color::srgb(0.035, 0.04, 0.055)))
-        .insert_resource(GlobalAmbientLight { color: Color::srgb(0.75, 0.82, 1.0), brightness: 900.0, ..default() })
-        .insert_resource(Palette::nth(page.0))
-        .insert_resource(page)
+    // No lights: `flat` shades every surface from one fixed key light and ambient of its own.
+    let first = FirstStage(crate::demo::setting("stage").and_then(|s| s.parse().ok()).unwrap_or(0));
+    let palette = Palette::nth(first.0);
+    app.insert_resource(ClearColor(colour(Role::Sky, &palette)))
+        .insert_resource(palette)
+        .insert_resource(first)
         .add_plugins((
+            crate::flat::plugin,
             crate::paint::plugin,
             crate::camera::plugin,
             crate::outline::plugin,
             crate::figure::plugin,
             crate::impact::plugin,
             crate::hud::plugin,
+            crate::touchpad::plugin,
         ))
-        .add_systems(Startup, (load_kit, spawn_light))
-        .add_systems(Update, (rotate_scheme, dress_slabs, fade_walls).chain());
+        .add_systems(Startup, load_kit)
+        .add_systems(Update, (next_stage, dress_slabs, fade_walls, clear_glass).chain().in_set(crate::Frame::Show));
 }
 
-/// Each box takes the next scheme, starting from the page's (Q31).
-fn rotate_scheme(mut started: MessageReader<BoxStarted>, page: Res<PageScheme>, mut palette: ResMut<Palette>) {
+/// Each box takes its stage.
+fn next_stage(mut started: MessageReader<BoxStarted>, first: Res<FirstStage>, mut palette: ResMut<Palette>) {
     let Some(BoxStarted(spec)) = started.read().last() else { return };
-    let next = Palette::nth(page.0 + spec.scheme);
-    if palette.scheme.key != next.scheme.key {
+    let next = Palette::nth(first.0 + spec.stage);
+    if *palette != next {
         *palette = next;
     }
 }
@@ -87,53 +62,38 @@ fn rotate_scheme(mut started: MessageReader<BoxStarted>, page: Res<PageScheme>, 
 #[derive(Resource)]
 struct Kit {
     cube: Handle<Mesh>,
-    floor: Handle<StandardMaterial>,
-    wall: Handle<StandardMaterial>,
-    glass: Handle<StandardMaterial>,
-    /// Black, unlit: the rim and glass bars and the tile lines.
-    line: Handle<StandardMaterial>,
+    /// The floor's and walls' tiles.
+    tiles: Handle<Flat>,
+    glass: Handle<Flat>,
+    /// Black, unlit: the rim and glass bars.
+    edge: Handle<Flat>,
+    /// The stage's tile lines.
+    line: Handle<Flat>,
 }
 
-/// Makes the kit: the floor and walls in their shared paints (`paint`), the glass and the black lines.
+/// Makes the kit: the tiles and their lines in their shared paints (`paint`), the glass and the black edges.
 fn load_kit(
     mut commands: Commands,
     palette: Res<Palette>,
     mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
 ) {
-    let floor = paints.get(Role::Floor, &palette, &mut mats);
-    let wall = paints.get(Role::Wall, &palette, &mut mats);
-    let unlit = || StandardMaterial { unlit: true, ..default() };
     let kit = Kit {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-        floor,
-        wall,
+        tiles: paints.get(Role::Tiles, &palette, &mut mats),
         // Barely there: the pane's faces stack, and anything more washes out the floor behind it.
-        glass: mats.add(StandardMaterial {
-            base_color: Color::srgba(0.7, 0.85, 1.0, 0.035),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
-        }),
-        line: mats.add(StandardMaterial { base_color: Color::BLACK, ..unlit() }),
+        glass: mats.add(Flat::unlit(Color::srgba(0.7, 0.85, 1.0, 0.035)).blend()),
+        edge: mats.add(Flat::unlit(Color::BLACK)),
+        line: paints.get(Role::Line, &palette, &mut mats),
     };
     commands.insert_resource(kit);
 }
 
-/// One directional light (WebGL2 keeps only one), from above and in front, a little to the right, so the two side
-/// walls' faces read apart; no shadow map.
-fn spawn_light(mut commands: Commands) {
-    commands.spawn((
-        DirectionalLight { illuminance: 9_000.0, shadow_maps_enabled: false, ..default() },
-        Transform::from_xyz(5.0, 14.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-}
-
 /// The black bars along the rim and round the glass, metres thick (Rumble Box's thick black edges, Q66).
 const EDGE: f32 = 0.14;
-/// Rumble Box's tiles: a black line every metre across the floor and up the walls, this thick.
-const TILE: f32 = 1.0;
+/// Rumble Box's tiles: a line every metre across the floor and up the walls (the checker's tiles too), this thick.
+pub const TILE: f32 = 1.0;
 const LINE: f32 = 0.05;
 
 /// A wall's solid face, its rim bar or one of its tile lines. A wall the camera is behind turns to glass and loses
@@ -151,7 +111,7 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
     for (e, slab, at) in &slabs {
         let s = slab.size;
         commands.entity(e).insert(Visibility::default());
-        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<StandardMaterial>, face: Option<WallFace>| {
+        let mut cube = |size: Vec3, at: Vec3, mat: &Handle<Flat>, face: Option<WallFace>| {
             let mut c = commands.spawn((
                 Mesh3d(kit.cube.clone()),
                 MeshMaterial3d(mat.clone()),
@@ -161,10 +121,12 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
             if let Some(face) = face {
                 c.insert(face);
             }
+            c.id()
         };
+        let mut rail = None;
         match slab.kind {
             Kind::Floor => {
-                cube(s, Vec3::ZERO, &kit.floor, None);
+                cube(s, Vec3::ZERO, &kit.tiles, None);
                 // Tile lines over the inner floor, just proud of it.
                 let inner = Vec2::new(s.x, s.z) - Vec2::splat(2.0 * WALL);
                 let y = s.y / 2.0 + 0.004;
@@ -182,9 +144,9 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
                 let outward =
                     if along_z { Vec2::Y * at.translation.z.signum() } else { Vec2::X * at.translation.x.signum() };
                 let face = |solid| Some(WallFace { centre: at.translation.xz(), outward, solid });
-                cube(s, Vec3::ZERO, &kit.wall, face(true));
+                cube(s, Vec3::ZERO, &kit.tiles, face(true));
                 // The rim bar goes with the wall when the camera is behind it, or it would slice across the fight.
-                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.line, face(false));
+                cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.edge, face(false));
                 // Tile lines on the inner face: across at each metre of height, and up at each metre along.
                 let inward = -Vec3::new(outward.x, 0.0, outward.y) * (WALL / 2.0 + 0.004);
                 let span = if along_z { s.x - 2.0 * WALL } else { s.z };
@@ -204,11 +166,37 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
             // The glass is a faint pane drawn by its edges: a bar along the rim and the two corner posts.
             Kind::Glass => {
                 cube(s, Vec3::ZERO, &kit.glass, None);
-                cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.line, None);
+                rail = Some(cube(Vec3::new(s.x, EDGE, EDGE), Vec3::Y * (s.y - EDGE) / 2.0, &kit.edge, None));
                 for x in [-1.0, 1.0] {
-                    cube(Vec3::new(EDGE, s.y, EDGE), Vec3::X * x * (s.x - EDGE) / 2.0, &kit.line, None);
+                    cube(Vec3::new(EDGE, s.y, EDGE), Vec3::X * x * (s.x - EDGE) / 2.0, &kit.edge, None);
                 }
             }
+        }
+        if let Some(rail) = rail {
+            commands.entity(rail).insert(GlassRail);
+        }
+    }
+}
+
+/// The glass's top rail. The camera always looks in over the front wall, so with the player close to it the rail
+/// crosses the fight; it goes while the player is within [`CLEAR`] of the glass.
+#[derive(Component)]
+struct GlassRail;
+
+/// How close to the front wall the player is before its rail goes, metres.
+const CLEAR: f32 = 2.0;
+
+fn clear_glass(
+    arena: Res<Arena>,
+    player: Query<&Transform, With<Player>>,
+    mut rails: Query<&mut Visibility, With<GlassRail>>,
+) {
+    let Ok(at) = player.single() else { return };
+    let close = at.translation.z > arena.floor.y / 2.0 - CLEAR;
+    let want = if close { Visibility::Hidden } else { Visibility::Inherited };
+    for mut shown in &mut rails {
+        if *shown != want {
+            *shown = want;
         }
     }
 }
@@ -223,13 +211,13 @@ fn lines(len: f32) -> impl Iterator<Item = f32> {
 fn fade_walls(
     kit: Res<Kit>,
     cameras: Query<&GlobalTransform, With<Camera3d>>,
-    mut faces: Query<(&WallFace, &mut MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+    mut faces: Query<(&WallFace, &mut MeshMaterial3d<Flat>, &mut Visibility)>,
 ) {
     let Some(eye) = cameras.iter().next().map(|c| c.translation().xz()) else { return };
     for (face, mut mat, mut shown) in &mut faces {
         let behind = (eye - face.centre).dot(face.outward) > 0.0;
         if face.solid {
-            let want = if behind { &kit.glass } else { &kit.wall };
+            let want = if behind { &kit.glass } else { &kit.tiles };
             if mat.0 != *want {
                 mat.0 = want.clone();
             }

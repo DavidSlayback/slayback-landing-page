@@ -68,7 +68,8 @@ pub struct Slab {
 pub struct BoxPiece;
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Arena>().add_systems(Update, build);
+    // Every phase: the first box is built behind the start screen.
+    app.init_resource::<Arena>().add_systems(Update, build.in_set(crate::Frame::Show));
 }
 
 /// The slabs of `arena`: the floor, the back, left and right walls, and the glass front (+z), with their centres.

@@ -1,5 +1,5 @@
 //! Hit impact, after Rumble Box's comic punch (spec #58, carried over from the 2.5D game): trauma screen shake, a star
-//! burst where a blow lands (scheme-coloured with a white-hot core, bigger for heavy moves and kills; biggest, with the
+//! burst where a blow lands (signal-red with a white-hot core, bigger for heavy moves and kills; biggest, with the
 //! strongest shake, for a bomb's blast), a squash on the fighter who takes it, and each kill's points floating up from
 //! where it fell, with the streak. The finisher's longer freeze is the hit-stop in `fighter`. Rules:
 //! `game_core::impact`. All of it runs on real time, so it plays through hit-stop: the frozen frame is the squashed,
@@ -12,12 +12,13 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::transform::TransformSystems;
-use game_core::impact::{BLAST_BURST, burst_size, pop, squash};
+use game_core::impact::{BLAST_BURST, pop};
 
 use crate::bomb::Exploded;
 use crate::camera::{self, Warm};
-use crate::comfort::{Comfort, Quality, Shake, Squash, Thin, burst_share};
-use crate::fighter::{Hit, Team};
+use crate::comfort::{Comfort, Quality, Shake, Thin, burst_share};
+use crate::fighter::Hit;
+use crate::flat::Flat;
 use crate::look::Palette;
 use crate::paint::{Paints, Role, colour};
 use crate::score::Scored;
@@ -47,13 +48,16 @@ struct Popup {
 #[derive(Resource)]
 struct BurstKit {
     star: Handle<Mesh>,
-    outer: Handle<StandardMaterial>,
-    core: Handle<StandardMaterial>,
+    outer: Handle<Flat>,
+    core: Handle<Flat>,
 }
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, load)
-        .add_systems(Update, ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups, ease_squash)).chain())
+        .add_systems(
+            Update,
+            ((spawn_bursts, spawn_popups), (grow_bursts, rise_popups)).chain().in_set(crate::Frame::Show),
+        )
         .add_systems(PostUpdate, shake_camera.after(camera::fit).before(TransformSystems::Propagate));
 }
 
@@ -83,10 +87,10 @@ fn load(
     palette: Res<Palette>,
     mut paints: ResMut<Paints>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut mats: ResMut<Assets<StandardMaterial>>,
+    mut mats: ResMut<Assets<Flat>>,
 ) {
     // Unlit, so they read at full strength with no bloom (research section 7); the outer star in the signal paint.
-    let core = StandardMaterial { base_color: Color::srgb(1.0, 0.97, 0.85), unlit: true, cull_mode: None, ..default() };
+    let core = Flat::unlit(Color::srgb(1.0, 0.97, 0.85));
     let kit = BurstKit {
         star: meshes.add(star(8, 0.42)),
         outer: paints.get(Role::Signal, &palette, &mut mats),
@@ -141,7 +145,7 @@ fn spawn_bursts(
     let toward_camera = facing * Vec3::Z;
     let share = burst_share(&comfort, &quality);
     // A blast bursts biggest of all, centred on the bomb.
-    let blows = hits.read().filter(|h| h.finisher || thin.keep(share)).map(|h| (h.at, burst_size(h.mv, h.finisher)));
+    let blows = hits.read().filter(|h| h.finisher || thin.keep(share)).map(|h| (h.at, h.feel.burst(h.finisher)));
     for (at, size) in blows.chain(blasts.read().map(|b| (b.at, BLAST_BURST))) {
         *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         let turn = facing * Quat::from_rotation_z((*seed >> 16) as f32 / 65535.0 * PI);
@@ -174,27 +178,6 @@ fn grow_bursts(mut commands: Commands, real: Res<Time<Real>>, mut bursts: Query<
     }
 }
 
-/// Squashes each struck fighter's figure (the player's from `look`, enemies' from `figure`) and lets it spring back.
-#[allow(clippy::type_complexity)]
-fn ease_squash(
-    mut commands: Commands,
-    real: Res<Time<Real>>,
-    mut fighters: Query<(Entity, &mut Squash, &Children), With<Team>>,
-    mut rigs: Query<&mut Transform, With<crate::figure::Rig>>,
-) {
-    for (e, mut s, children) in &mut fighters {
-        s.0 = (s.0 - real.delta_secs()).max(0.0);
-        if s.0 == 0.0 {
-            commands.entity(e).remove::<Squash>();
-        }
-        for &c in children {
-            if let Ok(mut tf) = rigs.get_mut(c) {
-                tf.scale = Vec3::from_array(squash(s.0));
-            }
-        }
-    }
-}
-
 fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: MessageReader<Scored>) {
     for s in scored.read() {
         // Rumble Box shows a kill's points where it happened; the streak count rides along once it's going.
@@ -204,7 +187,7 @@ fn spawn_popups(mut commands: Commands, palette: Res<Palette>, mut scored: Messa
             Text::new(label),
             TextFont::from_font_size(22.0 + 3.0 * s.streak.min(5) as f32),
             TextColor(colour(Role::Signal, &palette)),
-            TextShadow::default(),
+            crate::hud::EDGE,
             Node { position_type: PositionType::Absolute, ..default() },
         ));
     }

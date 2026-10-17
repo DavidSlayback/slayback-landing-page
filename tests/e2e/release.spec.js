@@ -63,22 +63,13 @@ test.describe('release switch on', () => {
   test.describe('on a touch device', () => {
     test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
-    test('Play leads to the clip page and the game is never downloaded', async ({ page }) => {
-      const gameRequests = [];
-      page.on('request', r => { if (GAME_FILES.test(new URL(r.url()).pathname)) gameRequests.push(r.url()); });
+    test('Play leads to the game itself, not the clip page (Q78)', async ({ page }) => {
+      await blockGame(page);
       await page.goto(HOME);
       await page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Play' }).tap();
-      await expect(page).toHaveURL(/\/play\/watch\/$/);
-      const video = page.locator('video');
-      await expect(video).toBeVisible();
-      for (const attr of ['autoplay', 'muted', 'loop', 'playsinline']) await expect(video).toHaveAttribute(attr, '');
-      expect((await page.request.get(new URL(await video.getAttribute('src'), page.url()).href)).ok(), 'the clip is served').toBe(true);
-      await expect(page.getByText(/play on a computer/i)).toBeVisible();
-
-      await page.goto('/play/');   // a direct visit too
-      await expect(page).toHaveURL(/\/play\/watch\/$/);
+      await expect(page).toHaveURL(/\/play\/$/);
       await page.waitForTimeout(500);
-      expect(gameRequests).toEqual([]);
+      expect(path(page), 'not sent on to the clip').toBe('/play/');
     });
   });
 });

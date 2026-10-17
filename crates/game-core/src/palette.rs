@@ -1,12 +1,13 @@
-//! The 3D game's colour rules (decision Q50): in each of the site's schemes ([`crate::scheme`]), the arena and the
-//! debris take a muted tone and live fighters its vivid accents, so the dead read apart from the living (as in Rumble
-//! Box, research §1). The player's ring is the main accent (Q60).
+//! The 3D game's colours: Rumble Box's own (decision Q75, read off its gameplay video,
+//! `docs/research/rumble-box-reference.md`). The fighters wear the same colours in every box: the player an orange
+//! head, a blue body and red fists; the fodder magenta with a peach head and brown legs; the thugs (Rumble Box's
+//! heavies) dark grey with red fists. Each box is a [`Stage`]: pale green tiles under a sky-blue background, then an
+//! orange checker, a grey one, a dark blue one, round again. Debris is a pale wash of its part's colour toward the
+//! box's floor, so the dead read apart from the living.
 //!
-//! Colours are sRGB triples; the game turns them into materials. A muted tone is a grey with a little of the main
-//! accent mixed in, so each scheme's arena keeps its hue without competing with the fighters.
+//! Colours are sRGB triples, as a face lit from straight above shows them; the game turns them into materials.
 
 use crate::enemy::Kind;
-use crate::scheme::Scheme;
 
 /// An sRGB colour, 0..=1 per channel.
 pub type Rgb = [f32; 3];
@@ -18,82 +19,107 @@ pub enum Fighter {
     Enemy(Kind),
 }
 
-/// A live fighter's colours: a vivid body and a dark trim (the visor and other marks).
+/// A live fighter's colours: its body (torso and upper arms), its ball head, its fists (or forearms), and its trim
+/// (legs, and the player's visor).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Figure {
     pub body: Rgb,
+    pub head: Rgb,
+    pub fist: Rgb,
     pub trim: Rgb,
 }
 
-/// The box's colours.
+/// One box's colours.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Arena {
-    pub floor: Rgb,
-    pub wall: Rgb,
-    /// The bright line along the rim.
-    pub edge: Rgb,
-    /// The glass front wall's rails and posts: dimmer than the rim, so the pane reads as glass.
-    pub glass: Rgb,
-    /// A closed door's panel: darker than the walls, so the doors read as openings.
-    pub door: Rgb,
+pub struct Stage {
+    pub key: &'static str,
+    /// Behind the box.
+    pub sky: Rgb,
+    /// The floor's and walls' tiles, alternating; the same twice for plain tiles.
+    pub tiles: [Rgb; 2],
+    /// The thin lines between tiles (the rim's thick edges are black in every box).
+    pub line: Rgb,
 }
 
-/// `grey` with a fraction `k` of `accent` mixed in.
-fn tint(grey: f32, accent: Rgb, k: f32) -> Rgb {
-    accent.map(|c| grey + (c - grey) * k)
+const ORANGE: Rgb = [0.97, 0.65, 0.3];
+const BLUE: Rgb = [0.1, 0.36, 0.8];
+const RED: Rgb = [0.84, 0.24, 0.2];
+const MAGENTA: Rgb = [0.85, 0.33, 0.85];
+const PEACH: Rgb = [0.98, 0.79, 0.57];
+const BROWN: Rgb = [0.42, 0.21, 0.04];
+const GREY: Rgb = [0.27, 0.27, 0.3];
+
+/// The boxes' looks, in order; box `n` takes `STAGES[(n - 1) % len]`.
+pub const STAGES: [Stage; 4] = [
+    // Box 1: pale green tiles, dark green lines, a sky-blue background.
+    Stage { key: "green", sky: [0.36, 0.76, 0.91], tiles: [[0.59, 0.84, 0.55]; 2], line: [0.08, 0.24, 0.04] },
+    // Box 2 ("Stage Two"): an orange checker on orange.
+    Stage {
+        key: "orange",
+        sky: [1.0, 0.62, 0.25],
+        tiles: [[1.0, 0.72, 0.43], [0.9, 0.53, 0.26]],
+        line: [0.3, 0.14, 0.03],
+    },
+    // The "Frenzy" bonus stage's grey checker.
+    Stage {
+        key: "grey",
+        sky: [0.45, 0.45, 0.48],
+        tiles: [[0.93, 0.93, 0.93], [0.7, 0.7, 0.72]],
+        line: [0.15, 0.15, 0.17],
+    },
+    // The dark blue arena after box 2, on black.
+    Stage {
+        key: "night",
+        sky: [0.0, 0.0, 0.02],
+        tiles: [[0.08, 0.14, 0.5], [0.05, 0.09, 0.36]],
+        line: [0.0, 0.0, 0.0],
+    },
+];
+
+/// Box `n`'s stage (`n` counts from 0).
+pub fn stage(n: usize) -> &'static Stage {
+    &STAGES[n % STAGES.len()]
 }
 
-/// How much of the main accent the muted tones carry.
-const MUTE: f32 = 0.16;
-
-/// The arena in `scheme`'s muted tone: a mid floor, lighter walls (so the walls' faces read against the floor), a
-/// near-white rim, dimmer glass rails and darker doors.
-pub fn arena_tone(scheme: &Scheme) -> Arena {
-    let a = scheme.accents[0];
-    Arena {
-        floor: tint(0.46, a, MUTE),
-        wall: tint(0.6, a, MUTE),
-        edge: tint(0.86, a, 0.12),
-        glass: tint(0.66, a, 0.12),
-        door: tint(0.3, a, MUTE),
+/// A live fighter's colours. Kinds also differ in shape (Q35).
+pub fn fighter(who: Fighter) -> Figure {
+    match who {
+        Fighter::Player => Figure { body: BLUE, head: ORANGE, fist: RED, trim: [0.16, 0.16, 0.2] },
+        Fighter::Enemy(Kind::Fodder) => Figure { body: MAGENTA, head: PEACH, fist: BLUE, trim: BROWN },
+        Fighter::Enemy(Kind::Thug) => {
+            Figure { body: GREY, head: [0.36, 0.36, 0.4], fist: RED, trim: [0.12, 0.12, 0.14] }
+        }
+        // Rumble Box's blue enemies.
+        Fighter::Enemy(Kind::Ninja) => Figure { body: BLUE, head: PEACH, fist: BLUE, trim: BROWN },
     }
 }
 
-/// Shades a heap cycles through, so neighbouring pieces read apart under the outlines.
-pub const DEBRIS_SHADES: [f32; 3] = [0.62, 0.68, 0.74];
-
-/// A debris piece in `scheme`'s muted tone; `piece` (any number, e.g. the part's index) picks one of a few shades.
-/// Lighter than the floor, so a heap reads against it.
-pub fn debris_tone(scheme: &Scheme, piece: usize) -> Rgb {
-    tint(DEBRIS_SHADES[piece % DEBRIS_SHADES.len()], scheme.accents[0], MUTE)
+/// `a` with a fraction `k` of `b` mixed in.
+fn mix(a: Rgb, b: Rgb, k: f32) -> Rgb {
+    [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * k)
 }
 
-/// A live fighter's colours: the player wears the main accent, and each enemy kind one of the others (as in the 2.5D
-/// game). Colour is a bonus; the kinds also differ in shape (Q35).
-pub fn fighter_colour(scheme: &Scheme, who: Fighter) -> Figure {
-    let body = scheme.accents[match who {
-        Fighter::Player => 0,
-        Fighter::Enemy(Kind::Fodder) => 2,
-        Fighter::Enemy(Kind::Thug) => 1,
-        Fighter::Enemy(Kind::Ninja) => 3,
-    }];
-    Figure { body, trim: body.map(|c| c * 0.22) }
+/// A debris piece that was `part` coloured, in `stage`: washed toward the floor and paled, as Rumble Box's heaps
+/// are (mint and pale peach on box 1's green, near-white on the grey checker).
+pub fn debris(stage: &Stage, part: Rgb) -> Rgb {
+    mix(mix(part, stage.tiles[0], 0.4), [1.0; 3], 0.25)
 }
 
-/// The signal accent: door warnings, impact bursts and score popups (the 2.5D game's warning colour).
-pub fn signal(scheme: &Scheme) -> Rgb {
-    scheme.accents[3]
+/// A closed door: the wall's tile, darkened, so the doors read as openings.
+pub fn door(stage: &Stage) -> Rgb {
+    stage.tiles[1].map(|c| c * 0.5)
 }
 
-/// The player's floor ring (Q60): the main accent.
-pub fn ring(scheme: &Scheme) -> Rgb {
-    scheme.accents[0]
-}
+/// Door warnings, impact bursts, score popups, bomb fuses: Rumble Box's red (its combo stars and score).
+pub const SIGNAL: Rgb = [1.0, 0.18, 0.1];
+/// The player's floor ring (Q60): cyan, which reads on every box's floor.
+pub const RING: Rgb = [0.1, 0.95, 1.0];
+/// The health bar: Rumble Box's green health pips.
+pub const HEALTH: Rgb = [0.12, 0.78, 0.12];
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scheme::SCHEMES;
 
     const FIGHTERS: [Fighter; 4] =
         [Fighter::Player, Fighter::Enemy(Kind::Fodder), Fighter::Enemy(Kind::Thug), Fighter::Enemy(Kind::Ninja)];
@@ -112,84 +138,58 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f32>().sqrt()
     }
 
-    /// Every muted colour in a scheme: the arena's and a heap's worth of debris.
-    fn muted(s: &Scheme) -> Vec<Rgb> {
-        let a = arena_tone(s);
-        let mut out = vec![a.floor, a.wall, a.edge, a.glass, a.door];
-        out.extend((0..DEBRIS_SHADES.len()).map(|i| debris_tone(s, i)));
-        out
+    fn parts(f: Figure) -> [Rgb; 4] {
+        [f.body, f.head, f.fist, f.trim]
     }
 
     #[test]
-    fn live_fighters_are_more_colourful_and_brighter_than_the_arena_and_debris() {
-        for s in &SCHEMES {
-            let dullest = FIGHTERS.map(|f| chroma(fighter_colour(s, f).body)).into_iter().fold(f32::MAX, f32::min);
-            let dimmest = FIGHTERS.map(|f| value(fighter_colour(s, f).body)).into_iter().fold(f32::MAX, f32::min);
-            for m in muted(s) {
-                assert!(dullest > 2.0 * chroma(m), "{}: fighter chroma {dullest} vs muted {m:?}", s.key);
-                assert!(dimmest > value(m) + 0.05, "{}: fighter value {dimmest} vs muted {m:?}", s.key);
+    fn the_player_reads_by_contrast_between_its_parts() {
+        let p = fighter(Fighter::Player);
+        for (i, a) in parts(p).into_iter().enumerate() {
+            for b in parts(p).into_iter().skip(i + 1) {
+                assert!(distance(a, b) > 0.4, "{a:?} vs {b:?}");
             }
         }
     }
 
     #[test]
-    fn the_muted_tones_keep_the_schemes_hue() {
-        for s in &SCHEMES {
-            let floor = arena_tone(s).floor;
-            assert!(chroma(floor) > 0.08 && chroma(floor) < 0.2, "{}: tinted but muted: {floor:?}", s.key);
-            let [ar, ag, ab] = s.accents[0];
-            let [r, g, b] = floor;
-            // The floor's strongest channel is the accent's.
-            let strongest = |x: f32, y: f32, z: f32| {
-                if x >= y && x >= z {
-                    0
-                } else if y >= z {
-                    1
-                } else {
-                    2
-                }
-            };
-            assert_eq!(strongest(r, g, b), strongest(ar, ag, ab), "{}", s.key);
-        }
-    }
-
-    #[test]
-    fn debris_reads_against_the_floor_and_neighbouring_pieces_differ() {
-        for s in &SCHEMES {
-            let floor = arena_tone(s).floor;
-            for i in 0..DEBRIS_SHADES.len() {
-                assert!(value(debris_tone(s, i)) > value(floor) + 0.1, "{}: piece {i}", s.key);
-                assert_ne!(debris_tone(s, i), debris_tone(s, i + 1), "{}: piece {i}", s.key);
+    fn the_kinds_read_apart_from_the_player_and_each_other() {
+        for (i, &a) in FIGHTERS.iter().enumerate() {
+            for &b in &FIGHTERS[i + 1..] {
+                let d: f32 = parts(fighter(a)).iter().zip(parts(fighter(b))).map(|(x, y)| distance(*x, y)).sum();
+                assert!(d > 0.6, "{a:?} vs {b:?}: {d}");
             }
         }
     }
 
     #[test]
-    fn enemy_kinds_wear_distinct_colours() {
-        let kinds = [Kind::Fodder, Kind::Thug, Kind::Ninja];
-        for s in &SCHEMES {
-            for (i, &a) in kinds.iter().enumerate() {
-                for &b in &kinds[i + 1..] {
-                    let d =
-                        distance(fighter_colour(s, Fighter::Enemy(a)).body, fighter_colour(s, Fighter::Enemy(b)).body);
-                    assert!(d > 0.3, "{}: {a:?} vs {b:?}: {d}", s.key);
-                }
-                let d = distance(fighter_colour(s, Fighter::Enemy(a)).body, fighter_colour(s, Fighter::Player).body);
-                assert!(d > 0.2, "{}: {a:?} vs the player: {d}", s.key);
-            }
-        }
-    }
-
-    #[test]
-    fn the_trim_stands_out_on_the_body_and_the_ring_is_the_main_accent() {
-        for s in &SCHEMES {
+    fn debris_is_paler_than_the_living_and_still_reads_against_the_floor() {
+        for s in &STAGES {
             for f in FIGHTERS {
-                let Figure { body, trim } = fighter_colour(s, f);
-                assert!(value(body) - value(trim) > 0.5, "{}: {f:?}", s.key);
+                for part in parts(fighter(f)) {
+                    let d = debris(s, part);
+                    assert!(chroma(d) < chroma(part) || chroma(part) < 0.1, "{}: {f:?} {part:?}", s.key);
+                    assert!(distance(d, s.tiles[0]) > 0.08, "{}: {f:?} {part:?} vanishes into the floor", s.key);
+                }
             }
-            assert_eq!(ring(s), s.accents[0]);
-            let a = arena_tone(s);
-            assert!(value(a.wall) - value(a.door) > 0.2, "{}: doors read against the walls", s.key);
         }
+    }
+
+    #[test]
+    fn doors_lines_and_the_ring_read_against_each_box() {
+        for s in &STAGES {
+            for tile in s.tiles {
+                assert!(value(tile) - value(door(s)) > 0.15 || s.key == "night", "{}: door", s.key);
+                assert!(distance(tile, s.line) > 0.3, "{}: tile lines", s.key);
+                assert!(distance(tile, RING) > 0.4, "{}: the ring", s.key);
+            }
+        }
+    }
+
+    #[test]
+    fn the_boxes_cycle_through_the_stages() {
+        assert_eq!(stage(0).key, "green");
+        assert_eq!(stage(1).key, "orange");
+        assert_eq!(stage(STAGES.len()).key, "green");
     }
 }

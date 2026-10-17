@@ -1,17 +1,20 @@
-//! Everything that fights: teams, bodies, hit points, swings, hit resolution in a cone, knockback, hit-stun and
-//! hit-stop (including the finisher's longer freeze).
+//! Everything that fights: teams, bodies, hit points, swings, hit resolution in a cone, and where every blow lands.
 //!
-//! The rules live in `game_core::combat` (timings, damage, hit-stop) and `game_core::aim` (the cone and knockback);
-//! this module applies them to entities and physics bodies. Visuals (flash, telegraphs, bursts) belong to the render
-//! modules, driven by the state here and the [`Hit`] message.
+//! A swing, a thrown thing (`grab`) and a bomb blast (`bomb`) each send a [`Strike`]: a `game_core::combat::Blow` and
+//! whom it reaches. [`land`] applies them all the same way through `combat::land` (damage, armour, stun, launch,
+//! flash, hit-stop including the finisher's longer freeze), then raises [`Hit`] and [`Defeated`]. The cone and the
+//! knockback rules live in `game_core::aim`. Visuals (flash, telegraphs, bursts) belong to the render modules, driven
+//! by the state here and the [`Hit`] message.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use game_core::aim::{Cone, launch, level};
-use game_core::combat::{Health, HitOutcome, HitStop, Move, Swing, hitstop};
-use game_core::enemy::staggers;
+use game_core::aim::{Cone, level};
+use game_core::combat::{Blow, Health, HitStop, Move, Swing};
+use game_core::enemy::Armour;
+use game_core::impact::Feel;
 use game_core::plane::heading;
 
+use crate::carry::Carried;
 use crate::enemy::Brain;
 use crate::player::Facing;
 use crate::{on_floor, plane};
@@ -69,12 +72,22 @@ pub struct Flash(pub f32);
 /// Seconds a hit flashes.
 pub const FLASH: f32 = 0.12;
 
-/// A blow landed: where (on the victim's body, at the blow's height), with which move, which way it pushed, on whom,
-/// and whether it finished them.
+/// A blow on its way to `target`: [`land`] applies it. `at` (on the target's body, at the blow's height) and `dir`
+/// (the way it pushes) are where its [`Hit`] shows.
+#[derive(Message, Clone, Copy, Debug)]
+pub struct Strike {
+    pub target: Entity,
+    pub blow: Blow,
+    pub at: Vec3,
+    pub dir: Vec3,
+}
+
+/// A blow landed: where (on the victim's body, at the blow's height), how it reads, which way it pushed, on whom, and
+/// whether it finished them.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Hit {
     pub at: Vec3,
-    pub mv: Move,
+    pub feel: Feel,
     pub dir: Vec3,
     pub victim: Entity,
     pub finisher: bool,
@@ -91,25 +104,31 @@ pub struct Defeated {
 #[derive(Resource, Default)]
 pub struct HitStopClock(pub HitStop);
 
-/// Swings advance, land and end here; whatever starts a swing (the player's control, enemy brains) runs before it,
-/// and whatever reacts to hits and defeats (debris, score) after it.
+/// Swings advance, land and end here, and every [`Strike`] lands: the first part of `Frame::Resolve`, so whatever
+/// reacts to hits and defeats in the same frame (debris, the run, the score) runs `.after(Combat)`.
 #[derive(SystemSet, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Combat;
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<HitStopClock>().add_message::<Hit>().add_message::<Defeated>().add_systems(
-        Update,
-        (
-            advance_swings,
-            resolve_hits,
-            finish_swings,
-            tick_health,
-            // Only while playing: the screens hold the clock paused, and the hit-stop would let it go.
-            hit_stop.run_if(in_state(crate::flow::Phase::Playing)),
-        )
-            .chain()
-            .in_set(Combat),
-    );
+    app.init_resource::<HitStopClock>()
+        .add_message::<Strike>()
+        .add_message::<Hit>()
+        .add_message::<Defeated>()
+        .add_systems(
+            Update,
+            (
+                advance_swings,
+                resolve_hits,
+                land,
+                finish_swings,
+                tick_health,
+                // Only while playing (as all of `Combat`): the screens hold the clock paused, and the hit-stop
+                // would let it go.
+                hit_stop,
+            )
+                .chain()
+                .in_set(Combat),
+        );
 }
 
 /// Physics and combat components every fighter carries (with a `Facing` of its own): a dynamic capsule that stays upright, slides along walls,
@@ -151,12 +170,8 @@ fn finish_swings(mut attacks: Query<&mut Attack>) {
 fn resolve_hits(
     mut attackers: Query<(&Team, &Body, &Transform, &Facing, &mut Attack)>,
     targets: Query<(Entity, &Team, &Body, &Transform)>,
-    mut hurt: Query<(&mut Hp, &mut LinearVelocity, &mut Flash, Option<&Brain>)>,
-    mut stop: ResMut<HitStopClock>,
-    mut hits_out: MessageWriter<Hit>,
-    mut defeated: MessageWriter<Defeated>,
+    mut strikes: MessageWriter<Strike>,
 ) {
-    let mut hits: Vec<(Entity, Move, Vec3, Vec3)> = Vec::new();
     for (team, body, transform, facing, mut attack) in &mut attackers {
         let Some(swing) = attack.swing.filter(Swing::struck_this_frame) else { continue };
         let me = transform.translation;
@@ -174,30 +189,51 @@ fn resolve_hits(
             // Pushed away from the attacker (along the facing if they overlap), struck on the near side of the body.
             let yaw = heading(plane(them - me)).unwrap_or(facing.0.yaw);
             let dir = on_floor([yaw.cos(), yaw.sin()]);
-            let height = swing.mv.spec().offset_y;
-            let at = (them - dir * their_body.radius).with_y(me.y + height);
-            hits.push((target, swing.mv, dir, at));
+            let at = (them - dir * their_body.radius).with_y(me.y + swing.mv.spec().offset_y);
+            strikes.write(Strike { target, blow: Blow::swing(swing.mv, yaw), at, dir });
         }
     }
-    for (target, mv, dir, at) in hits {
-        let Ok((mut hp, mut velocity, mut flash, brain)) = hurt.get_mut(target) else { continue };
-        if hp.0.defeated() {
-            continue;
-        }
+}
+
+/// What a strike can land on: a fighter's side and place, health, velocity and flash, its brain (for armour), and
+/// whether the player holds it.
+type Struck = (
+    &'static Team,
+    &'static Transform,
+    &'static mut Hp,
+    &'static mut LinearVelocity,
+    &'static mut Flash,
+    Option<&'static Brain>,
+    Has<Carried>,
+);
+
+/// Every strike lands here, whatever sent it: through `combat::land` (nothing lands on the defeated, nor on what the
+/// player holds unless the blow reaches held things), then the flash, the launch, the hit-stop, the [`Hit`] and, for
+/// the last of a fighter's health, its [`Defeated`].
+fn land(
+    mut strikes: MessageReader<Strike>,
+    mut fighters: Query<Struck>,
+    mut stop: ResMut<HitStopClock>,
+    mut hits: MessageWriter<Hit>,
+    mut defeated: MessageWriter<Defeated>,
+) {
+    for s in strikes.read() {
+        let Ok((team, tf, mut hp, mut velocity, mut flash, brain, held)) = fighters.get_mut(s.target) else { continue };
+        let armour = brain.map_or(Armour::None, |b| b.0.style().armour);
+        let Some(landed) = game_core::combat::land(&s.blow, &mut hp.0, armour, held) else { continue };
         flash.0 = FLASH;
-        // Armour shrugs off some blows: the damage lands, but no knockback or stun, so a telegraph keeps going.
-        let outcome = if brain.is_none_or(|b| staggers(mv, b.0.style().armour)) {
-            let (across, up) = launch(mv, heading(plane(dir)).unwrap_or(0.0));
+        if let Some((across, up)) = landed.launch {
             velocity.0 = on_floor(across).with_y(up);
-            hp.0.take(mv)
-        } else {
-            hp.0.hurt(mv.spec().damage)
-        };
-        let finisher = outcome == HitOutcome::Defeated;
-        stop.0.trigger(hitstop(mv, finisher));
-        hits_out.write(Hit { at, mv, dir, victim: target, finisher });
-        if finisher && let Ok((_, team, _, tf)) = targets.get(target) {
-            defeated.write(Defeated { entity: target, team: *team, at: tf.translation });
+        }
+        if let Some(freeze) = landed.freeze {
+            stop.0.trigger(freeze);
+        }
+        let finisher = landed.finisher();
+        if let Some(feel) = s.blow.feel {
+            hits.write(Hit { at: s.at, feel, dir: s.dir, victim: s.target, finisher });
+        }
+        if finisher {
+            defeated.write(Defeated { entity: s.target, team: *team, at: tf.translation });
         }
     }
 }

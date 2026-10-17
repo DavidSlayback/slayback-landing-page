@@ -8,16 +8,15 @@
 use avian3d::prelude::*;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use game_core::bomb::{Fuse, HITSTOP};
-use game_core::bomb::{damage, push};
-use game_core::combat::HitOutcome;
+use game_core::bomb::{Fuse, HITSTOP, blow, push};
 use game_core::debris::solid::Settle;
 use game_core::grab::Held;
 
+use crate::Frame;
+use crate::carry::{Carried, Grabbable};
 use crate::debris::Piece;
-use crate::fighter::{Combat, Defeated, FLASH, Flash, HitStopClock, Hp, Layer, Team};
-use crate::flow::Phase;
-use crate::grab::{Carried, Grabbable};
+use crate::fighter::{HitStopClock, Layer, Strike, Team};
+use crate::run::InBox;
 use crate::{on_floor, plane};
 
 /// This enemy's head is a bomb.
@@ -38,12 +37,10 @@ pub struct Exploded {
 
 /// A bomb's radius, metres: a little bigger than the fodder's ball head (0.19 m), so it reads as a bomb.
 pub const RADIUS: f32 = 0.22;
-/// How long a blast stuns those it hurts, seconds (as in the 2.5D game).
-const STUN: f32 = 0.4;
 
 pub fn plugin(app: &mut App) {
-    // Fuses burn on the game clock, which stops outside play anyway; the gate keeps blasts out of the screens too.
-    app.add_message::<Exploded>().add_systems(Update, burn.before(Combat).run_if(in_state(Phase::Playing)));
+    // Fuses burn on the game clock, which stops outside play anyway; `Frame::Act` keeps blasts out of the screens too.
+    app.add_message::<Exploded>().add_systems(Update, burn.in_set(Frame::Act));
     #[cfg(feature = "render")]
     app.add_plugins(view::plugin);
 }
@@ -52,6 +49,7 @@ pub fn plugin(app: &mut App) {
 pub fn lit_bomb(at: Vec3, velocity: Vec3) -> impl Bundle {
     (
         LitBomb { fuse: Fuse::default() },
+        InBox,
         Grabbable(Held::Bomb),
         Name::new("bomb"),
         RigidBody::Dynamic,
@@ -67,24 +65,17 @@ pub fn lit_bomb(at: Vec3, velocity: Vec3) -> impl Bundle {
     )
 }
 
-/// What a blast sets off besides the push: a freeze, defeats, and the shake and burst (via `Exploded`).
+/// What a blast sets off besides the push: a freeze, a strike on each fighter in range, and the shake and burst (via
+/// `Exploded`).
 #[derive(SystemParam)]
 struct BlastEffects<'w> {
     stop: ResMut<'w, HitStopClock>,
-    defeated: MessageWriter<'w, Defeated>,
+    strikes: MessageWriter<'w, Strike>,
     exploded: MessageWriter<'w, Exploded>,
 }
 
-/// Fighters a blast can reach.
-type Fighters = (
-    Entity,
-    &'static Team,
-    &'static Transform,
-    &'static mut Hp,
-    &'static mut LinearVelocity,
-    &'static mut Flash,
-    Has<Carried>,
-);
+/// Fighters a blast can reach (`fighter::land` decides what it does to each, held ones included).
+type Fighters = (Entity, &'static Transform);
 /// Lit bombs: their fuses, and the push a blast gives them.
 type Bombs = (Entity, &'static mut LitBomb, &'static Transform, &'static mut LinearVelocity, Has<Carried>);
 /// Debris pieces a blast can knock loose (not one in the player's hands).
@@ -96,7 +87,7 @@ fn burn(
     mut commands: Commands,
     time: Res<Time>,
     mut bombs: Query<Bombs, Without<Team>>,
-    mut fighters: Query<Fighters>,
+    fighters: Query<Fighters, With<Team>>,
     mut pieces: Query<Pieces, (Without<Team>, Without<LitBomb>, Without<Carried>)>,
     mut out: BlastEffects,
 ) {
@@ -115,21 +106,10 @@ fn burn(
             let offset = at - centre;
             push(plane(offset), offset.y).map(|(across, up)| on_floor(across).with_y(up))
         };
-        for (e, team, t, mut hp, mut v, mut flash, carried) in &mut fighters {
-            let (Some(hurt), Some(fling)) = (damage(t.translation.distance(centre)), launch(t.translation)) else {
-                continue;
-            };
-            if hp.0.defeated() {
-                continue;
-            }
-            flash.0 = FLASH;
-            hp.0.stun = hp.0.stun.max(STUN);
-            if !carried {
-                v.0 = fling;
-            }
-            if hp.0.hurt(hurt) == HitOutcome::Defeated {
-                out.defeated.write(Defeated { entity: e, team: *team, at: t.translation });
-            }
+        for (target, t) in &fighters {
+            let offset = t.translation - centre;
+            let Some(blow) = blow(plane(offset), offset.y) else { continue };
+            out.strikes.write(Strike { target, blow, at: t.translation, dir: offset.normalize_or_zero() });
         }
         // Other lit bombs in range go off a moment later, and are flung (unless in the player's hands).
         for (e, mut lit, t, mut v, carried) in &mut bombs {
@@ -165,6 +145,7 @@ pub mod view {
     use bevy::prelude::*;
 
     use super::{LitBomb, RADIUS};
+    use crate::flat::Flat;
     use crate::look::Palette;
     use crate::paint::{Paints, Role, colour};
 
@@ -173,23 +154,23 @@ pub mod view {
     pub struct Kit {
         shell_mesh: Handle<Mesh>,
         fuse_mesh: Handle<Mesh>,
-        shell: Handle<StandardMaterial>,
-        fuse: Handle<StandardMaterial>,
+        shell: Handle<Flat>,
+        fuse: Handle<Flat>,
     }
 
     /// A lit bomb's own shell material, which blinks.
     #[derive(Component)]
-    struct Light(Handle<StandardMaterial>);
+    struct Light(Handle<Flat>);
 
     /// The shell's colour: near-black, so the fuse and the blink stand out.
     const SHELL: Color = Color::srgb(0.07, 0.07, 0.09);
 
     pub fn plugin(app: &mut App) {
-        app.add_systems(Startup, load).add_systems(Update, (dress, blink).chain());
+        app.add_systems(Startup, load).add_systems(Update, (dress, blink).chain().in_set(crate::Frame::Show));
     }
 
-    fn shell(base_color: Color) -> StandardMaterial {
-        StandardMaterial { base_color, perceptual_roughness: 0.3, ..default() }
+    fn shell(color: Color) -> Flat {
+        Flat::lit(color)
     }
 
     fn load(
@@ -197,7 +178,7 @@ pub mod view {
         palette: Res<Palette>,
         mut paints: ResMut<Paints>,
         mut meshes: ResMut<Assets<Mesh>>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
     ) {
         commands.insert_resource(Kit {
             // Faceted like the figures' cubes.
@@ -209,7 +190,7 @@ pub mod view {
     }
 
     /// A bomb's look, its shell in `shell`: the ball, and the fuse stub leaning out of its top.
-    pub fn bomb(kit: &Kit, shell: Handle<StandardMaterial>) -> impl Bundle {
+    pub fn bomb(kit: &Kit, shell: Handle<Flat>) -> impl Bundle {
         (
             Mesh3d(kit.shell_mesh.clone()),
             MeshMaterial3d(shell),
@@ -230,7 +211,7 @@ pub mod view {
     fn dress(
         mut commands: Commands,
         kit: Res<Kit>,
-        mut mats: ResMut<Assets<StandardMaterial>>,
+        mut mats: ResMut<Assets<Flat>>,
         bombs: Query<Entity, Added<LitBomb>>,
     ) {
         for e in &bombs {
@@ -240,14 +221,14 @@ pub mod view {
     }
 
     /// Lit bombs blink in the warning accent, faster as the fuse runs out (`Fuse::blink`).
-    fn blink(palette: Res<Palette>, bombs: Query<(&LitBomb, &Light)>, mut mats: ResMut<Assets<StandardMaterial>>) {
+    fn blink(palette: Res<Palette>, bombs: Query<(&LitBomb, &Light)>, mut mats: ResMut<Assets<Flat>>) {
         let hot = colour(Role::Signal, &palette).to_linear() * 1.5;
         for (lit, light) in &bombs {
             let glow = if lit.fuse.blink() { hot } else { LinearRgba::BLACK };
             if let Some(mut m) = mats.get_mut(&light.0)
-                && m.emissive != glow
+                && m.glow != glow
             {
-                m.emissive = glow;
+                m.glow = glow;
             }
         }
     }

@@ -3,7 +3,7 @@
 # checkout, hero only, release switch off; `rc` ships a preview of a full game with the switch on at
 # https://rc-<n>.slayback.pages.dev.
 #   bash scripts/deploy.sh                 # production -> https://slayback.pages.dev
-#   bash scripts/deploy.sh rc 2            # preview    -> https://rc-2.slayback.pages.dev
+#   bash scripts/deploy.sh rc 5            # preview    -> https://rc-5.slayback.pages.dev (the one preview)
 # rc-1 is the frozen archive of the retired 2.5D game (Q64): it is never redeployed, so `rc 1` is refused.
 # With no CI behind it, this runs the browser harness (tests/e2e) on exactly the build it is about to ship and
 # refuses to deploy on a failure. Needs Cloudflare credentials for wrangler: `npx wrangler@4 login` once on this

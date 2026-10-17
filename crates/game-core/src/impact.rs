@@ -13,15 +13,38 @@ pub const BLAST_BURST: f32 = 3.375;
 /// Trauma drained per second.
 const DRAIN: f32 = 1.8;
 
-/// A burst's radius for one blow, metres.
-pub fn burst_size(mv: Move, finisher: bool) -> f32 {
-    let base = match mv {
-        Move::Punch | Move::Jab | Move::Slash => 0.5625,
-        Move::Kick => 0.8125,
-        Move::DropKick => 0.9375,
-        Move::Smash => 1.0,
-    };
-    if finisher { base * 1.8 } else { base }
+/// How a blow reads: its star burst, its screen shake and its sound. A blow carries one (`combat::Blow::feel`), so
+/// what struck (a move, a thrown thing) decides it once and the burst, the shake and the sound only read it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Feel {
+    burst: f32,
+    shake: f32,
+    /// The heavy hit sound rather than the light one.
+    pub heavy: bool,
+}
+
+impl Feel {
+    /// A move's: heavier moves burst bigger and shake more.
+    pub fn of(mv: Move) -> Feel {
+        let (burst, shake) = match mv {
+            Move::Punch | Move::Jab => (0.5625, 0.18),
+            Move::Slash => (0.5625, 0.2),
+            Move::Kick => (0.8125, 0.3),
+            Move::DropKick => (0.9375, 0.38),
+            Move::Smash => (1.0, 0.42),
+        };
+        Feel { burst, shake, heavy: !matches!(mv, Move::Punch | Move::Jab | Move::Slash) }
+    }
+
+    /// The star burst's radius, metres; a finishing blow's is bigger.
+    pub fn burst(self, finisher: bool) -> f32 {
+        if finisher { self.burst * 1.8 } else { self.burst }
+    }
+
+    /// The trauma it adds to the screen shake; a finishing blow's most of all.
+    pub fn shake(self, finisher: bool) -> f32 {
+        self.shake + if finisher { 0.26 } else { 0.0 }
+    }
 }
 
 /// A burst's scale over its life (`t` from 0 to 1): it snaps open in the first 30%, then shrinks away.
@@ -35,18 +58,6 @@ pub fn pop(t: f32) -> f32 {
 pub fn squash(left: f32) -> [f32; 3] {
     let k = (left / SQUASH_TIME).clamp(0.0, 1.0);
     [1.0 + 0.18 * k, 1.0 - 0.18 * k, 1.0 + 0.18 * k]
-}
-
-/// Trauma from one blow: heavier moves shake more, and a finishing blow most of all.
-pub fn trauma(mv: Move, finisher: bool) -> f32 {
-    let base = match mv {
-        Move::Punch | Move::Jab => 0.18,
-        Move::Slash => 0.2,
-        Move::Kick => 0.3,
-        Move::DropKick => 0.38,
-        Move::Smash => 0.42,
-    };
-    base + if finisher { 0.26 } else { 0.0 }
 }
 
 /// Screen shake as trauma (0 to 1): impacts add to it, it drains over time, and the shake grows with its square, so a
@@ -79,8 +90,9 @@ mod tests {
 
     #[test]
     fn heavier_blows_and_kills_burst_bigger() {
-        assert!(burst_size(Move::Kick, false) > burst_size(Move::Punch, false));
-        assert!(burst_size(Move::Punch, true) > burst_size(Move::Smash, false), "a kill outshines any plain hit");
+        let f = Feel::of;
+        assert!(f(Move::Kick).burst(false) > f(Move::Punch).burst(false));
+        assert!(f(Move::Punch).burst(true) > f(Move::Smash).burst(false), "a kill outshines any plain hit");
     }
 
     #[test]
@@ -117,7 +129,8 @@ mod tests {
 
     #[test]
     fn heavier_blows_and_finishers_shake_harder() {
-        assert!(trauma(Move::Kick, false) > trauma(Move::Punch, false));
-        assert!(trauma(Move::Punch, true) > trauma(Move::Smash, false), "any kill outweighs any plain hit");
+        let f = Feel::of;
+        assert!(f(Move::Kick).shake(false) > f(Move::Punch).shake(false));
+        assert!(f(Move::Punch).shake(true) > f(Move::Smash).shake(false), "any kill outweighs any plain hit");
     }
 }

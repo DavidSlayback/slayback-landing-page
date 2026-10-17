@@ -14,10 +14,13 @@
 //!   game-over screen and the best).
 //! - `stairs=1`: no fight; each box gets a staircase of debris up past its rim and the player walks right, up it and
 //!   out, box after box (the browser harness's scripted climb).
+//!
+//! One knob works without the demo too, for reviewing the look: `stage=1` starts the run's colours that many stages on
+//! (`look`; box 1 in box 2's orange checker).
 
 use avian3d::prelude::LinearVelocity;
 use bevy::prelude::*;
-use game_core::climb::{MAX_STEP, Placed, pile_height};
+use game_core::climb::MAX_STEP;
 use game_core::combat::Health;
 use game_core::controls::Verbs;
 use game_core::debris::solid::{FODDER, FODDER_HEIGHT, Solid};
@@ -25,7 +28,7 @@ use game_core::enemy::Kind;
 
 use crate::arena::Arena;
 use crate::bomb::BombHead;
-use crate::debris::{Piece, piece};
+use crate::debris::{Piece, piece, pile_under};
 use crate::enemy::{Brain, RADIUS, Waves, enemy};
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
@@ -34,7 +37,7 @@ use crate::player::{Facing, Player, SPAWN};
 use crate::run::{BoxStarted, RunState};
 
 /// A demo setting from the page query (`demo=1&stairs=1`) or, natively, the environment (`DEMO=1 STAIRS=1`).
-fn setting(key: &str) -> Option<String> {
+pub(crate) fn setting(key: &str) -> Option<String> {
     #[cfg(target_arch = "wasm32")]
     {
         let query = web_sys::window()?.location().search().ok()?;
@@ -182,26 +185,34 @@ impl Verb {
 
 /// One beat of the fight: what it is, which verbs (a dash or a grab first, then the attack: a drop-kick or a
 /// spin-throw) and when, seconds into the beat (before the fodder's own punch comes out), how far in front of the
-/// player its fodder stands, metres, and for the throw a second fodder further on for it to hit.
+/// player its fodder stands, metres, and for the throw a second fodder further on for it to hit. The second verb
+/// follows the first after `follow` seconds.
 struct Beat {
     name: &'static str,
     verbs: &'static [Verb],
     strike: f32,
+    follow: f32,
     gap: f32,
     beyond: Option<f32>,
 }
 
 const BEATS: [Beat; 4] = [
-    Beat { name: "punch", verbs: &[Verb::Punch], strike: 0.5, gap: 1.1, beyond: None },
-    Beat { name: "kick", verbs: &[Verb::Kick], strike: 0.35, gap: 1.3, beyond: None },
-    Beat { name: "drop-kick", verbs: &[Verb::Dash, Verb::Punch], strike: 0.5, gap: 2.2, beyond: None },
-    Beat { name: "spin-throw", verbs: &[Verb::Grab, Verb::Punch], strike: 0.35, gap: 0.95, beyond: Some(2.2) },
+    Beat { name: "punch", verbs: &[Verb::Punch], strike: 0.5, follow: 0.0, gap: 1.1, beyond: None },
+    Beat { name: "kick", verbs: &[Verb::Kick], strike: 0.35, follow: 0.0, gap: 1.3, beyond: None },
+    Beat { name: "drop-kick", verbs: &[Verb::Dash, Verb::Punch], strike: 0.5, follow: 0.05, gap: 2.2, beyond: None },
+    // Held up for a moment before the whirl, so the carry shows (Q77).
+    Beat {
+        name: "spin-throw",
+        verbs: &[Verb::Grab, Verb::Punch],
+        strike: 0.35,
+        follow: 0.5,
+        gap: 0.95,
+        beyond: Some(2.2),
+    },
 ];
 /// Seconds per beat; the fodder is placed this far into it.
 const BEAT: f32 = 1.4;
 const PLACE: f32 = 0.2;
-/// The second verb of a beat follows the first after this, seconds.
-const FOLLOW: f32 = 0.05;
 /// The room a beat needs in front of the player, metres: past it, the player turns round first.
 const ROOM: f32 = 4.5;
 /// Weak fodder, so every beat ends in a kill.
@@ -268,16 +279,7 @@ fn fight(
         for (i, gap) in std::iter::once(beat.gap).chain(beat.beyond).enumerate() {
             let spot = Vec2::new((me.x + s.side * gap).clamp(-inside.x, inside.x), me.z.clamp(-inside.y, inside.y));
             // On top of whatever debris lies there, not inside it (which would fling it out).
-            let under: Vec<Placed> = pieces
-                .iter()
-                .filter(|(_, t)| t.translation.xz().distance(spot) < 1.5)
-                .map(|(p, t)| Placed {
-                    solid: p.solid,
-                    centre: t.translation.to_array(),
-                    rotation: t.rotation.to_array(),
-                })
-                .collect();
-            let ground = pile_height(&under, spot.to_array(), RADIUS + 0.15, f32::MAX);
+            let ground = pile_under(pieces.iter(), spot, RADIUS + 0.15, f32::MAX);
             let at = Vec3::new(spot.x, ground + FODDER_HEIGHT / 2.0 + 0.05, spot.y);
             let mut health = Health::new(DEMO_FODDER_HP);
             // The throw's target stands dazed until the throw comes, rather than walking in to punch first.
@@ -304,7 +306,7 @@ fn fight(
         beat.verbs[0].set(&mut actions.verbs);
     }
     if let Some(&then) = beat.verbs.get(1)
-        && crossed(beat.strike + FOLLOW)
+        && crossed(beat.strike + beat.follow)
     {
         then.set(&mut actions.verbs);
     }
@@ -317,7 +319,7 @@ fn fight(
 /// The stairs run: no enemies, a staircase in each box, and the player walking right.
 pub fn stairs(app: &mut App) {
     app.insert_resource(Waves { enabled: false, ..default() })
-        .add_systems(Update, build_stairs)
+        .add_systems(Update, build_stairs.in_set(crate::Frame::Show))
         .add_systems(PreUpdate, walk_right.after(ReadActions));
 }
 

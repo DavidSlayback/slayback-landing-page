@@ -10,11 +10,12 @@
 //! Both log what they do, so the browser harness can check them.
 
 use bevy::prelude::*;
-use game_core::impact::{self, BLAST_TRAUMA, SQUASH_TIME, trauma};
+use game_core::impact::{self, BLAST_TRAUMA, SQUASH_TIME};
 use game_core::quality::{Level, Scaler};
 
+use crate::Frame;
 use crate::bomb::Exploded;
-use crate::fighter::{Combat, Hit};
+use crate::fighter::Hit;
 
 /// Whether the visitor asked for reduced motion. Tests insert their own before the first update.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -110,7 +111,7 @@ pub fn plugin(app: &mut App) {
     app.init_resource::<Shake>()
         .init_resource::<Quality>()
         .add_systems(Startup, announce)
-        .add_systems(Update, ((add_trauma, start_squash).after(Combat), scale_quality));
+        .add_systems(Update, (add_trauma, (start_squash, ease_squash).chain(), scale_quality).in_set(Frame::Show));
     #[cfg(feature = "render")]
     app.add_systems(Update, view::apply_quality.after(scale_quality));
 }
@@ -143,7 +144,7 @@ fn add_trauma(
     mut blasts: MessageReader<Exploded>,
 ) {
     let amount =
-        hits.read().map(|h| trauma(h.mv, h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
+        hits.read().map(|h| h.feel.shake(h.finisher)).sum::<f32>() + blasts.read().count() as f32 * BLAST_TRAUMA;
     if amount > 0.0 && !comfort.reduced_motion {
         shake.add(amount);
     }
@@ -154,6 +155,16 @@ fn start_squash(mut commands: Commands, comfort: Res<Comfort>, mut hits: Message
         // The victim may already be gone (a kill bursts it this frame).
         if !comfort.reduced_motion {
             commands.entity(hit.victim).try_insert(Squash(SQUASH_TIME));
+        }
+    }
+}
+
+/// Runs each squash down on real time, so it plays through hit-stop (`figure` draws it from what is left).
+fn ease_squash(mut commands: Commands, real: Res<Time<Real>>, mut squashed: Query<(Entity, &mut Squash)>) {
+    for (e, mut s) in &mut squashed {
+        s.0 = (s.0 - real.delta_secs()).max(0.0);
+        if s.0 == 0.0 {
+            commands.entity(e).remove::<Squash>();
         }
     }
 }

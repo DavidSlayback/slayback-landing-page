@@ -14,8 +14,6 @@ use crate::enemy::Kind;
 pub const TIMEOUT_PENALTY: f32 = 25.0;
 /// Fraction of max health restored on escaping a box.
 pub const REFILL: f32 = 0.3;
-/// Colour schemes the boxes rotate through (decision Q31: starting from the site's scheme).
-pub const SCHEMES: usize = 3;
 /// Seconds over which a box's crowd rises from its starting [`BoxSpec::crowd`] to its [`BoxSpec::peak`].
 pub const RAMP: f32 = 40.0;
 
@@ -35,10 +33,12 @@ pub struct BoxSpec {
     pub interval: f32,
     /// How many doors one call opens at most (each warns, then lets one enemy in).
     pub burst: usize,
-    /// Offset from the starting colour scheme.
-    pub scheme: usize,
+    /// Which look the box wears (`palette::stage`): Rumble Box's, in its order (Q75).
+    pub stage: usize,
     /// Shares of entering enemies that are thugs and ninjas (the rest are fodder).
     pub thugs: f32,
+    /// Seconds into the box before thugs come (box 1's first heavies, Q76).
+    pub thugs_after: f32,
     pub ninjas: f32,
     /// Share of entering enemies (of any kind) that carry a bomb for a head.
     pub bombs: f32,
@@ -58,9 +58,11 @@ pub fn box_spec(number: usize) -> BoxSpec {
         peak: (7 + n).min(10),
         interval: (1.0 - 0.1 * n as f32).max(0.6),
         burst: if n < 2 { 2 } else { 3 },
-        scheme: n % SCHEMES,
-        // Thugs from box 2 (decision Q26 roster; "thugs from box 2" in the difficulty notes).
-        thugs: if n == 0 { 0.0 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
+        stage: n,
+        // Thugs in every box, as Rumble Box's heavies (Q76): box 1's from 14 s in (the video's first, ~0:31), a fifth
+        // of entries; later boxes from the start, a quarter rising to 0.4.
+        thugs: if n == 0 { 0.2 } else { (0.25 + 0.05 * (n - 1) as f32).min(0.4) },
+        thugs_after: if n == 0 { 14.0 } else { 0.0 },
         // Ninjas from box 3.
         ninjas: if n < 2 { 0.0 } else { (0.2 + 0.05 * (n - 2) as f32).min(0.3) },
         // Bomb-heads from box 2, on any kind of enemy.
@@ -76,11 +78,13 @@ impl BoxSpec {
     }
 }
 
-/// Which kind of enemy enters next, from a uniform `roll` in 0..1.
-pub fn pick_kind(spec: &BoxSpec, roll: f32) -> Kind {
-    if roll < spec.thugs {
+/// Which kind of enemy enters next, `elapsed` seconds into the box, from a uniform `roll` in 0..1. Before
+/// [`BoxSpec::thugs_after`] the thugs' share goes to fodder.
+pub fn pick_kind(spec: &BoxSpec, elapsed: f32, roll: f32) -> Kind {
+    let thugs = if elapsed >= spec.thugs_after { spec.thugs } else { 0.0 };
+    if roll < thugs {
         Kind::Thug
-    } else if roll < spec.thugs + spec.ninjas {
+    } else if roll < thugs + spec.ninjas {
         Kind::Ninja
     } else {
         Kind::Fodder
@@ -163,19 +167,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_box_is_taller_faster_and_busier_and_rotates_the_scheme() {
+    fn each_box_is_taller_faster_and_busier_and_takes_the_next_stage() {
         for n in 1..5 {
             let (a, b) = (box_spec(n), box_spec(n + 1));
             assert!(b.rim > a.rim, "box {} taller", n + 1);
             assert!(b.timer < a.timer, "box {} shorter timer", n + 1);
             assert!(b.interval < a.interval, "box {} calls at the doors more often", n + 1);
             assert!(b.crowd >= a.crowd && b.burst >= a.burst, "box {} no quieter", n + 1);
-            assert_eq!(b.scheme, (a.scheme + 1) % SCHEMES);
+            assert_eq!(b.stage, a.stage + 1);
         }
         for n in 1..4 {
             assert!(box_spec(n + 1).peak > box_spec(n).peak, "box {} more enemies at its peak", n + 1);
         }
-        assert_eq!(box_spec(1).scheme, 0, "the first box uses the site's scheme");
+        assert_eq!(box_spec(1).stage, 0, "the first box is Rumble Box's first");
     }
 
     #[test]
@@ -213,10 +217,14 @@ mod tests {
     }
 
     #[test]
-    fn thugs_join_from_box_two_and_never_crowd_out_fodder() {
-        assert_eq!(pick_kind(&box_spec(1), 0.0), Kind::Fodder, "box 1 is all fodder");
-        assert_eq!(pick_kind(&box_spec(2), 0.1), Kind::Thug);
-        assert_eq!(pick_kind(&box_spec(2), 0.9), Kind::Fodder);
+    fn thugs_join_box_one_after_its_opening_and_never_crowd_out_fodder() {
+        let first = box_spec(1);
+        assert_eq!(pick_kind(&first, 0.0, 0.0), Kind::Fodder, "box 1 opens with fodder only");
+        assert_eq!(pick_kind(&first, 13.9, 0.0), Kind::Fodder);
+        assert_eq!(pick_kind(&first, 14.0, 0.0), Kind::Thug, "heavies from ~14 s, as in Rumble Box");
+        assert_eq!(pick_kind(&first, 30.0, 0.5), Kind::Fodder, "mostly fodder still");
+        assert_eq!(pick_kind(&box_spec(2), 0.0, 0.1), Kind::Thug, "later boxes from the start");
+        assert_eq!(pick_kind(&box_spec(2), 0.0, 0.9), Kind::Fodder);
         assert!(box_spec(40).thugs <= 0.4);
     }
 
@@ -229,7 +237,7 @@ mod tests {
     #[test]
     fn ninjas_join_from_box_three_and_fodder_always_remain() {
         assert_eq!(box_spec(2).ninjas, 0.0);
-        assert_eq!(pick_kind(&box_spec(3), box_spec(3).thugs + 0.01), Kind::Ninja);
+        assert_eq!(pick_kind(&box_spec(3), 0.0, box_spec(3).thugs + 0.01), Kind::Ninja);
         let late = box_spec(40);
         assert!(late.thugs + late.ninjas < 0.8, "fodder remain part of every crowd");
     }

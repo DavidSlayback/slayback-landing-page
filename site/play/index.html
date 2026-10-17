@@ -13,38 +13,65 @@
   /* A 16:9 stage of at most 1280x720 CSS px, scaled up to fit by a transform: with the game's scale factor fixed at 1,
      the backbuffer never exceeds 1280x720, which keeps the look within budget on integrated GPUs (B2). */
   #stage { position: fixed; left: 50%; top: 50%; width: 1280px; height: 720px; transform: translate(-50%, -50%); }
-  #game { width: 100%; height: 100%; display: block; outline: none; }
-  .back { position: fixed; top: 34px; left: 40px; z-index: 1; color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
+  /* touch-action: the game takes every touch (Q78), so the browser neither scrolls nor zooms under a thumb. */
+  #game { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* On a dark pill like the game's HUD panel: the boxes' backdrops run from white to black (Q75). */
+  .back { position: fixed; top: 26px; left: 28px; z-index: 1; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.6); color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
+  /* The touch controls want both thumbs: a phone held upright is asked to turn. */
+  .turn { display: none; }
+  @media (pointer: coarse) and (orientation: portrait) {
+    .turn { display: grid; place-items: center; position: fixed; inset: 0; z-index: 2; margin: 0; padding: 0 32px;
+      background: #000; text-align: center; letter-spacing: .2em; text-transform: uppercase; }
+  }
 </style>
 </head>
 <body>
 <p class="loading">Loading the box…</p>
 <div id="stage"><canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas></div>
 <a class="back" href="../">← Back</a>
+<p class="turn">Turn your phone sideways to play</p>
 <script>
-  { // Size the stage: 16:9, at most 1280 px wide in layout, then scaled to fill the viewport.
+  { // Sound: browsers start audio suspended until the visitor interacts (the autoplay policy), and the game's audio
+    // backend (cpal) creates its AudioContext while the game loads and asks to resume it only then, so it would stay
+    // silent for good. Keep each context the game makes and resume it on every click, key or tap until it runs.
+    const Native = window.AudioContext || window.webkitAudioContext;
+    if (Native) {
+      const contexts = window.gameAudio = [];
+      window.AudioContext = class extends Native { constructor(...a) { super(...a); contexts.push(this); } };
+      const wake = () => { for (const c of contexts) if (c.state === 'suspended') c.resume().catch(() => {}); };
+      for (const type of ['pointerdown', 'keydown', 'touchend']) addEventListener(type, wake, { capture: true });
+    }
+  }
+  { // Size the stage: 16:9, at most 1280 px wide in layout, then scaled to fill the viewport. On a touch screen it
+    // fills the whole screen instead (still at most 1280x720 in layout), so the touch controls reach its edges.
     const stage = document.getElementById('stage');
+    const touch = matchMedia('(pointer: coarse)').matches;
     const fit = () => {
-      const w = Math.floor(Math.min(1280, innerWidth, innerHeight * 16 / 9)), h = Math.floor(w * 9 / 16);
+      let w = Math.floor(Math.min(1280, innerWidth, innerHeight * 16 / 9)), h = Math.floor(w * 9 / 16);
+      if (touch) {
+        const s = Math.max(1, innerWidth / 1280, innerHeight / 720);
+        w = Math.floor(innerWidth / s); h = Math.floor(innerHeight / s);
+      }
       const k = Math.min(innerWidth / w, innerHeight / h);
       Object.assign(stage.style, { width: `${w}px`, height: `${h}px`, transform: `translate(-50%, -50%) scale(${k})` });
     };
     addEventListener('resize', fit);
     fit();
+    // On a phone, the first touch asks for the whole screen, held sideways (Android; iOS keeps its browser bars).
+    if (touch) addEventListener('pointerdown', () => {
+      document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })
+        .then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+    }, { once: true });
   }
 </script>
 <script type="module">
-  // A dynamic import, so a visitor sent elsewhere below never downloads the game's JS or wasm.
   async function start() {
     document.getElementById('game').focus();
     const { default: init } = await import('./game.js');
     // winit drives Bevy's loop by throwing out of the first call on the web; that throw is expected.
     init().catch(e => { if (!String(e).includes('Using exceptions for control flow')) throw e; });
   }
-  /* GAME_RELEASE */
-  // Phones and tablets get a looping gameplay clip instead: the game needs a keyboard and mouse.
-  if (matchMedia('(hover: none) and (pointer: coarse)').matches) location.replace('watch/'); else
-  /* /GAME_RELEASE */
   start();
 </script>
 </body>

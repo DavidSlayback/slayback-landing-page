@@ -3,7 +3,7 @@
 # (crates/game3d, Bevy) at dist/play/ as game.js + game_bg.wasm via wasm-bindgen (pinned to the version in Cargo.lock).
 # Preview with any static server, e.g. `python -m http.server -d dist` (WASM cannot load from file://).
 #   SKIP_GAME=1     hero-only build: no /play (what deploys ship)
-#   GAME_RELEASE=1  the game's release switch: Play nav item, hero call to action, easter egg and the touch-device
+#   GAME_RELEASE=1  the game's release switch: Play nav item, hero call to action, easter egg and the (now unlinked)
 #                   clip page. Off by default; it needs the game, so it refuses SKIP_GAME=1. Deploys never set it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -34,7 +34,7 @@ for f in $(grep -rlI 'GAME_RELEASE' dist || true); do
     perl -0777 -pi -e "s{^[ \t]*$open[ \t]*\r?\n.*?^[ \t]*$close[ \t]*\r?\n}{}gms; s{$open.*?$close}{}g" "$f"
   fi
 done
-[ "$release" = 1 ] || rm -rf dist/play/watch   # the touch-device clip page
+[ "$release" = 1 ] || rm -rf dist/play/watch   # the clip page
 echo "dist/: game release switch $([ "$release" = 1 ] && echo ON || echo off)"
 
 # The game (/play): Bevy → wasm-bindgen glue. Skip with SKIP_GAME=1 for hero-only builds, which also drop the
