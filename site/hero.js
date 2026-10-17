@@ -6,19 +6,28 @@
 // neutral ink, just above barely readable, that the sparks' light map tints and brightens where they pass.
 // Debug/test hooks: ?hud=1 shows timings; ?capture=1 disables the loop and exposes window.__capture.frame(dt)
 // for frame-exact screenshots; ?warm=<frames> pre-runs the physics; ?n=<sparks> overrides the spark count;
-// ?ink=<0..1> and ?lit=<gain> override the lettering's unlit grey and how strongly the sparks light it.
+// ?ink=<0..1> and ?lit=<gain> override the lettering's unlit grey and how strongly the sparks light it;
+// ?gravity=name|down picks the centre of gravity (G switches it).
 'use strict';
 // world_set keys (sim/src/lib.rs `World::set`).
 const K = { gravity: 0, wind: 1, turb: 2, drag: 3, radius: 4, friction: 5, floorFriction: 6, restitution: 7, shieldRestitution: 8,
   cursorR: 9, spawnRate: 10, source: 11, collide: 12, lifeMin: 13, lifeMax: 14, openEdges: 15, emitters: 16, launchMin: 17, launchMax: 18,
-  openFloor: 19, wander: 20, flowScale: 21, inward: 22, topBottom: 23 };
+  openFloor: 19, wander: 20, flowScale: 21, inward: 22, topBottom: 23, pull: 24, eddies: 25 };
 const SPARK_BASE = { radius: 1.6, friction: 0.12, floorFriction: 0.05, shieldRestitution: 0.85, cursorR: 12, collide: 0, openEdges: 1, wind: 0 };
 // Sparks drift in from off-screen torches, then meander: tight currents, strong coupling to them, and per-spark wander.
 // The torches sit two above the screen and two below, each jumping along its edge, so the lettering is lit from
 // above and below fairly steadily (David, 2026-10-15: "from top and/or bottom so that I can rely on semi-consistent
 // lighting").
-const PRESET = { ...SPARK_BASE, gravity: 0, turb: 170, drag: 1.1, wander: 220, flowScale: 240, inward: 160,
-  restitution: 0.5, lifeMin: 3.5, lifeMax: 8.0, emitters: 4, launchMin: 180, launchMax: 480, openFloor: 1, topBottom: 1 };
+// They ride the currents loosely (drag), so their launch and gravity still show, and three wandering eddies stir the
+// currents (David, 2026-10-17: "random currents ... the sparks being influenced somewhat by them in addition to the
+// initial force and gravity").
+const PRESET = { ...SPARK_BASE, turb: 170, drag: 0.55, wander: 220, flowScale: 240, inward: 160,
+  restitution: 0.5, lifeMin: 3.5, lifeMax: 8.0, emitters: 4, launchMin: 180, launchMax: 480, openFloor: 1, topBottom: 1,
+  eddies: 3 };
+// The centre of gravity (David: "Let's try 1 and 2"): toward the name's centre, or plain gravity down. ?gravity=name|down,
+// or G switches; the choice is kept.
+const GRAVITY = { name: { pull: 140, gravity: 0 }, down: { pull: 0, gravity: 220 } };
+const storedGravity = (() => { try { return localStorage.getItem('slayback-gravity'); } catch { return null; } })();
 const PALETTES = [
   { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00', font: '"Chakra Petch"', weight: 700, track: '.04em',
     css: { fg: '#efffd6', muted: '#7d9a52', accent: '#a6ff00' },
@@ -31,6 +40,7 @@ const PALETTES = [
     gl: { uP0: [1.0, 0.55, 0.04], uP1: [1.0, 0.82, 0.2], uP2: [1.0, 0.3, 0.0], uP3: [1.0, 0.95, 0.65], uShieldCol: [1.0, 0.64, 0.12] } },
 ];
 const qs = new URLSearchParams(location.search);
+let gravity = [qs.get('gravity'), storedGravity].find(g => g in GRAVITY) || 'name';
 // Scheme: URL, then the visitor's saved pick, then a random one per visit.
 const storedScheme = (() => { try { return localStorage.getItem('slayback-scheme'); } catch { return null; } })();
 let pi = PALETTES.findIndex(p => p.key === (qs.get('palette') || storedScheme));
@@ -222,7 +232,7 @@ async function loadPhysics() {
   } catch (e) { fail(`physics engine unavailable (${e.message})`); }
 }
 function applyPreset() {
-  const p = { ...PRESET, spawnRate: CAP / 2.5 };
+  const p = { ...PRESET, ...GRAVITY[gravity], spawnRate: CAP / 2.5 };
   for (const [k, v] of Object.entries(p)) if (k in K) X.world_set(world, K[k], v);
 }
 
@@ -314,6 +324,11 @@ function updateShield(dt) {
 addEventListener('keydown', e => {
   if (e.target.closest('input, textarea, [contenteditable]')) return;
   if (e.key === 'p') setScheme((pi + 1) % PALETTES.length, true);
+  if (e.key === 'g' && world) {
+    gravity = gravity === 'name' ? 'down' : 'name';
+    try { localStorage.setItem('slayback-gravity', gravity); } catch {}
+    applyPreset();
+  }
 });
 
 // ---------- Build / loop ----------
@@ -403,7 +418,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const t = now / 1000, dt = last ? Math.min(t - last, 1 / 30) : 1 / 60; last = t;
   frames++; if (t - fpsT > 0.5) { fps = frames / (t - fpsT); frames = 0; fpsT = t;
-    hud.textContent = `Currents / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps\np: scheme`; }
+    hud.textContent = `Currents / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps · gravity: ${gravity}\np: scheme · g: gravity`; }
   if (scrollY > H) return;
   present(dt);
 }

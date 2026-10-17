@@ -84,6 +84,19 @@ pub extern "C" fn world_step(p: *mut World, dt: f32) {
     world(p).step(dt);
 }
 
+/// The current field, u and v interleaved per cell (see `world_flow_dims`), refreshed every step.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_flow_ptr(p: *mut World) -> *const f32 {
+    world(p).flow_out.as_ptr()
+}
+
+/// The current field's grid: 0 = cells across, 1 = cells down, 2 = a cell's size in CSS px.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_flow_dims(p: *mut World, which: u32) -> f32 {
+    let (w, h, cell) = world(p).flow_dims();
+    [w as f32, h as f32, cell][which.min(2) as usize]
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn world_out_ptr(p: *mut World) -> *const f32 {
     world(p).out.as_ptr()

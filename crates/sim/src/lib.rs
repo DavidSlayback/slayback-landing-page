@@ -39,6 +39,10 @@ pub struct Params {
     /// Emitters only above and below the screen, alternating, so half are always on each edge: the light keeps
     /// coming from the same two directions while each torch still jumps along its edge at random.
     pub top_bottom: bool,
+    /// px/s² pull toward the text's centre (`World::centre`): a centre of gravity the sparks arc round.
+    pub pull: f32,
+    /// Wandering eddies stirred into the currents, coming and going at random.
+    pub eddies: u32,
 }
 
 impl Default for Params {
@@ -69,6 +73,8 @@ impl Default for Params {
             flow_scale: 360.0,
             inward: 0.0,
             top_bottom: false,
+            pull: 0.0,
+            eddies: 0,
         }
     }
 }
@@ -79,6 +85,19 @@ enum Contact {
     Solid,
     Floor,
     Bouncy, // cursor disc and forcefield
+}
+
+/// A wandering vortex stirred into the currents.
+#[derive(Clone, Copy, Debug, Default)]
+struct Eddy {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    r: f32,
+    spin: f32,
+    age: f32,
+    ttl: f32,
 }
 
 /// A spark source that sprays a wobbling cone for a few seconds, then reappears somewhere else.
@@ -153,6 +172,13 @@ pub struct World {
     psi: Vec<f32>,
     fu: Vec<f32>,
     fv: Vec<f32>,
+    /// The current field for the renderer: u, v interleaved per cell of `fcell` px, `fw` × `fh` cells.
+    pub flow_out: Vec<f32>,
+    /// How fast each wave term of the currents turns, rad/s, so the pattern never settles.
+    term_spin: [f32; 6],
+    eddies: Vec<Eddy>,
+    /// Where the text's centre of mass is (its solid mask cells'), CSS px: the centre of gravity for `Params::pull`.
+    pub centre: (f32, f32),
     // input
     cursor: [f32; 4], // x, y, previous x, previous y
     cursor_on: bool,
@@ -218,6 +244,10 @@ impl World {
             psi: vec![0.0; fw * fh],
             fu: vec![0.0; fw * fh],
             fv: vec![0.0; fw * fh],
+            flow_out: vec![0.0; fw * fh * 2],
+            term_spin: [0.0; 6],
+            eddies: Vec::new(),
+            centre: (w / 2.0, h / 2.0),
             cursor: [0.0; 4],
             cursor_on: false,
             cursor_was_on: false,
@@ -227,7 +257,15 @@ impl World {
             out: vec![0.0; cap * OUT_STRIDE],
         };
         world.resize_grid();
+        for k in 0..6 {
+            world.term_spin[k] = (world.rand() - 0.5) * 0.12;
+        }
         world
+    }
+
+    /// The flow grid: cells across, cells down, and a cell's size in CSS px (for `flow_out`).
+    pub fn flow_dims(&self) -> (usize, usize, f32) {
+        (self.fw, self.fh, self.fcell)
     }
 
     pub fn set_params(&mut self, p: Params) {
@@ -285,6 +323,8 @@ impl World {
             21 => p.flow_scale = v.max(40.0),
             22 => p.inward = v,
             23 => p.top_bottom = v != 0.0,
+            24 => p.pull = v,
+            25 => p.eddies = v as u32,
             _ => return,
         }
         self.set_params(p);
@@ -432,6 +472,17 @@ impl World {
         let d_out = chamfer(&solid, w, h, true);
         let d_in = chamfer(&solid, w, h, false);
         self.sdf = d_out.iter().zip(&d_in).map(|(o, i)| ((o - i) / self.mscale).min(60000.0)).collect();
+        let (mut sx, mut sy, mut n) = (0.0f64, 0.0f64, 0usize);
+        for (k, _) in solid.iter().enumerate().filter(|(_, s)| **s) {
+            sx += (k % w) as f64;
+            sy += (k / w) as f64;
+            n += 1;
+        }
+        self.centre = if n > 0 {
+            ((sx / n as f64) as f32 / self.mscale, (sy / n as f64) as f32 / self.mscale)
+        } else {
+            (self.w / 2.0, self.h / 2.0)
+        };
     }
 
     pub fn sdf_at(&self, x: f32, y: f32) -> f32 {
@@ -504,14 +555,31 @@ impl World {
         let amp = self.params.turb / k * 0.5;
         let infl = 36.0;
         let t = self.time;
+        // Each term's direction turns slowly at its own rate, so the currents never settle into one pattern.
+        let terms: [[f32; 5]; 6] = std::array::from_fn(|n| {
+            let [dx, dy, km, om, ph] = TERMS[n];
+            let (s, c) = (self.term_spin[n] * t).sin_cos();
+            [dx * c - dy * s, dx * s + dy * c, km, om, ph]
+        });
+        // Eddies: wandering vortices that swell and fade (a Gaussian stream function each, peak speed ~1.5 x turb).
+        let swirl: Vec<[f32; 4]> = self
+            .eddies
+            .iter()
+            .map(|e| [e.x, e.y, e.r, e.spin * 2.5 * self.params.turb * e.r * (TAU * 0.5 * e.age / e.ttl).sin()])
+            .collect();
         for j in 0..self.fh {
             for i in 0..self.fw {
                 let (x, y) = (i as f32 * self.fcell, j as f32 * self.fcell);
                 let mut n = 0.0;
-                for [dx, dy, km, om, ph] in TERMS {
+                for [dx, dy, km, om, ph] in terms {
                     n += (k * km * (dx * x + dy * y) + om * t + ph).sin() / km;
                 }
-                self.psi[j * self.fw + i] = ramp(self.sdf_at(x, y) / infl) * amp * n;
+                let mut eddy = 0.0;
+                for [ex, ey, r, a] in &swirl {
+                    let d2 = (x - ex) * (x - ex) + (y - ey) * (y - ey);
+                    eddy += a * (-d2 / (2.0 * r * r)).exp();
+                }
+                self.psi[j * self.fw + i] = ramp(self.sdf_at(x, y) / infl) * (amp * n + eddy);
             }
         }
         let inv = 1.0 / (2.0 * self.fcell);
@@ -522,8 +590,48 @@ impl World {
                 let v = -(at(i + 1, j) - at(i.saturating_sub(1), j)) * inv;
                 self.fu[j * self.fw + i] = u;
                 self.fv[j * self.fw + i] = v;
+                self.flow_out[(j * self.fw + i) * 2] = u;
+                self.flow_out[(j * self.fw + i) * 2 + 1] = v;
             }
         }
+    }
+
+    /// Ages and drifts the eddies, keeping `Params::eddies` of them: each lives 6-14 s, 80-220 px across, spinning
+    /// either way, drifting at 20-60 px/s, and a spent one is born again somewhere on screen.
+    fn update_eddies(&mut self, dt: f32) {
+        let n = self.params.eddies as usize;
+        self.eddies.truncate(n);
+        while self.eddies.len() < n {
+            let mut e = Eddy::default();
+            self.reseed(&mut e);
+            e.age = self.rand() * e.ttl; // staggered
+            self.eddies.push(e);
+        }
+        let mut list = std::mem::take(&mut self.eddies);
+        for e in list.iter_mut() {
+            e.age += dt;
+            e.x += e.vx * dt;
+            e.y += e.vy * dt;
+            if e.age >= e.ttl {
+                self.reseed(e);
+            }
+        }
+        self.eddies = list;
+    }
+
+    fn reseed(&mut self, e: &mut Eddy) {
+        let heading = self.rand() * TAU;
+        let speed = 20.0 + 40.0 * self.rand();
+        *e = Eddy {
+            x: self.w * self.rand(),
+            y: self.h * self.rand(),
+            vx: heading.cos() * speed,
+            vy: heading.sin() * speed,
+            r: 80.0 + 140.0 * self.rand(),
+            spin: if self.rand() < 0.5 { -1.0 } else { 1.0 },
+            age: 0.0,
+            ttl: 6.0 + 8.0 * self.rand(),
+        };
     }
 
     fn flow_at(&self, x: f32, y: f32) -> (f32, f32) {
@@ -824,6 +932,7 @@ impl World {
         }
         self.shield_hits = 0;
         self.update_emitters(dt);
+        self.update_eddies(dt);
         self.update_flow();
         // Fixed-size substeps (~1/180 s) whatever the frame rate: a longer step lets fast grains travel a full
         // diameter per substep, land deep inside their neighbours, and get flung out by the overlap correction.
@@ -857,8 +966,17 @@ impl World {
                 } else {
                     (0.0, 0.0)
                 };
-                self.vx[i] += (p.wind * gust + wx + ix + p.drag * (u - self.vx[i])) * h;
-                self.vy[i] += (p.gravity + wy + iy + p.drag * (v - self.vy[i])) * h;
+                let (gx, gy) = if p.pull > 0.0 {
+                    // toward the text's centre, easing off within 80 px of it so nothing is flung through
+                    let (dx, dy) = (self.centre.0 - self.x[i], self.centre.1 - self.y[i]);
+                    let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                    let k = p.pull * (d / 80.0).min(1.0) / d;
+                    (dx * k, dy * k)
+                } else {
+                    (0.0, 0.0)
+                };
+                self.vx[i] += (p.wind * gust + wx + ix + gx + p.drag * (u - self.vx[i])) * h;
+                self.vy[i] += (p.gravity + wy + iy + gy + p.drag * (v - self.vy[i])) * h;
                 self.px[i] = self.x[i] + self.vx[i] * h;
                 self.py[i] = self.y[i] + self.vy[i] * h;
             }
@@ -1193,6 +1311,43 @@ mod tests {
             let outside = world.x[i] < 0.0 || world.x[i] > world.w || world.y[i] < 0.0 || world.y[i] > world.h;
             assert!(outside, "spark born on screen at ({}, {})", world.x[i], world.y[i]);
         }
+    }
+
+    #[test]
+    fn the_pull_draws_a_spark_toward_the_texts_centre() {
+        let mut world = quiet(1, 400.0, 300.0);
+        with_block(&mut world, 140, 180, 60, 90); // mask px at 0.5 per CSS px: centred near (320, 150)
+        world.set_params(Params { pull: 200.0, gravity: 0.0, drag: 0.0, ..world.params });
+        let (cx, cy) = world.centre;
+        assert!((cx - 319.0).abs() < 2.0 && (cy - 149.0).abs() < 2.0, "the block's centre: {cx}, {cy}");
+        world.put(50.0, 150.0, 0.0, 0.0);
+        world.step(1.0 / 30.0);
+        assert!(world.vx[0] > 5.0 && world.vy[0].abs() < 0.5, "pulled toward it: {}, {}", world.vx[0], world.vy[0]);
+    }
+
+    #[test]
+    fn the_currents_wander_and_stay_divergence_free() {
+        let mut world = quiet(1, 400.0, 300.0);
+        world.set_params(Params { turb: 170.0, flow_scale: 240.0, eddies: 3, ..world.params });
+        world.step(1.0 / 60.0);
+        let before = world.flow_out.clone();
+        for _ in 0..600 {
+            world.step(1.0 / 60.0);
+        }
+        let moved: f32 =
+            before.iter().zip(&world.flow_out).map(|(a, b)| (a - b).abs()).sum::<f32>() / before.len() as f32;
+        assert!(moved > 20.0, "the field changes over ten seconds: mean change {moved} px/s");
+        // Central differences of the curl field cancel: no sources or sinks in the interior.
+        let (fw, fh, cell) = world.flow_dims();
+        let at = |i: usize, j: usize, c: usize| world.flow_out[(j * fw + i) * 2 + c];
+        let (mut div, mut mag) = (0.0f32, 0.0f32);
+        for j in 2..fh - 2 {
+            for i in 2..fw - 2 {
+                div += ((at(i + 1, j, 0) - at(i - 1, j, 0)) + (at(i, j + 1, 1) - at(i, j - 1, 1))).abs() / (2.0 * cell);
+                mag += at(i, j, 0).abs() + at(i, j, 1).abs();
+            }
+        }
+        assert!(div / mag < 0.02, "divergence {div} against magnitude {mag}");
     }
 
     #[test]
