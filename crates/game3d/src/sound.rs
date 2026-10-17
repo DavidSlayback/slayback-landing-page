@@ -1,7 +1,7 @@
-//! Sound effects (Q79): blocks of wood. Blows knock, kills crack and fly apart, debris knocks as it lands (louder the
-//! harder, higher the smaller), throws whoosh, doors knock twice before they open, and bombs boom. The knocks are
-//! recordings (Kenney's CC0 "Impact Sounds", `tools/sfx/import.sh`), the whoosh and the boom synthesised
-//! (`tools/sfx/generate.py`), all embedded from `crates/game3d/assets/sfx/`. Muted by default; M (or Select, or a tap
+//! Sound effects (Q79), crunchy and real: blows thump, kills crack and fly apart, debris knocks and clatters as it
+//! lands (louder the harder, higher the smaller), throws whoosh, doors knock twice before they open, and bombs boom
+//! over a rain of rubble. The hits are recordings David picked by ear from CC0 packs (`tools/sfx/import.sh`), the
+//! whoosh and the boom synthesised (`tools/sfx/generate.py`), all embedded from `crates/game3d/assets/sfx/`. Muted by default; M (or Select, or a tap
 //! low on the screen) on the pause screen toggles it, and the choice is kept under the 2.5D game's key
 //! (`slayback-sound`, see [`Store`]).
 //!
@@ -56,14 +56,16 @@ mod effects {
     use crate::enemy::WallDoor;
     use crate::fighter::{Defeated, Hit, Team};
 
-    /// The effects (Q79): wooden knocks recorded from Kenney's "Impact Sounds" (CC0, `tools/sfx/import.sh`), each in a
-    /// few takes so repeats don't sound mechanical, and a whoosh and a blast synthesised (`tools/sfx/generate.py`).
+    /// The effects (Q79): recordings David picked by ear from CC0 packs (`tools/sfx/import.sh`; credits in
+    /// `assets/sfx/README.md`), in a few takes each so repeats don't sound mechanical, and a whoosh and a blast
+    /// synthesised (`tools/sfx/generate.py`).
     #[derive(Resource)]
     struct Effects {
         hit: [Handle<AudioSource>; 3],
         heavy: [Handle<AudioSource>; 3],
         clack: [Handle<AudioSource>; 4],
-        crack: Handle<AudioSource>,
+        crack: [Handle<AudioSource>; 2],
+        rubble: Handle<AudioSource>,
         whoosh: Handle<AudioSource>,
         door: Handle<AudioSource>,
         boom: Handle<AudioSource>,
@@ -85,7 +87,8 @@ mod effects {
             hit: [sfx!("hit_0"), sfx!("hit_1"), sfx!("hit_2")],
             heavy: [sfx!("heavy_0"), sfx!("heavy_1"), sfx!("heavy_2")],
             clack: [sfx!("clack_0"), sfx!("clack_1"), sfx!("clack_2"), sfx!("clack_3")],
-            crack: sfx!("crack"),
+            crack: [sfx!("crack_0"), sfx!("crack_1")],
+            rubble: sfx!("rubble"),
             whoosh: sfx!("whoosh"),
             door: sfx!("door"),
             boom: sfx!("boom"),
@@ -135,7 +138,8 @@ mod effects {
         }
         // A kill: the figure cracks apart and its blocks fly (their landings knock below).
         if defeats.read().any(|d| d.team == Team::Enemy) {
-            queue.push((&effects.crack, 0.75, 0.95 + 0.1 * roll()));
+            let take = &effects.crack[(roll() * 2.0) as usize % 2];
+            queue.push((take, 0.75, 0.95 + 0.1 * roll()));
             queue.push((&effects.whoosh, 0.45, 0.9 + 0.2 * roll()));
         }
         // Something thrown flies off.
@@ -173,6 +177,7 @@ mod effects {
         // A bomb going off (once a frame, however many chain).
         if blasts.read().last().is_some() {
             queue.push((&effects.boom, 0.95, 1.0));
+            queue.push((&effects.rubble, 0.6, 0.95 + 0.1 * roll()));
         }
         if !sound.on {
             return;
