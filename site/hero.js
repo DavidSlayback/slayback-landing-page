@@ -68,12 +68,14 @@ vec4 clip(vec2 p){ return vec4(p.x/uRes.x*2.0-1.0, 1.0-p.y/uRes.y*2.0, 0.0, 1.0)
 vec2 corner(){ return vec2(float(gl_VertexID&1), float(gl_VertexID>>1))*2.0-1.0; }`;
 
 // Sparks: thin streaks along their velocity; white-hot when fresh or on impact, cooling to the palette, then dark.
+// Each spark's grain (from the sim, fixed for its life) varies its width and streak length a little, so no two match.
 const VS_SPARK = HEAD + PAL + CLIP + `
-layout(location=0) in vec4 aPV; layout(location=1) in vec4 aEHT;   // x, y, vx, vy · energy, hue, heat, -
+layout(location=0) in vec4 aPV; layout(location=1) in vec4 aEHT;   // x, y, vx, vy · energy, hue, heat, grain
 uniform float uTime, uWidth, uStreak, uEmit, uGain; out vec2 vL; out float vHalf, vW; out vec3 vCol;
 void main(){ vec2 c=corner(); float sp=length(aPV.zw), e=aEHT.x, heat=aEHT.z;
   vec2 dir=sp>1.0?aPV.zw/sp:vec2(1.0,0.0), nrm=vec2(-dir.y,dir.x);
-  float w=uWidth*(1.0+e*1.2), hl=min(sp*uStreak,56.0)*0.5;
+  float g=aEHT.w, g2=fract(g*7.31+0.37);                  // two independent draws from one grain
+  float w=uWidth*(0.75+0.55*g)*(1.0+e*1.2), hl=min(sp*uStreak*(0.6+0.85*g2),56.0)*0.5;   // width x0.75-1.3, length x0.6-1.45
   vec2 local=vec2(c.x*(hl+w), c.y*w); vL=local; vHalf=hl; vW=w;
   float flicker=0.72+0.28*sin(uTime*57.0+hash12(aPV.xy*0.37)*40.0);
   vec3 base=pal(aEHT.y);

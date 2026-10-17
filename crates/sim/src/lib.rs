@@ -120,6 +120,8 @@ pub struct World {
     pub age: Vec<f32>,
     pub life: Vec<f32>,
     heading: Vec<f32>, // wander steering angle, drifts as a random walk
+    /// 0..1, drawn when a particle is born and kept for its life: the renderer varies each spark's size and shape by it.
+    pub grain: Vec<f32>,
     pub emitters: Vec<Emitter>,
     emitter_out: Vec<f32>,
     shield: [f32; 3], // x, y, radius (0 = off)
@@ -158,7 +160,7 @@ pub struct World {
     bursts: Vec<[f32; 4]>, // x, y, radius, strength
     spawn_acc: f32,
     rng: u32,
-    pub out: Vec<f32>, // interleaved x, y, vx, vy, energy, hue, heat (1 -> 0 over life), 0 per active particle
+    pub out: Vec<f32>, // interleaved x, y, vx, vy, energy, hue, heat (1 -> 0 over life), grain per active particle
 }
 
 pub const OUT_STRIDE: usize = 8;
@@ -187,6 +189,7 @@ impl World {
             age: vec![0.0; cap],
             life: vec![0.0; cap],
             heading: vec![0.0; cap],
+            grain: vec![0.0; cap],
             emitters: Vec::new(),
             emitter_out: Vec::new(),
             shield: [0.0; 3],
@@ -375,6 +378,7 @@ impl World {
         self.age[i] = 0.0;
         let p = self.params;
         self.life[i] = if p.life_max > 0.0 { p.life_min + (p.life_max - p.life_min) * self.rand() } else { 0.0 };
+        self.grain[i] = self.rand();
         if !self.emitters.is_empty() {
             // pick a torch, skipping dim ones; spray inside its wobbling cone
             let n = self.emitters.len();
@@ -888,7 +892,7 @@ impl World {
                 self.energy[i],
                 self.hue[i],
                 heat,
-                0.0,
+                self.grain[i],
             ]);
         }
         self.emitter_out.clear();
@@ -1189,6 +1193,24 @@ mod tests {
             let outside = world.x[i] < 0.0 || world.x[i] > world.w || world.y[i] < 0.0 || world.y[i] > world.h;
             assert!(outside, "spark born on screen at ({}, {})", world.x[i], world.y[i]);
         }
+    }
+
+    #[test]
+    fn each_spark_keeps_its_own_grain_for_life_and_sparks_differ() {
+        let mut world = sparks(400);
+        world.step(1.0 / 60.0);
+        let born: Vec<(f32, f32)> = (0..world.active).map(|i| (world.age[i], world.grain[i])).collect();
+        world.step(1.0 / 60.0);
+        for (i, &(age, grain)) in born.iter().enumerate() {
+            assert!((0.0..1.0).contains(&grain));
+            if world.age[i] > age {
+                assert_eq!(world.grain[i], grain, "a living spark keeps its grain");
+            }
+        }
+        let out: Vec<f32> = (0..world.active).map(|i| world.out[i * OUT_STRIDE + 7]).collect();
+        assert_eq!(out, (0..world.active).map(|i| world.grain[i]).collect::<Vec<_>>(), "and hands it to the renderer");
+        let spread = out.iter().cloned().fold(f32::MIN, f32::max) - out.iter().cloned().fold(f32::MAX, f32::min);
+        assert!(spread > 0.8, "grains spread over 0..1: {spread}");
     }
 
     #[test]
