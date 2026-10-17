@@ -97,6 +97,30 @@ pub extern "C" fn world_flow_dims(p: *mut World, which: u32) -> f32 {
     [w as f32, h as f32, cell][which.min(2) as usize]
 }
 
+/// The text's erosion for the renderer: per mask cell, scorch, gone, glow (0..255 each) and 0. See `world_erosion_version`.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_erosion_ptr(p: *mut World) -> *const u8 {
+    world(p).erosion.out.as_ptr()
+}
+
+/// Bumped whenever the erosion picture changes.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_erosion_version(p: *mut World) -> u32 {
+    world(p).erosion.version
+}
+
+/// Bumped whenever the SDF is rebuilt (the text eroded or re-welded): upload `world_sdf_ptr` again.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_sdf_version(p: *mut World) -> u32 {
+    world(p).sdf_version
+}
+
+/// The share of the text gone, 0..1.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_eroded(p: *mut World) -> f32 {
+    world(p).erosion.eroded()
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn world_out_ptr(p: *mut World) -> *const f32 {
     world(p).out.as_ptr()

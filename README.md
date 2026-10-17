@@ -6,7 +6,7 @@ David Slayback's landing page. The hero is welding-spark physics in Rust → Web
 
 | Path | What |
 |---|---|
-| `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield). Native tests. |
+| `crates/sim` | Pure Rust 2D particle physics (grains and sparks, uniform grid, text SDF obstacles, forcefield), the hero's wandering currents (exported for its GPU current layer), its centre of gravity, and the lettering's erosion (`erosion.rs`: strikes scorch the name, scorched-through cells flake off, it re-welds at 40% gone). Native tests. |
 | `crates/hero-wasm` | C-ABI WASM exports of `sim` for the browser (no wasm-bindgen; no imports). |
 | `crates/game-core` | Engine-free game rules (combat, enemy brains, debris, the run, the input mapping in `controls` and the touch controls in `touch`, colours in `palette`, and the floor movement and dash in `plane`), in metres, m/s and seconds throughout. Native tests. |
 | `crates/game3d` | The game at `/play` (spec #58, decisions Q46–Q64): Bevy 0.19 + avian3d 0.7, a shell over `game-core`. The library's `plugin` is the gameplay, its frame order declared once (`Frame`, in `lib.rs`; domain words in `GLOSSARY.md`); `look::plugin` and `camera::plugin` dress it and sit behind the default `render` feature with the window, renderer and UI; `main.rs` adds the window. `tests/scenarios.rs` steps it headless with scripted input: `cargo test -p game3d --no-default-features` (CI's `check` job). See "The 3D game" below. Not a default member. It replaced the 2.5D `game` crate in G10; rc-1 keeps that game as an archive. |

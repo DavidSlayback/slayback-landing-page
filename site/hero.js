@@ -7,14 +7,18 @@
 // Debug/test hooks: ?hud=1 shows timings; ?capture=1 disables the loop and exposes window.__capture.frame(dt)
 // for frame-exact screenshots; ?warm=<frames> pre-runs the physics; ?n=<sparks> overrides the spark count;
 // ?ink=<0..1> and ?lit=<gain> override the lettering's unlit grey and how strongly the sparks light it;
-// ?gravity=name|down picks the centre of gravity (G switches it); ?currents=<gain> sets the current layer's brightness.
+// ?gravity=name|down picks the centre of gravity (G switches it); ?currents=<gain> sets the current layer's brightness;
+// ?erode=<amount> how much a strike scorches the lettering (0: never erodes).
 'use strict';
 // world_set keys (sim/src/lib.rs `World::set`).
 const K = { gravity: 0, wind: 1, turb: 2, drag: 3, radius: 4, friction: 5, floorFriction: 6, restitution: 7, shieldRestitution: 8,
   cursorR: 9, spawnRate: 10, source: 11, collide: 12, lifeMin: 13, lifeMax: 14, openEdges: 15, emitters: 16, launchMin: 17, launchMax: 18,
-  openFloor: 19, wander: 20, flowScale: 21, inward: 22, topBottom: 23, pull: 24, eddies: 25 };
+  openFloor: 19, wander: 20, flowScale: 21, inward: 22, topBottom: 23, pull: 24, eddies: 25, erode: 26, reweldAt: 27 };
+// The letters scorch where sparks strike them, flake away, and re-weld at 40% gone (David, 2026-10-17: "Scorch, then
+// flake"): ERODE is how much a strike scorches (?erode=<amount>; 0 turns it off).
+const ERODE = (() => { const v = parseFloat(new URLSearchParams(location.search).get('erode')); return Number.isFinite(v) ? v : 0.005; })();
 const SPARK_BASE = { radius: 1.6, friction: 0.12, floorFriction: 0.05, shieldRestitution: 0.85, cursorR: 12, collide: 0, openEdges: 1, wind: 0 };
-// Sparks drift in from off-screen torches, then meander: tight currents, strong coupling to them, and per-spark wander.
+// Sparks drift in from off-screen torches, then meander: currents, per-spark wander, and gravity.
 // The torches sit two above the screen and two below, each jumping along its edge, so the lettering is lit from
 // above and below fairly steadily (David, 2026-10-15: "from top and/or bottom so that I can rely on semi-consistent
 // lighting").
@@ -23,7 +27,7 @@ const SPARK_BASE = { radius: 1.6, friction: 0.12, floorFriction: 0.05, shieldRes
 // initial force and gravity").
 const PRESET = { ...SPARK_BASE, turb: 170, drag: 0.55, wander: 220, flowScale: 240, inward: 160,
   restitution: 0.5, lifeMin: 3.5, lifeMax: 8.0, emitters: 4, launchMin: 180, launchMax: 480, openFloor: 1, topBottom: 1,
-  eddies: 3 };
+  eddies: 3, erode: ERODE, reweldAt: 0.4 };
 // The centre of gravity (David: "Let's try 1 and 2"): toward the name's centre, or plain gravity down. ?gravity=name|down,
 // or G switches; the choice is kept.
 const GRAVITY = { name: { pull: 140, gravity: 0 }, down: { pull: 0, gravity: 220 } };
@@ -109,7 +113,7 @@ void main(){ float d2=dot(vQ,vQ); if(d2>1.0) discard; o=vec4(vCol*(exp(-d2*14.0)
 // Final: tone-map sparks + bloom, then the text as an opaque surface on top (dark halo; dim ink the sparks light),
 // then the forcefield.
 const FS_FINAL = HEAD + `
-uniform sampler2D uScene, uB1, uB2, uB3, uLight, uText, uSdf, uCur;
+uniform sampler2D uScene, uB1, uB2, uB3, uLight, uText, uSdf, uCur, uErosion;
 uniform vec2 uCanvas, uSdfTexel, uRes; uniform float uBloom, uTime, uCurGain;
 uniform vec3 uShieldCol; uniform float uInk, uLit; uniform vec4 uShield;   // x, y, r (CSS px), hit flash
 out vec4 o;
@@ -124,6 +128,9 @@ void main(){
   vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom+L*0.1+texture(uCur,uv).rgb*uCurGain));   // currents faintly under it all
   // text: an opaque surface the sparks pass behind, in dim ink of no scheme colour, lit only by the sparks' own light
   vec4 t=texture(uText,tuv); float s=texture(uSdf,tuv).r;
+  // erosion (sim): scorch darkens the face toward char, flaked-off cells are holes, re-welding cells glow
+  vec4 er=texture(uErosion,tuv); float scorch=er.r, weld=er.b;
+  t.rg*=1.0-smoothstep(0.35,0.65,er.g);
   float halo=(1.0-smoothstep(0.0,16.0,s))*(1.0-t.r);
   col*=1.0-0.82*halo;
   vec3 lit=1.0-exp(-L*uLit);                                    // the light falling here, in the sparks' colours
@@ -137,8 +144,11 @@ void main(){
   float bevel=1.0-smoothstep(0.0,4.0,-s);
   float rim=max(dot(n2,toLight),0.0)*bevel;                    // the glyph edges facing the sparks catch the most
   vec3 face=vec3(uInk)+lit*(0.65+0.7*rim);
-  col=mix(col, min(face,vec3(0.95)), t.r);
-  col=mix(col, min(vec3(uInk*1.3)+lit*1.1,vec3(0.95)), t.g*0.85);
+  vec3 char_=vec3(1.0,0.36,0.08)*smoothstep(0.6,1.0,scorch)*0.3;   // smouldering just before it flakes
+  vec3 hot=vec3(1.0,0.72,0.42)*weld*1.1;                             // re-welding
+  face=face*(1.0-0.8*scorch)+char_+hot;
+  col=mix(col, min(face,vec3(1.0)), t.r);
+  col=mix(col, min((vec3(uInk*1.3)+lit*1.1)*(1.0-0.7*scorch)+char_+hot,vec3(1.0)), t.g*0.85);
   // forcefield: a hex shell that flares where sparks hit it
   if(uShield.z>0.5){
     float d=length(px-uShield.xy), r=uShield.z;
@@ -266,13 +276,14 @@ function applyPreset() {
 }
 
 // ---------- Text → obstacles ----------
-// Every word of every [data-collide] element is drawn where the DOM laid it out: red = fill, green = outline.
-function rasterizeText(scale, w, h, outline) {
+// Every word of every [data-collide] element (or those matching `only`) is drawn where the DOM laid it out: red = fill,
+// green = outline.
+function rasterizeText(scale, w, h, outline, only = '[data-collide]') {
   const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h);
   const x = c.getContext('2d', { willReadFrequently: true });
   x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height); x.setTransform(scale, 0, 0, scale, 0, 0);
   const hr = hero.getBoundingClientRect();
-  for (const el of hero.querySelectorAll('[data-collide]')) {
+  for (const el of hero.querySelectorAll(only)) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let node; (node = walker.nextNode());) {
       const cs = getComputedStyle(node.parentElement), fs = parseFloat(cs.fontSize);
@@ -293,18 +304,24 @@ function rasterizeText(scale, w, h, outline) {
   return c;
 }
 let textTex = null, sdfTex = null, sdfSize = [1, 1], obstacleTimer = 0;
+let erosionTex = null, erosionSeen = -1, sdfSeen = -1;   // the sim's erosion picture and SDF, re-uploaded when they change
 function updateObstacles() {
   if (!world) return;
   if (textTex) gl.deleteTexture(textTex);
   textTex = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterizeText(DPR, canvas.width, canvas.height, true), gl.LINEAR, true);
   const mw = Math.ceil(W * 0.5), mh = Math.ceil(H * 0.5), px = rasterizeText(0.5, mw, mh, false).getContext('2d').getImageData(0, 0, mw, mh).data;
+  // Only the name ([data-erode]) can erode: the sim takes text it covers as 255 and the rest of the text as 200.
+  const ex = rasterizeText(0.5, mw, mh, false, '[data-erode]').getContext('2d').getImageData(0, 0, mw, mh).data;
   const maskPtr = X.world_mask_alloc(world, mw, mh, 0.5);   // may grow WASM memory: take the buffer view after
   const mask = new Uint8Array(X.memory.buffer, maskPtr, mw * mh);
-  for (let i = 0; i < mw * mh; i++) mask[i] = px[i * 4];
+  for (let i = 0; i < mw * mh; i++) mask[i] = px[i * 4] > 127 ? (ex[i * 4] > 0 ? 255 : 200) : px[i * 4];
   X.world_mask_commit(world);
   if (sdfTex) gl.deleteTexture(sdfTex);
   sdfTex = mkTex(mw, mh, gl.R16F, gl.RED, gl.FLOAT, new Float32Array(X.memory.buffer, X.world_sdf_ptr(world), mw * mh), gl.LINEAR, true);
   sdfSize = [mw, mh];
+  if (erosionTex) gl.deleteTexture(erosionTex);
+  erosionTex = mkTex(mw, mh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null, gl.LINEAR, true);
+  erosionSeen = sdfSeen = -1;
 }
 const scheduleObstacles = () => { clearTimeout(obstacleTimer); obstacleTimer = setTimeout(updateObstacles, 40); };
 new MutationObserver(scheduleObstacles).observe(hero, { subtree: true, childList: true, characterData: true });
@@ -432,6 +449,16 @@ function present(dt) {
   shield.flash = Math.max(shield.flash * Math.pow(0.02, dt), Math.min(1, X.world_shield_hits(world) / 30));
   active = X.world_active(world);
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(X.memory.buffer, X.world_out_ptr(world), active * 8));
+  // The text's erosion and, once flakes open holes or a re-weld closes them, its SDF: upload when they've changed.
+  const ev = X.world_erosion_version(world), sv = X.world_sdf_version(world), [mw, mh] = sdfSize;
+  if (ev !== erosionSeen) {
+    erosionSeen = ev; gl.bindTexture(gl.TEXTURE_2D, erosionTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, mw, mh, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(X.memory.buffer, X.world_erosion_ptr(world), mw * mh * 4));
+  }
+  if (sv !== sdfSeen) {
+    sdfSeen = sv; gl.bindTexture(gl.TEXTURE_2D, sdfTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, mw, mh, gl.RED, gl.FLOAT, new Float32Array(X.memory.buffer, X.world_sdf_ptr(world), mw * mh));
+  }
   const ne = X.world_emitter_count(world), em = new Float32Array(X.memory.buffer, X.world_emitters_ptr(world), ne * 8), torches = [];
   for (let i = 0; i < ne; i++) torches.push(em[i * 8], em[i * 8 + 1], em[i * 8 + 3], em[i * 8 + 4]);
   const P = pal().gl;
@@ -461,7 +488,7 @@ function present(dt) {
   drawSparksAndTorches(P, 0.0, torches);
   runBloom();
   pass(null, canvas.width, canvas.height);
-  use(PROG.final, { uScene: scene.t, uB1: bloom[0][0].t, uB2: bloom[1][0].t, uB3: bloom[2][0].t, uLight: light.t, uText: textTex, uSdf: sdfTex, uCur: curTrail.t },
+  use(PROG.final, { uScene: scene.t, uB1: bloom[0][0].t, uB2: bloom[1][0].t, uB3: bloom[2][0].t, uLight: light.t, uText: textTex, uSdf: sdfTex, uCur: curTrail.t, uErosion: erosionTex },
     { uCanvas: [canvas.width, canvas.height], uSdfTexel: [1 / sdfSize[0], 1 / sdfSize[1]], uRes: [W, H], uBloom: 0.7, uTime: simT, uInk: INK, uLit: LIT, uCurGain: CUR_GAIN,
       uShield: [mouse.x, mouse.y, shield.r, shield.flash], ...P });
   tri();
@@ -472,7 +499,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const t = now / 1000, dt = last ? Math.min(t - last, 1 / 30) : 1 / 60; last = t;
   frames++; if (t - fpsT > 0.5) { fps = frames / (t - fpsT); frames = 0; fpsT = t;
-    hud.textContent = `Currents / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps · gravity: ${gravity}\np: scheme · g: gravity`; }
+    hud.textContent = `Currents / ${pal().label} — ${active.toLocaleString()} sparks · physics ${simMs.toFixed(1)} ms (Rust/WASM) · ${fps.toFixed(0)} fps · gravity: ${gravity} · eroded ${(X.world_eroded(world) * 100).toFixed(0)}%\np: scheme · g: gravity`; }
   if (scrollY > H) return;
   present(dt);
 }

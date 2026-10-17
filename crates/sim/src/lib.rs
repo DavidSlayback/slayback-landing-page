@@ -10,6 +10,9 @@
 
 use std::f32::consts::TAU;
 
+pub mod erosion;
+use erosion::Erosion;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
     pub gravity: f32,        // px/s²
@@ -43,6 +46,10 @@ pub struct Params {
     pub pull: f32,
     /// Wandering eddies stirred into the currents, coming and going at random.
     pub eddies: u32,
+    /// How much a strike on the text scorches it (`erosion`), for a 300 px/s hit; 0 = the text never erodes.
+    pub erode: f32,
+    /// The share of the text gone at which it re-welds.
+    pub reweld_at: f32,
 }
 
 impl Default for Params {
@@ -75,6 +82,8 @@ impl Default for Params {
             top_bottom: false,
             pull: 0.0,
             eddies: 0,
+            erode: 0.0,
+            reweld_at: 0.4,
         }
     }
 }
@@ -179,6 +188,12 @@ pub struct World {
     eddies: Vec<Eddy>,
     /// Where the text's centre of mass is (its solid mask cells'), CSS px: the centre of gravity for `Params::pull`.
     pub centre: (f32, f32),
+    /// The text's scorch and holes (`erosion`), and how long since the SDF was rebuilt for a changed mask.
+    pub erosion: Erosion,
+    since_sdf: f32,
+    sdf_stale: bool,
+    /// Bumped whenever the SDF is rebuilt, so the page knows to upload it again.
+    pub sdf_version: u32,
     // input
     cursor: [f32; 4], // x, y, previous x, previous y
     cursor_on: bool,
@@ -248,6 +263,10 @@ impl World {
             term_spin: [0.0; 6],
             eddies: Vec::new(),
             centre: (w / 2.0, h / 2.0),
+            erosion: Erosion::new(),
+            since_sdf: 0.0,
+            sdf_stale: false,
+            sdf_version: 0,
             cursor: [0.0; 4],
             cursor_on: false,
             cursor_was_on: false,
@@ -325,6 +344,8 @@ impl World {
             23 => p.top_bottom = v != 0.0,
             24 => p.pull = v,
             25 => p.eddies = v as u32,
+            26 => p.erode = v,
+            27 => p.reweld_at = v,
             _ => return,
         }
         self.set_params(p);
@@ -456,7 +477,8 @@ impl World {
 
     // ---------- obstacles ----------
 
-    /// Allocates the obstacle mask (JS fills it, 255 = solid) and returns a pointer to it.
+    /// Allocates the obstacle mask (JS fills it: above 127 is solid, exactly 255 is text that may erode) and returns a
+    /// pointer to it.
     pub fn mask_alloc(&mut self, mw: usize, mh: usize, scale: f32) -> *mut u8 {
         self.mw = mw;
         self.mh = mh;
@@ -465,13 +487,14 @@ impl World {
         self.mask.as_mut_ptr()
     }
 
-    /// Rebuilds the signed distance field from the mask (two-pass 8-neighbour chamfer each way).
+    /// Takes the page's newly written mask: the SDF, the centre of gravity, and erosion starting over.
     pub fn mask_commit(&mut self) {
         let (w, h) = (self.mw, self.mh);
         let solid: Vec<bool> = self.mask.iter().map(|&m| m > 127).collect();
-        let d_out = chamfer(&solid, w, h, true);
-        let d_in = chamfer(&solid, w, h, false);
-        self.sdf = d_out.iter().zip(&d_in).map(|(o, i)| ((o - i) / self.mscale).min(60000.0)).collect();
+        // The page marks the text that may erode 255 (the name) and the rest of the text 200.
+        let erodible: Vec<bool> = self.mask.iter().map(|&m| m == 255).collect();
+        self.erosion.reset(&erodible, w, h);
+        self.rebuild_sdf();
         let (mut sx, mut sy, mut n) = (0.0f64, 0.0f64, 0usize);
         for (k, _) in solid.iter().enumerate().filter(|(_, s)| **s) {
             sx += (k % w) as f64;
@@ -483,6 +506,56 @@ impl World {
         } else {
             (self.w / 2.0, self.h / 2.0)
         };
+    }
+
+    /// Rebuilds the signed distance field from the mask as it stands (two-pass 8-neighbour chamfer each way).
+    fn rebuild_sdf(&mut self) {
+        let (w, h) = (self.mw, self.mh);
+        let solid: Vec<bool> = self.mask.iter().map(|&m| m > 127).collect();
+        let d_out = chamfer(&solid, w, h, true);
+        let d_in = chamfer(&solid, w, h, false);
+        self.sdf = d_out.iter().zip(&d_in).map(|(o, i)| ((o - i) / self.mscale).min(60000.0)).collect();
+        self.sdf_version = self.sdf_version.wrapping_add(1);
+        self.since_sdf = 0.0;
+        self.sdf_stale = false;
+    }
+
+    /// The text erodes: flakes off what strikes have scorched through (each throwing a hot ember), re-welds it once
+    /// enough is gone, and rebuilds the SDF for a changed mask at most every 0.12 s.
+    fn erode(&mut self, dt: f32) {
+        if self.mask.is_empty() {
+            return;
+        }
+        let mut erosion = std::mem::take(&mut self.erosion);
+        let mut mask = std::mem::take(&mut self.mask);
+        let reweld_at = self.params.reweld_at;
+        let (flaked, changed) = erosion.tick(dt, &mut mask, reweld_at, &mut || self.rand());
+        self.erosion = erosion;
+        self.mask = mask;
+        for &c in flaked.iter().take(8) {
+            let (x, y) = ((c as usize % self.mw) as f32 / self.mscale, (c as usize / self.mw) as f32 / self.mscale);
+            self.ember(x, y);
+        }
+        self.sdf_stale |= changed;
+        self.since_sdf += dt;
+        if self.sdf_stale && self.since_sdf >= 0.12 {
+            self.rebuild_sdf();
+        }
+    }
+
+    /// A chip off the text: some spark becomes a white-hot ember at (`x`, `y`), flung out and short-lived.
+    fn ember(&mut self, x: f32, y: f32) {
+        if self.active == 0 {
+            return;
+        }
+        let i = ((self.rand() * self.active as f32) as usize).min(self.active - 1);
+        let a = self.rand() * TAU;
+        let speed = 80.0 + 160.0 * self.rand();
+        (self.x[i], self.y[i], self.px[i], self.py[i]) = (x, y, x, y);
+        (self.vx[i], self.vy[i]) = (a.cos() * speed, a.sin() * speed - 60.0);
+        self.age[i] = 0.0;
+        self.life[i] = 0.5 + 0.7 * self.rand();
+        self.energy[i] = 1.0;
     }
 
     pub fn sdf_at(&self, x: f32, y: f32) -> f32 {
@@ -759,6 +832,16 @@ impl World {
             let d = self.sdf_at(self.px[i], self.py[i]);
             if d < r {
                 let (nx, ny) = self.sdf_normal(self.px[i], self.py[i]);
+                // A strike: scorch the text just inside where it hit, more the harder it hit.
+                let into = -(self.vx[i] * nx + self.vy[i] * ny);
+                if self.params.erode > 0.0 && into > 30.0 {
+                    let inside = d + 1.0 / self.mscale;
+                    let (sx, sy) = (self.px[i] - nx * inside, self.py[i] - ny * inside);
+                    if sx >= 0.0 && sy >= 0.0 {
+                        let amount = self.params.erode * (into / 300.0).clamp(0.2, 1.5);
+                        self.erosion.strike((sx * self.mscale) as usize, (sy * self.mscale) as usize, amount);
+                    }
+                }
                 self.px[i] += nx * (r - d);
                 self.py[i] += ny * (r - d);
                 (self.cnx[i], self.cny[i], self.contact[i]) = (nx, ny, Contact::Solid);
@@ -996,6 +1079,7 @@ impl World {
             self.finalize(h);
         }
         self.time += dt;
+        self.erode(dt);
         self.cursor[2] = self.cursor[0];
         self.cursor[3] = self.cursor[1];
         self.cursor_was_on = self.cursor_on;
@@ -1311,6 +1395,41 @@ mod tests {
             let outside = world.x[i] < 0.0 || world.x[i] > world.w || world.y[i] < 0.0 || world.y[i] > world.h;
             assert!(outside, "spark born on screen at ({}, {})", world.x[i], world.y[i]);
         }
+    }
+
+    #[test]
+    fn sparks_striking_the_text_scorch_and_flake_it_and_then_pass_through_the_hole() {
+        let mut world = quiet(64, 400.0, 300.0);
+        with_block(&mut world, 100, 110, 60, 90); // 20 px wide, at x 200..220
+        // Sparks pass through each other (as the hero's do), so the volley stays on its line.
+        world.set_params(Params {
+            erode: 2.0,
+            reweld_at: 0.9,
+            radius: 1.6,
+            restitution: 0.5,
+            collide: false,
+            ..world.params
+        });
+        let solid_at = |w: &World| w.sdf_at(201.0, 150.0) < 0.0;
+        assert!(solid_at(&world));
+        let mut eroded = 0.0;
+        for _ in 0..120 {
+            // a volley at the block's left face, all at one spot
+            for k in 0..8 {
+                world.put(150.0, 149.0 + k as f32 * 0.25, 600.0, 0.0);
+            }
+            for _ in 0..6 {
+                world.step(1.0 / 60.0);
+            }
+            world.active = 0; // spent: clear them for the next volley
+            eroded = world.erosion.eroded();
+            if !solid_at(&world) {
+                break;
+            }
+        }
+        assert!(eroded > 0.0, "the strikes flaked some of it off");
+        assert!(!solid_at(&world), "and where they struck is open air now (sdf {})", world.sdf_at(201.0, 150.0));
+        assert!(world.sdf_at(219.0, 175.0) < 0.0, "the rest still stands");
     }
 
     #[test]
