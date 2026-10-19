@@ -7,12 +7,12 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: Mon 2026-10-19 16:35 CDT. Paused by David ("Gonna need to pause this work so I can go somewhere").
-In flight: nothing running. M1 #86, M5 #90 done; M6 #91 built (crates/box-bench, box-mcp --max-calls), committed on hero-sparks with its first result.
-Next: a capped Sonnet run (bash scripts/native.sh run -p box-bench -q -- --model sonnet), compare with Haiku, then ask David to approve a sweep (seeds x trials, models, call cap).
+As of: Mon 2026-10-19 17:10 CDT. Resumed; M6 #91 runner done (423e943), two capped runs in.
+In flight: nothing running.
+Next: David approves a sweep (models, seeds x trials, call cap), then run it and add the bench table to the lab (M7 #92).
 Waiting on: David, sweep approval (default: none; only 1-run, 40-call capped runs). Compute for training (parked). WebMCP token (M8, later).
 Re-arm: nothing scheduled or watched.
-Verified: box-bench 4 + box-mcp 5 tests, clippy -D warnings, on the pause commit; bench/results/2026-10-19-2134-haiku/results.json (verified: true).
+Verified: bench/results/2026-10-19-2134-haiku and 2026-10-19-2208-sonnet, both verified: true by replay.
 ```
 
 M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
@@ -26,6 +26,7 @@ M6 so far: crates/box-bench runs `claude -p` per seed x trial through box-mcp, a
 - **First verified result (Haiku 5.5, seed 1, 40 calls):** out of calls after 16 s of play, 5 kills, no escape, best pile 39% of the rim, 41 calls, 39 s wall, ~395k input tokens.
   - It punched in every direction and called look before nearly every action, so the observation costs a call each time.
   - Worth considering: return the observation with each action, which already happens, and tell the agent that.
+- **Second result (Sonnet 5.5, seed 1, 40 calls):** died after 17 s of play and 31 calls, 3 kills, no escape, best pile 16% of the rim. It fought in place (punches and kicks in all directions, one grab, never set out to heap a pile). One seed each is no comparison: a sweep is needed before any claim.
 - **Not yet done:** the bench page on the lab (M7).
 
 ## Findings for the bench (M6), from the M5 smoke run
