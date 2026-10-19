@@ -7,8 +7,9 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: 2026-10-19. State: planned; spec #85 and tickets #86-#95 filed. Repo made public 2026-10-19 (approved; history scanned first: 1,626 blobs, 0 secret hits, commit emails are GitHub noreply, no third-party media).
-Next: M1 (headless env core). M7 (lab page) can start in parallel.
+As of: 2026-10-19. State: M1 (#86) built on hero-sparks; spec #85 and tickets #86-#95 filed. Repo made public 2026-10-19 (approved; history scanned first: 1,626 blobs, 0 secret hits, gitleaks clean over 167 commits, commit emails are GitHub noreply, no third-party media).
+M1 result: crates/box-env (Env reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions (short episodes, a light box): 2,092 steps/s release (8,367 frames/s, 140x real time), 1,818 dev. So ~16 envs on this 14-core CPU should give ~25k steps/s and 10M steps in minutes, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
+Next: M2 (#87, Python bindings) and M5 (#90, MCP server) are unblocked; M7 (#92, lab page) any time.
 Parked: every real training or profiling run (David: "I don't intend to train on the machine just yet"). Resume when David says where compute comes from. Code, tests and seconds-long CPU smoke runs proceed.
 Needs David later: a WebMCP origin-trial token (M8); the go-ahead to run the benchmark on his subscription past the smoke cap (M6).
 ```

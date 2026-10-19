@@ -119,8 +119,7 @@ fn escape(
 ) {
     let Ok((_, &Position(at), _, hp)) = reset.player.single() else { return };
     let hp = hp.0;
-    let feet = at.y - HEIGHT / 2.0;
-    if !escaped(pile_under(pieces.iter(), at.xz(), FOOTPRINT, feet + FEET), arena.rim) {
+    if !escaped(standing_on(pieces.iter(), at), arena.rim) {
         return;
     }
     ended.write(BoxEnded::Escaped { number: run.0.spec.number, time_left: run.0.time_left });
@@ -129,6 +128,13 @@ fn escape(
         hp.0.hp = refilled;
     }
     reset.apply(run.0.spec);
+}
+
+/// How high the pile under a player whose capsule is centred at `at` stands, metres above the floor: what the escape
+/// test measures (agents see it too, `observe`).
+pub fn standing_on<'a>(pieces: impl IntoIterator<Item = (&'a Piece, &'a Transform)>, at: Vec3) -> f32 {
+    let feet = at.y - HEIGHT / 2.0;
+    pile_under(pieces, at.xz(), FOOTPRINT, feet + FEET)
 }
 
 /// The player's health ran out (a blow or the clock): the run ends on the game-over screen.

@@ -32,7 +32,7 @@ use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
 use game3d::store::Store;
 
-const FPS: f32 = 60.0;
+use game3d::headless::FPS;
 
 /// A game app without window or renderer. Keyboard state is driven by the test (no input plugin clears it), and
 /// enemies only appear where a test puts them. Records (the best score, the sound setting) go to a fresh directory.
@@ -45,18 +45,13 @@ fn headless_with(store: Store) -> App {
     headless_and(store, |_| {})
 }
 
-/// A headless app with `extra` set up before it starts (comfort settings, the demo).
+/// A headless app with `extra` set up before it starts (comfort settings, the demo). No enemies come through the
+/// doors.
 fn headless_and(store: Store, extra: impl FnOnce(&mut App)) -> App {
-    let mut app = App::new();
-    app.add_plugins((MinimalPlugins, TransformPlugin, game3d::plugin))
-        .insert_resource(Waves { enabled: false, ..default() })
-        .insert_resource(store);
-    extra(&mut app);
-    app.init_resource::<ButtonInput<KeyCode>>()
-        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
-    app.finish();
-    app.cleanup();
-    app
+    game3d::headless::app(store, |app| {
+        app.insert_resource(Waves { enabled: false, ..default() });
+        extra(app);
+    })
 }
 
 /// An empty directory of records of the test's own, so scenarios never read or overwrite a real best score.

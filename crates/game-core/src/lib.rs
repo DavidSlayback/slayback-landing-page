@@ -3,6 +3,7 @@
 //! Everything here is plain data and functions so it can be tested natively without Bevy; `crates/game3d` wires it into
 //! ECS systems. Lengths are metres, speeds m/s and times seconds throughout.
 
+pub mod agent;
 pub mod aim;
 pub mod bomb;
 pub mod climb;

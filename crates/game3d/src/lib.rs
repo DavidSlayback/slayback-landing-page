@@ -19,6 +19,7 @@ pub mod figure;
 #[cfg(feature = "render")]
 pub mod flat;
 pub mod flow;
+pub mod headless;
 #[cfg(feature = "render")]
 pub mod hud;
 #[cfg(feature = "render")]
@@ -26,6 +27,7 @@ pub mod impact;
 pub mod input;
 #[cfg(feature = "render")]
 pub mod look;
+pub mod observe;
 #[cfg(feature = "render")]
 pub mod outline;
 #[cfg(feature = "render")]
@@ -109,4 +111,9 @@ pub fn on_floor(v: [f32; 2]) -> Vec3 {
 /// A world vector's floor part as a `game_core` plane vector.
 pub fn plane(v: Vec3) -> [f32; 2] {
     [v.x, -v.z]
+}
+
+/// A `game_core` plane point as a point on the floor (x and z), the inverse of [`plane`] there.
+pub fn plane_on(p: [f32; 2]) -> Vec2 {
+    Vec2::new(p[0], -p[1])
 }
