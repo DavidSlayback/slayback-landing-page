@@ -7,12 +7,22 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: 2026-10-19. State: M1 (#86) built on hero-sparks; spec #85 and tickets #86-#95 filed. Repo made public 2026-10-19 (approved; history scanned first: 1,626 blobs, 0 secret hits, gitleaks clean over 167 commits, commit emails are GitHub noreply, no third-party media).
+As of: 2026-10-19. State: M1 (#86) and M5 (#90) built on hero-sparks; spec #85 and tickets #86-#95 filed. Repo made public 2026-10-19 (approved; history scanned first: 1,626 blobs, 0 secret hits, gitleaks clean over 167 commits, commit emails are GitHub noreply, no third-party media).
 M1 result: crates/box-env (Env reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions (short episodes, a light box): 2,092 steps/s release (8,367 frames/s, 140x real time), 1,818 dev. So ~16 envs on this 14-core CPU should give ~25k steps/s and 10M steps in minutes, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
-Next: M2 (#87, Python bindings) and M5 (#90, MCP server) are unblocked; M7 (#92, lab page) any time.
+M5 result (David picked it next, 2026-10-19): crates/box-mcp, the MCP server (8 tools in tools.json, turn-based, the record replays). Smoke run with headless Claude Code (Haiku, David's subscription): it listed the tools and played look, move, punch, status; 4 calls, 21 steps (bench/smoke/2026-10-19-m5-haiku/).
+Next: M6 (#91, bench runner) is unblocked, as are M2 (#87) and M7 (#92).
 Parked: every real training or profiling run (David: "I don't intend to train on the machine just yet"). Resume when David says where compute comes from. Code, tests and seconds-long CPU smoke runs proceed.
 Needs David later: a WebMCP origin-trial token (M8); the go-ahead to run the benchmark on his subscription past the smoke cap (M6).
 ```
+
+## Findings for the bench (M6), from the M5 smoke run
+
+- **Billing.** David's Windows user environment has `ANTHROPIC_API_KEY` set. A `claude -p` launched from a fresh shell would see it, and headless Claude Code would then bill the API, not the subscription. The runner must remove it from every child's environment, and fail loudly if a run reports an API-key source.
+- **Context contamination.** With no built-in tools, a run still starts with ~27k cached input tokens: Claude Code's system prompt, and likely David's user CLAUDE.md, which project-only setting sources don't drop. A benchmark must not be shaped by David's personal instructions.
+  - Fix: `--system-prompt` with the bench's own prompt, plus a check of what loaded.
+  - `--bare` would skip CLAUDE.md, but it also skips keychain reads, so it may need an API key: test it first.
+- **Windows PowerShell 5.1 drops empty arguments.** `--tools ''` vanishes and swallows the next flag. Pass `--tools=`, and give `--allowedTools=` the full tool names (`mcp__box__look,...`).
+- **Results are tied to the game's commit.** Any gameplay change can stop an old trace from replaying. Each result must name the commit it was played and replayed on.
 
 ## Settled (David, 2026-10-19)
 

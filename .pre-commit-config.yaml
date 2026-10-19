@@ -41,9 +41,9 @@ repos:
         pass_filenames: false
       - id: clippy-game3d-headless
         name: clippy (game3d, headless)
-        entry: bash scripts/native.sh clippy -p game3d -p box-env --no-default-features --all-targets --locked -q -- -D warnings
+        entry: bash scripts/native.sh clippy -p game3d -p box-env -p box-mcp --no-default-features --all-targets --locked -q -- -D warnings
         language: system
-        files: ^(crates/game3d|crates/game-core|crates/box-env)/|^Cargo\.(toml|lock)$
+        files: ^(crates/game3d|crates/game-core|crates/box-env|crates/box-mcp)/|^Cargo\.(toml|lock)$
         pass_filenames: false
       - id: test
         name: tests (sim, hero, game rules)
@@ -54,9 +54,9 @@ repos:
         stages: [pre-push]
       - id: test-game3d-headless
         name: tests (game3d scenarios, headless)
-        entry: bash scripts/native.sh test -p game3d -p box-env --no-default-features --locked -q
+        entry: bash scripts/native.sh test -p game3d -p box-env -p box-mcp --no-default-features --locked -q
         language: system
-        files: ^(crates/game3d|crates/game-core|crates/box-env)/|^Cargo\.(toml|lock)$
+        files: ^(crates/game3d|crates/game-core|crates/box-env|crates/box-mcp)/|^Cargo\.(toml|lock)$
         pass_filenames: false
         stages: [pre-push]
       # The unit tests behind the `render` feature (figure, paint): game3d is not a default member and the scenarios
@@ -65,7 +65,7 @@ repos:
         name: tests (game3d unit tests, with render)
         entry: bash scripts/native.sh test -p game3d --lib --locked -q
         language: system
-        files: ^(crates/game3d|crates/game-core|crates/box-env)/|^Cargo\.(toml|lock)$
+        files: ^(crates/game3d|crates/game-core|crates/box-env|crates/box-mcp)/|^Cargo\.(toml|lock)$
         pass_filenames: false
         stages: [pre-push]
       # The renderer-side modules (look, ui, sound, comfort) only compile with `render`; CI lints them for wasm on
@@ -74,7 +74,7 @@ repos:
         name: clippy (game3d, wasm with render)
         entry: bash scripts/native.sh clippy -p game3d --target wasm32-unknown-unknown --locked -q -- -D warnings
         language: system
-        files: ^(crates/game3d|crates/game-core|crates/box-env)/|^Cargo\.(toml|lock)$
+        files: ^(crates/game3d|crates/game-core|crates/box-env|crates/box-mcp)/|^Cargo\.(toml|lock)$
         pass_filenames: false
         stages: [pre-push]
       - id: hero-budget

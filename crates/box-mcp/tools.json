@@ -1,0 +1,68 @@
+[
+  {
+    "name": "look",
+    "description": "See the box now: your position, health and the pile under you, the nearest enemies (offsets from you, kind, health, whether winding up a strike), the pile's height across the floor, the rim, the clock and which doors are opening. Takes no game time.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "status",
+    "description": "A short summary: box, health, time left, kills, escapes, game seconds played, and whether the run is over. Takes no game time.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "move",
+    "description": "Run in a compass direction for some seconds (6 m/s). North is away from the camera toward the back wall, east is right. You face the way you move, and step up debris ledges up to 0.4 m on your own (there is no jump).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "direction": { "type": "string", "enum": ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] },
+        "seconds": { "type": "number", "minimum": 0.1, "maximum": 2.0 }
+      },
+      "required": ["direction", "seconds"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "punch",
+    "description": "Punch: a quick, short blow into a cone in front of you that snaps onto the nearest enemy in it. With a direction you first turn that way (a short step). While holding something, a punch spin-throws it instead, toward the biggest group in front of you. Takes about half a second.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "direction": { "type": "string", "enum": ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] } },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "kick",
+    "description": "Kick: slower and harder than a punch, longer reach, and it staggers thugs (punches don't). Straight after a dash it is a drop-kick, the hardest blow. With a direction you first turn that way. While holding something, it spin-throws it instead. Takes about half a second.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "direction": { "type": "string", "enum": ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] } },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "dash",
+    "description": "Dash a few metres in a direction, fast (0.5 s cooldown). Advances only the dash's first instant, so a kick or punch called next lands during it as a drop-kick.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "direction": { "type": "string", "enum": ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"] } },
+      "required": ["direction"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "grab",
+    "description": "Grab the nearest enemy or debris piece just in front of you (frozen debris comes loose), holding it in front of you; grab again to set it down in front. Punch or kick while holding to spin-throw it: thrown things hurt every enemy they pass through.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "wait",
+    "description": "Stand still for some seconds.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "seconds": { "type": "number", "minimum": 0.1, "maximum": 3.0 } },
+      "required": ["seconds"],
+      "additionalProperties": false
+    }
+  }
+]
