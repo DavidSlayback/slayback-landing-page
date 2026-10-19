@@ -151,6 +151,9 @@ pub struct RunResult {
     pub agent_turns: u32,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// The plan's five-hour usage after the run, 0..1, as the session's last rate-limit event reported it.
+    #[serde(default)]
+    pub plan_used: Option<f64>,
 }
 
 impl RunResult {
@@ -315,6 +318,7 @@ mod tests {
             agent_turns: 10,
             input_tokens: 0,
             output_tokens: 0,
+            plan_used: None,
         };
         let runs = [
             run(1, 1, Ending::Escaped, true),

@@ -56,13 +56,13 @@ fn main() {
     let system = "You are an agent playing a video game through tools. Play it as well as you can.";
     let mut results = Vec::new();
 
-    for &seed in &args.seeds {
+    'sweep: for &seed in &args.seeds {
         for trial in 1..=args.trials {
             let dir_name = format!("s{seed}-t{trial}");
             let dir = sweep.join(&dir_name);
             std::fs::create_dir_all(&dir).expect("a run directory");
             eprintln!("box-bench: seed {seed} trial {trial} ({})", args.model);
-            let r = run(&args, &server, &dir, seed, &prompt, system);
+            let (r, limited) = run(&args, &server, &dir, seed, &prompt, system);
             let result = RunResult { seed, trial, dir: dir_name, ..r };
             match (&result.analysis, &result.error) {
                 (Some(a), _) => eprintln!(
@@ -79,8 +79,15 @@ fn main() {
                 (None, Some(e)) => eprintln!("  no result: {e}"),
                 _ => {}
             }
+            if let Some(used) = result.plan_used {
+                eprintln!("  plan: {:.0}% of the five-hour window used", used * 100.0);
+            }
             results.push(result);
             write(&sweep, &args, &prompt, system, &results);
+            if limited {
+                eprintln!("box-bench: the plan's rate limit refused the session: stopping the sweep here");
+                break 'sweep;
+            }
         }
     }
     let s = summarise(&results);
@@ -95,8 +102,9 @@ fn main() {
     );
 }
 
-/// One agent session: launch, wait (killing it past the timeout), then check and analyse its evidence.
-fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: &str) -> RunResult {
+/// One agent session: launch, wait (killing it past the timeout), then check and analyse its evidence. Also says
+/// whether the plan's rate limit refused it, which ends the sweep.
+fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: &str) -> (RunResult, bool) {
     let record_path = dir.join("record.json");
     let config = json!({ "mcpServers": { "box": {
         "command": server,
@@ -139,7 +147,9 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
     }
     let wall_seconds = started.elapsed().as_secs_f32();
 
-    let (init, result) = read_transcript(&dir.join("transcript.jsonl"));
+    let (init, result, rate) = read_transcript(&dir.join("transcript.jsonl"));
+    let limited = rate.as_ref().is_some_and(|r| r["status"] == "rejected")
+        || result.as_ref().is_some_and(|r| r["api_error_status"] == 429);
     // The billing guard: a subscription session reports no API-key source.
     if let Some(source) = init.as_ref().and_then(|i| i["apiKeySource"].as_str()).filter(|s| *s != "none") {
         fail(&format!("the session used an API key ({source}), not the subscription: stopping the sweep"));
@@ -174,10 +184,11 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
             + tokens("cache_read_input_tokens")
             + tokens("cache_creation_input_tokens"),
         output_tokens: tokens("output_tokens"),
+        plan_used: rate.as_ref().and_then(|r| r["unifiedWindows"]["five_hour"]["utilization"].as_f64()),
     };
     if !connected {
         out.error = Some("the game server didn't connect (see stderr.txt and the transcript's init event)".into());
-        return out;
+        return (out, limited);
     }
     match std::fs::read_to_string(&record_path).ok().and_then(|s| serde_json::from_str::<Record>(&s).ok()) {
         Some(record) => out.analysis = Some(analyse(&record)),
@@ -192,23 +203,24 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
     if timed_out && out.error.is_none() {
         out.error = Some(format!("timed out after {} s (analysed up to there)", args.timeout));
     }
-    out
+    (out, limited)
 }
 
-/// The session's init event (model, tools, billing source) and its final result event.
-fn read_transcript(path: &Path) -> (Option<Value>, Option<Value>) {
-    let (mut init, mut result) = (None, None);
-    let Ok(file) = std::fs::File::open(path) else { return (None, None) };
+/// The session's init event (model, tools, billing source), its final result event, and its last rate-limit info.
+fn read_transcript(path: &Path) -> (Option<Value>, Option<Value>, Option<Value>) {
+    let (mut init, mut result, mut rate) = (None, None, None);
+    let Ok(file) = std::fs::File::open(path) else { return (None, None, None) };
     for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
         let Ok(e) = serde_json::from_str::<Value>(&line) else { continue };
         match (e["type"].as_str(), e["subtype"].as_str()) {
             // The first init is the session's own (later ones, after compaction or a resume, list no servers).
             (Some("system"), Some("init")) if init.is_none() => init = Some(e),
             (Some("result"), _) => result = Some(e),
+            (Some("rate_limit_event"), _) => rate = Some(e["rate_limit_info"].clone()),
             _ => {}
         }
     }
-    (init, result)
+    (init, result, rate)
 }
 
 /// The task, the same for every model and run: the rules come from the server's own instructions, repeated here so
@@ -314,4 +326,27 @@ fn parse() -> Args {
 fn fail(message: &str) -> ! {
     eprintln!("box-bench: {message}");
     std::process::exit(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_real_transcript_reads_as_a_subscription_session_with_the_game_connected_and_room_left() {
+        // The first capped run's transcript, as Claude Code 2.1.303 wrote it.
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../bench/results/2026-10-19-2134-haiku/s1-t1/transcript.jsonl");
+        let (init, result, rate) = read_transcript(&path);
+        let init = init.expect("an init event");
+        assert_eq!(init["apiKeySource"], "none", "billed to the subscription");
+        assert!(
+            init["mcp_servers"].as_array().unwrap().iter().any(|s| s["name"] == "box" && s["status"] == "connected")
+        );
+        assert!(init["tools"].as_array().unwrap().iter().all(|t| t.as_str().unwrap().starts_with("mcp__box__")));
+        assert!(result.expect("a result event")["num_turns"].as_u64().unwrap() > 0);
+        let rate = rate.expect("a rate-limit event");
+        assert_eq!(rate["status"], "allowed");
+        assert!(rate["unifiedWindows"]["five_hour"]["utilization"].as_f64().is_some());
+    }
 }
