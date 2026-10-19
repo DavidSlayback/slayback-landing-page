@@ -1778,6 +1778,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "box-bench"
+version = "0.1.0"
+dependencies = [
+ "box-env",
+ "box-mcp",
+ "game-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "box-env"
 version = "0.1.0"
 dependencies = [

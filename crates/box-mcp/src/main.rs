@@ -1,4 +1,5 @@
-//! `box-mcp [--seed N] [--frame-skip N] [--max-steps N] [--trace FILE]`: the box's MCP server on stdio. With
+//! `box-mcp [--seed N] [--frame-skip N] [--max-steps N] [--max-calls N] [--trace FILE]`: the box's MCP server on
+//! stdio. `--max-calls` caps the session's tool calls (a benchmark's turn budget). With
 //! `--trace`, the session's record (trace, outcome and calls) is rewritten after every message, so a session cut off
 //! mid-run still leaves it.
 
@@ -11,6 +12,7 @@ use serde_json::{Value, json};
 fn main() {
     let mut config = EnvConfig::default();
     let mut trace: Option<std::path::PathBuf> = None;
+    let mut max_calls: Option<u32> = None;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let mut value = || args.next().unwrap_or_else(|| fail(&format!("{flag} needs a value")));
@@ -18,6 +20,7 @@ fn main() {
             "--seed" => config.seed = number(&value()),
             "--frame-skip" => config.frame_skip = number(&value()),
             "--max-steps" => config.max_steps = number(&value()),
+            "--max-calls" => max_calls = Some(number(&value())),
             "--trace" => trace = Some(value().into()),
             _ => fail(&format!("unknown argument {flag}")),
         }
@@ -26,6 +29,9 @@ fn main() {
     // Bevy logs to stdout by default only with its log plugin, which the headless game doesn't add; stdout carries
     // nothing but protocol messages.
     let mut server = Server::new(config);
+    if let Some(max) = max_calls {
+        server = server.with_max_calls(max);
+    }
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -43,7 +49,7 @@ fn main() {
             writeln!(out, "{reply}").and_then(|_| out.flush()).expect("stdout");
         }
         if let Some(path) = &trace {
-            let record = serde_json::to_string_pretty(&server.record()).expect("a record serialises");
+            let record = serde_json::to_string_pretty(&server.record()).expect("a record serialises") + "\n";
             std::fs::write(path, record).unwrap_or_else(|e| fail(&format!("writing {}: {e}", path.display())));
         }
     }

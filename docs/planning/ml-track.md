@@ -7,13 +7,26 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: 2026-10-19. State: M1 (#86) and M5 (#90) built on hero-sparks; spec #85 and tickets #86-#95 filed. Repo made public 2026-10-19 (approved; history scanned first: 1,626 blobs, 0 secret hits, gitleaks clean over 167 commits, commit emails are GitHub noreply, no third-party media).
-M1 result: crates/box-env (Env reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions (short episodes, a light box): 2,092 steps/s release (8,367 frames/s, 140x real time), 1,818 dev. So ~16 envs on this 14-core CPU should give ~25k steps/s and 10M steps in minutes, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
-M5 result (David picked it next, 2026-10-19): crates/box-mcp, the MCP server (8 tools in tools.json, turn-based, the record replays). Smoke run with headless Claude Code (Haiku, David's subscription): it listed the tools and played look, move, punch, status; 4 calls, 21 steps (bench/smoke/2026-10-19-m5-haiku/).
-Next: M6 (#91, bench runner) is unblocked, as are M2 (#87) and M7 (#92).
-Parked: every real training or profiling run (David: "I don't intend to train on the machine just yet"). Resume when David says where compute comes from. Code, tests and seconds-long CPU smoke runs proceed.
-Needs David later: a WebMCP origin-trial token (M8); the go-ahead to run the benchmark on his subscription past the smoke cap (M6).
+As of: Mon 2026-10-19 16:35 CDT. Paused by David ("Gonna need to pause this work so I can go somewhere").
+In flight: nothing running. M1 #86, M5 #90 done; M6 #91 built (crates/box-bench, box-mcp --max-calls), committed on hero-sparks with its first result.
+Next: a capped Sonnet run (bash scripts/native.sh run -p box-bench -q -- --model sonnet), compare with Haiku, then ask David to approve a sweep (seeds x trials, models, call cap).
+Waiting on: David, sweep approval (default: none; only 1-run, 40-call capped runs). Compute for training (parked). WebMCP token (M8, later).
+Re-arm: nothing scheduled or watched.
+Verified: box-bench 4 + box-mcp 5 tests, clippy -D warnings, on the pause commit; bench/results/2026-10-19-2134-haiku/results.json (verified: true).
 ```
+
+M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
+
+M5 result: crates/box-mcp, the MCP server (8 tools in tools.json, turn-based, the record replays); smoke run with headless Claude Code in bench/smoke/.
+
+M6 so far: crates/box-bench runs `claude -p` per seed x trial through box-mcp, and replays every record before it counts.
+- **Billing:** it strips ANTHROPIC_API_KEY and stops the sweep if a session reports an API-key source (David: "try to use the max if you can").
+- **Isolation:** CLAUDE_CODE_DISABLE_CLAUDE_MDS keeps his CLAUDE.md out. Probed: --system-prompt alone doesn't, and --bare isn't logged in. It allows only the box tools, and checks that the server connected.
+- **Output:** endings plus behaviour flags (looped, hugged walls, spread the pile, passive, fumbled) and a summary (escape rate, pass^k, pass-any), written to bench/results/<stamp>-<model>/.
+- **First verified result (Haiku 5.5, seed 1, 40 calls):** out of calls after 16 s of play, 5 kills, no escape, best pile 39% of the rim, 41 calls, 39 s wall, ~395k input tokens.
+  - It punched in every direction and called look before nearly every action, so the observation costs a call each time.
+  - Worth considering: return the observation with each action, which already happens, and tell the agent that.
+- **Not yet done:** the bench page on the lab (M7).
 
 ## Findings for the bench (M6), from the M5 smoke run
 

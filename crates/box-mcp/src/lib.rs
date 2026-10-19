@@ -18,7 +18,7 @@ pub const TOOLS: &str = include_str!("../tools.json");
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 /// What the server tells the agent once, at the start: the game's rules and conventions.
-const INSTRUCTIONS: &str = "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming \
+pub const INSTRUCTIONS: &str = "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming \
 through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze \
 where they land. You escape a box when the pile of debris under your feet reaches the rim's height; then the next box \
 starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris \
@@ -56,22 +56,41 @@ pub struct Record {
     pub trace: Trace,
     pub outcome: Outcome,
     pub calls: Vec<Call>,
+    /// The cap on tool calls, if any: calls past it were refused (and are in `calls`, as errors).
+    pub max_calls: Option<u32>,
 }
 
 /// The server: one run of the game and the calls made on it.
 pub struct Server {
     env: Env,
     calls: Vec<Call>,
+    max_calls: Option<u32>,
 }
 
 impl Server {
     pub fn new(config: EnvConfig) -> Server {
-        Server { env: Env::new(config), calls: Vec::new() }
+        Server { env: Env::new(config), calls: Vec::new(), max_calls: None }
+    }
+
+    /// At most `max` tool calls (of any tool): past it, every call is refused and the run counts as over. A
+    /// benchmark's turn budget, since an agent's harness may have none.
+    pub fn with_max_calls(mut self, max: u32) -> Server {
+        self.max_calls = Some(max);
+        self
     }
 
     /// The session so far.
     pub fn record(&self) -> Record {
-        Record { trace: self.env.trace(), outcome: self.env.outcome(), calls: self.calls.clone() }
+        Record {
+            trace: self.env.trace(),
+            outcome: self.env.outcome(),
+            calls: self.calls.clone(),
+            max_calls: self.max_calls,
+        }
+    }
+
+    fn calls_left(&self) -> Option<u32> {
+        self.max_calls.map(|m| m.saturating_sub(self.calls.len() as u32))
     }
 
     /// Answers one JSON-RPC message; notifications (no `id`) get no answer.
@@ -100,7 +119,11 @@ impl Server {
         let tool = params.get("name").and_then(Value::as_str).unwrap_or("").to_owned();
         let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
         let before = self.env.trace().actions.len() as u32;
-        let outcome = self.run(&tool, &args);
+        let outcome = if self.calls_left() == Some(0) {
+            Err(json!({ "error": "out of tool calls: the run is over", "status": self.status() }))
+        } else {
+            self.run(&tool, &args)
+        };
         let steps = self.env.trace().actions.len() as u32 - before;
         let error = outcome.is_err();
         self.calls.push(Call { tool, arguments: args, steps, error });
@@ -190,7 +213,8 @@ impl Server {
             "boxes_escaped": o.escapes,
             "score": o.score,
             "game_seconds": round(self.secs(o.steps)),
-            "run_over": self.env.done(),
+            "run_over": self.env.done() || self.calls_left() == Some(0),
+            "calls_left": self.calls_left(),
         })
     }
 

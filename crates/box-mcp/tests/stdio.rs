@@ -120,6 +120,26 @@ fn an_agent_session_over_stdio_calls_every_tool_and_its_record_replays() {
 }
 
 #[test]
+fn past_the_call_cap_every_call_is_refused_and_the_record_says_so() {
+    let trace = std::env::temp_dir().join(format!("box-mcp-cap-{}.json", std::process::id()));
+    let mut c = Client::start(&["--max-calls", "2", "--trace", trace.to_str().unwrap()]);
+    c.request("initialize", json!({ "protocolVersion": "2025-11-25" }));
+    let (r, err) = c.call("look", json!({}));
+    assert!(!err && r["status"]["calls_left"] == 2, "counted before this call: {r}");
+    let (r, err) = c.call("wait", json!({ "seconds": 0.5 }));
+    assert!(!err && r["observation"]["box"] == 1, "{r}");
+    let (r, err) = c.call("look", json!({}));
+    assert!(err && r["error"].as_str().unwrap().contains("out of tool calls"), "{r}");
+    assert_eq!(r["status"]["run_over"], true);
+    c.finish();
+    let record: Record = serde_json::from_str(&std::fs::read_to_string(&trace).unwrap()).unwrap();
+    let _ = std::fs::remove_file(&trace);
+    assert_eq!(record.max_calls, Some(2));
+    assert_eq!(record.calls.len(), 3);
+    assert!(record.calls[2].error && record.calls[2].steps == 0);
+}
+
+#[test]
 fn after_the_run_ends_actions_are_refused_but_looking_still_works() {
     // A very short run: cut off after 3 steps.
     let mut c = Client::start(&["--max-steps", "3"]);

@@ -1,0 +1,105 @@
+{
+  "agent": "claude -p (Claude Code, headless) through box-mcp; subscription billing",
+  "claude_version": "2.1.303 (Claude Code)",
+  "game_commit": "6279986cfecd413a31d9f361c4ad8f28c1905bd0",
+  "game_dirty": true,
+  "max_calls": 40,
+  "model": "haiku",
+  "prompt": "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze where they land. You escape a box when the pile of debris under your feet reaches the rim's height; then the next box starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris in steps of up to 0.4 m, so heap kills in one place to build a ramp. The box clock running out costs 25 health and restarts it. One life: the run ends when your health reaches zero. Coordinates are metres on the floor from its centre: x is east (right), y is north (away from the camera, toward the back wall). The game is frozen between your tool calls; each action advances it. Call look often.\n\nYour goal: escape as many boxes as you can before you die. You have at most 40 tool calls in total (look and status count too), so make them count. Play until the run is over or your calls run out, then reply with one line saying how it went.",
+  "runs": [
+    {
+      "agent_turns": 42,
+      "analysis": {
+        "best_pile": 0.38814687728881836,
+        "calls": 41,
+        "ending": "out_of_calls",
+        "flags": [],
+        "game_seconds": 15.600000381469727,
+        "refused": 1,
+        "replayed": {
+          "box_number": 1,
+          "died": false,
+          "escapes": 0,
+          "kills": 5,
+          "obs_hash": 7821634237067505252,
+          "reward_bits": 1083687153,
+          "score": 700,
+          "steps": 234
+        },
+        "verified": true,
+        "wall_share": 0.12393162399530411
+      },
+      "dir": "s1-t1",
+      "error": null,
+      "input_tokens": 395416,
+      "output_tokens": 3993,
+      "reported_cost_usd": 0.014525760000000004,
+      "seed": 1,
+      "trial": 1,
+      "wall_seconds": 38.90505599975586
+    }
+  ],
+  "schema": "box-bench results v1 (crates/box-bench)",
+  "seeds": [
+    1
+  ],
+  "summary": {
+    "endings": [
+      [
+        "escaped",
+        0
+      ],
+      [
+        "died",
+        0
+      ],
+      [
+        "out_of_calls",
+        1
+      ],
+      [
+        "out_of_time",
+        0
+      ],
+      [
+        "stopped",
+        0
+      ]
+    ],
+    "escape_rate": 0.0,
+    "flags": [
+      [
+        "looped",
+        0
+      ],
+      [
+        "hugged_walls",
+        0
+      ],
+      [
+        "spread_the_pile",
+        0
+      ],
+      [
+        "passive",
+        0
+      ],
+      [
+        "fumbled",
+        0
+      ]
+    ],
+    "mean_best_pile": 0.38814687728881836,
+    "mean_boxes_escaped": 0.0,
+    "mean_calls": 41.0,
+    "mean_game_seconds": 15.600000381469727,
+    "mean_kills": 5.0,
+    "pass_any": 0.0,
+    "pass_k": 0.0,
+    "reported_cost_usd": 0.014525760000000004,
+    "runs": 1,
+    "verified": 1
+  },
+  "system_prompt": "You are an agent playing a video game through tools. Play it as well as you can.",
+  "trials": 1
+}

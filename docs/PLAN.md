@@ -1,6 +1,7 @@
 # Portfolio plan
 
 ```text
+PAUSED Mon 2026-10-19 16:35 CDT (David went out). Resume from docs/planning/ml-track.md's status block: M6 #91 (box-bench) next step is a capped Sonnet run, then David approves a sweep.
 ML track (2026-10-19): David picked, from portfolio research, an RL agent trained on the game, an LLM-agent benchmark, a lab page, WebMCP and a training-step write-up ("I like 1, 2, 4 (but don't pay), 5 and 6"). Plan and decisions: docs/planning/ml-track.md; spec #85, tickets #86-#95 (track:ml). The repo was made public that day (history scanned first). Next: M1 #86 (env core) and M7 #92 (lab page). Real training/profiling runs are parked until David names compute.
 As of: Thu Oct 15 2026 CDT
 In flight: branch hero-sparks (from main), previewed at https://rc-5.slayback.pages.dev (the only preview deployed; rc-3 and rc-4 are left as they are: David, 2026-10-17: "Stop doing multiple deploys every time."): the homepage sparks vary a little in size and shape (David, 2026-10-17: "add some slight variance to the size and shape of the sparks"). Merged 2026-10-17 (David: "Merge"): PR #83 (look-flat: Q74-Q79, the homepage lettering and light, touch controls, the architecture refactors, the tagline, sound) as 88d10cf, with CI blocked by the account's billing limit, so the local hooks were the gate (README rule); production redeployed from main (homepage only, the game still behind its switch).
