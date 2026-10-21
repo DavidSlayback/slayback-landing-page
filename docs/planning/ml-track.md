@@ -7,12 +7,12 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: Mon 2026-10-19 17:10 CDT. Resumed; M6 #91 runner done (423e943), two capped runs in.
-In flight: nothing running.
-Next: David approves a sweep (models, seeds x trials, call cap), then run it and add the bench table to the lab (M7 #92).
-Waiting on: David, sweep approval (default: none; only 1-run, 40-call capped runs). Compute for training (parked). WebMCP token (M8, later).
-Re-arm: nothing scheduled or watched.
-Verified: bench/results/2026-10-19-2134-haiku and 2026-10-19-2208-sonnet, both verified: true by replay.
+As of: Wed 2026-10-21 13:55 CDT. Sweep approved (David: "Go for it", to Sonnet, 5 seeds x 3 trials, 80 calls) and running.
+In flight: box-bench --model sonnet --seeds 1,2,3,4,5 --trials 3 --max-calls 80, writing bench/results/2026-10-21-*-sonnet/ (it stops itself if the plan's rate limit refuses a session).
+Next: read the sweep's results.json; if sensible, the same sweep for Haiku and Opus (the proposal David approved said: "If the numbers look sensible, Haiku and Opus follow with the same settings"); then the bench table on the lab (M7 #92).
+Waiting on: compute for training (parked). WebMCP token (M8, later).
+Re-arm: if the session dies, the sweep dies with it; rerun the same command (results so far stay in results.json).
+Verified: capped runs bench/results/2026-10-19-2134-haiku and 2026-10-19-2208-sonnet, verified: true by replay; box-bench tests at 106de63.
 ```
 
 M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
