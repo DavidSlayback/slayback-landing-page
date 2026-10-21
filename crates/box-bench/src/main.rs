@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use box_bench::{RunResult, analyse, summarise};
+use box_bench::{BASELINES, RunResult, analyse, baseline, summarise};
 use box_mcp::{INSTRUCTIONS, Record};
 use serde_json::{Value, json};
 
@@ -37,13 +37,14 @@ struct Args {
 
 fn main() {
     let args = parse();
-    if !args.allow_sweep && (args.seeds.len() as u32 * args.trials > 1 || args.max_calls > SMOKE_CALLS) {
+    let native = BASELINES.contains(&args.model.as_str());
+    if !native && !args.allow_sweep && (args.seeds.len() as u32 * args.trials > 1 || args.max_calls > SMOKE_CALLS) {
         fail(&format!(
             "more than one run or more than {SMOKE_CALLS} calls needs --allow-sweep (David approves sweeps: they use his plan)"
         ));
     }
     let server = sibling("box-mcp");
-    if !server.exists() {
+    if !native && !server.exists() {
         fail(&format!("{} not found: build it first (native.sh build -p box-mcp)", server.display()));
     }
 
@@ -62,7 +63,11 @@ fn main() {
             let dir = sweep.join(&dir_name);
             std::fs::create_dir_all(&dir).expect("a run directory");
             eprintln!("box-bench: seed {seed} trial {trial} ({})", args.model);
-            let (r, limited) = run(&args, &server, &dir, seed, &prompt, system);
+            let (r, limited) = if native {
+                (play_baseline(&args.model, &dir, seed, trial), false)
+            } else {
+                run(&args, &server, &dir, seed, &prompt, system)
+            };
             let result = RunResult { seed, trial, dir: dir_name, ..r };
             match (&result.analysis, &result.error) {
                 (Some(a), _) => eprintln!(
@@ -100,6 +105,26 @@ fn main() {
         s.pass_k * 100.0,
         sweep.join("results.json").display()
     );
+}
+
+/// A baseline's run: played here, its record kept beside it like a session's.
+fn play_baseline(name: &str, dir: &Path, seed: u32, trial: u32) -> RunResult {
+    let started = Instant::now();
+    let record = baseline(name, seed, trial).expect("a known baseline");
+    std::fs::write(dir.join("record.json"), serde_json::to_string_pretty(&record).unwrap() + "\n").unwrap();
+    RunResult {
+        seed,
+        trial,
+        dir: String::new(),
+        analysis: Some(analyse(&record)),
+        error: None,
+        wall_seconds: started.elapsed().as_secs_f32(),
+        reported_cost_usd: 0.0,
+        agent_turns: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        plan_used: None,
+    }
 }
 
 /// One agent session: launch, wait (killing it past the timeout), then check and analyse its evidence. Also says
@@ -318,7 +343,7 @@ fn parse() -> Args {
         }
     }
     if a.model.is_empty() {
-        fail("--model is required (e.g. haiku, sonnet, opus)");
+        fail("--model is required (e.g. haiku, sonnet, opus, or a baseline: brawler, random)");
     }
     a
 }

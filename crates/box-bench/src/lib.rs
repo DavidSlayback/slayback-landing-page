@@ -7,7 +7,7 @@
 //!
 //! `main.rs` launches the sessions; everything here is pure, so it is tested without an agent.
 
-use box_env::{Action, Env, Outcome};
+use box_env::{ACTIONS, Action, Env, EnvConfig, Outcome};
 use box_mcp::Record;
 use serde::{Deserialize, Serialize};
 
@@ -133,6 +133,32 @@ pub fn analyse(record: &Record) -> Analysis {
         calls: record.calls.len(),
         refused,
     }
+}
+
+/// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor.
+pub const BASELINES: [&str; 2] = ["brawler", "random"];
+
+/// Plays baseline `name` (one of [`BASELINES`]) on `seed` until the run ends, as a record like a session's (with no
+/// calls). `random` draws its actions from `seed` and `trial`; `brawler` (`box_env::brawler`: walk at the nearest
+/// enemy, punch in reach) plays the same every trial.
+pub fn baseline(name: &str, seed: u32, trial: u32) -> Option<Record> {
+    let mut env = Env::new(EnvConfig { seed, ..EnvConfig::default() });
+    let mut s = (seed.wrapping_mul(31) ^ trial.wrapping_mul(0x9E37_79B9)).max(1);
+    let mut random = move || {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        Action((s % ACTIONS as u32) as u8)
+    };
+    while !env.done() {
+        let a = match name {
+            "brawler" => box_env::brawler(env.last()),
+            "random" => random(),
+            _ => return None,
+        };
+        env.step(a);
+    }
+    Some(Record { trace: env.trace(), outcome: env.outcome(), calls: Vec::new(), max_calls: None })
 }
 
 /// One run as the results file reports it.
@@ -284,6 +310,15 @@ mod tests {
             ],
         ));
         assert!(a.flags.contains(&Flag::Fumbled) && a.flags.contains(&Flag::HuggedWalls), "{a:?}");
+    }
+
+    #[test]
+    fn baselines_play_until_they_die_and_verify() {
+        for name in BASELINES {
+            let a = analyse(&baseline(name, 1, 1).unwrap());
+            assert!(a.verified && a.ending == Ending::Died, "{name}: {a:?}");
+        }
+        assert!(baseline("nobody", 1, 1).is_none());
     }
 
     #[test]

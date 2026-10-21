@@ -7,12 +7,12 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: Wed 2026-10-21 13:55 CDT. Sweep approved (David: "Go for it", to Sonnet, 5 seeds x 3 trials, 80 calls) and running.
-In flight: box-bench --model sonnet --seeds 1,2,3,4,5 --trials 3 --max-calls 80, writing bench/results/2026-10-21-*-sonnet/ (it stops itself if the plan's rate limit refuses a session).
-Next: read the sweep's results.json; if sensible, the same sweep for Haiku and Opus (the proposal David approved said: "If the numbers look sensible, Haiku and Opus follow with the same settings"); then the bench table on the lab (M7 #92).
-Waiting on: compute for training (parked). WebMCP token (M8, later).
-Re-arm: if the session dies, the sweep dies with it; rerun the same command (results so far stay in results.json).
-Verified: capped runs bench/results/2026-10-19-2134-haiku and 2026-10-19-2208-sonnet, verified: true by replay; box-bench tests at 106de63.
+As of: Wed 2026-10-21 15:15 CDT. Sweeps done: Sonnet, Haiku, Opus (5 seeds x 3 trials, 80 calls) and both baselines; 75/75 verified; table in bench/README.md.
+In flight: nothing running.
+Next: David picks how the bench should separate agents now that nothing escapes box 1 (see bench/README.md "What it shows"); then the bench table on the lab (M7 #92), or M2 #87.
+Waiting on: David, the bench's next design step. Compute for training (parked). WebMCP token (M8, later).
+Re-arm: nothing scheduled or watched.
+Verified: bench/results/2026-10-21-{1855-sonnet,1909-haiku,1926-opus,2006-brawler,2006-random}/results.json, every run verified: true by replay at game commit b589b2e.
 ```
 
 M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
