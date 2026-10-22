@@ -1,0 +1,71 @@
+{
+  "trace": {
+    "config": {
+      "seed": 1,
+      "frame_skip": 4,
+      "max_steps": 20000
+    },
+    "actions": [
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "outcome": {
+    "steps": 21,
+    "box_number": 1,
+    "score": 0,
+    "kills": 0,
+    "escapes": 0,
+    "died": false,
+    "reward_bits": 3165390898,
+    "obs_hash": 8951469347417691378
+  },
+  "calls": [
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "north",
+        "seconds": 1
+      },
+      "steps": 15,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {},
+      "steps": 6,
+      "error": false
+    },
+    {
+      "tool": "status",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    }
+  ]
+}

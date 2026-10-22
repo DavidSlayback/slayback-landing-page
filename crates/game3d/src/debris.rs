@@ -97,6 +97,10 @@ fn listen(
 /// footprint plus the reach of the largest piece (a demo stair, about 0.7 m from its centre), with room to spare.
 const NEAR: f32 = 1.5;
 
+/// A `below` for [`pile_under`] that counts the whole pile: far above anything in the box. Not `f32::MAX`: the
+/// height test casts a ray down from `below`, and from there a piece's top rounds away to nothing.
+pub const ANY_HEIGHT: f32 = 100.0;
+
 /// The top of the debris pile under `spot` (floor x and z), over a footprint `footprint` wide, counting only pile at
 /// or below `below` (`game_core::climb::pile_height`), 0 (the floor) if nothing is under it. Debris is the only thing
 /// that counts: not the floor, the walls, or fighters.

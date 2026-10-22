@@ -1,0 +1,992 @@
+{
+  "trace": {
+    "config": {
+      "seed": 5,
+      "frame_skip": 4,
+      "max_steps": 20000
+    },
+    "actions": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      10,
+      10,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      10,
+      10,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      10,
+      10,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      10,
+      10,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      20,
+      20,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      20,
+      20,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      15,
+      15,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      15,
+      15,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      15,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      30,
+      30,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      40,
+      40,
+      40,
+      40,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      35,
+      35,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      40,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      40,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      25,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      40,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      40,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      5,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "outcome": {
+    "steps": 397,
+    "box_number": 1,
+    "score": 1450,
+    "kills": 8,
+    "escapes": 0,
+    "died": true,
+    "reward_bits": 1070089948,
+    "obs_hash": 7286380685203523633
+  },
+  "calls": [
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "wait",
+      "arguments": {
+        "seconds": 3
+      },
+      "steps": 45,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "west",
+        "seconds": 0.4
+      },
+      "steps": 6,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "east",
+        "seconds": 0.4
+      },
+      "steps": 6,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "north",
+        "seconds": 0.5
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "wait",
+      "arguments": {
+        "seconds": 1
+      },
+      "steps": 15,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northwest"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "northwest"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "east",
+        "seconds": 0.3
+      },
+      "steps": 5,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "north"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "north"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "north",
+        "seconds": 0.4
+      },
+      "steps": 6,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "north"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "southwest"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "southeast",
+        "seconds": 0.2
+      },
+      "steps": 3,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "southeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "south"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "southeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "southeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "move",
+      "arguments": {
+        "direction": "west",
+        "seconds": 0.3
+      },
+      "steps": 5,
+      "error": false
+    },
+    {
+      "tool": "kick",
+      "arguments": {
+        "direction": "west"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "southeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "southeast"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "wait",
+      "arguments": {
+        "seconds": 1
+      },
+      "steps": 15,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "punch",
+      "arguments": {
+        "direction": "east"
+      },
+      "steps": 8,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    },
+    {
+      "tool": "wait",
+      "arguments": {
+        "seconds": 2
+      },
+      "steps": 11,
+      "error": false
+    },
+    {
+      "tool": "look",
+      "arguments": {},
+      "steps": 0,
+      "error": false
+    }
+  ],
+  "max_calls": 80
+}

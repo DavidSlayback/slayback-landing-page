@@ -25,14 +25,15 @@ use game3d::demo::Demo;
 use game3d::enemy::{Brain, Waves, enemy, fodder};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
+use game3d::hint::GrabTip;
 use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
-use game3d::run::{InBox, RunState};
+use game3d::run::{Climb, InBox, RunState};
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
 use game3d::store::Store;
 
-const FPS: f32 = 60.0;
+use game3d::headless::FPS;
 
 /// A game app without window or renderer. Keyboard state is driven by the test (no input plugin clears it), and
 /// enemies only appear where a test puts them. Records (the best score, the sound setting) go to a fresh directory.
@@ -45,18 +46,13 @@ fn headless_with(store: Store) -> App {
     headless_and(store, |_| {})
 }
 
-/// A headless app with `extra` set up before it starts (comfort settings, the demo).
+/// A headless app with `extra` set up before it starts (comfort settings, the demo). No enemies come through the
+/// doors.
 fn headless_and(store: Store, extra: impl FnOnce(&mut App)) -> App {
-    let mut app = App::new();
-    app.add_plugins((MinimalPlugins, TransformPlugin, game3d::plugin))
-        .insert_resource(Waves { enabled: false, ..default() })
-        .insert_resource(store);
-    extra(&mut app);
-    app.init_resource::<ButtonInput<KeyCode>>()
-        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / FPS)));
-    app.finish();
-    app.cleanup();
-    app
+    game3d::headless::app(store, |app| {
+        app.insert_resource(Waves { enabled: false, ..default() });
+        extra(app);
+    })
 }
 
 /// An empty directory of records of the test's own, so scenarios never read or overwrite a real best score.
@@ -678,6 +674,9 @@ fn heap(app: &mut App, n: usize, centre: Vec2) {
 fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     let mut app = standing();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
+    // The heap is in a corner, against the walls: out of reach of the rim, so climbing it never ends the box (that
+    // would clear the pieces this watches). How high a climb gets differs a little between platforms' floats.
+    app.world_mut().resource_mut::<Arena>().rim = 10.0;
     let centre = Vec2::new(-6.6, -4.1);
     heap(&mut app, 25, centre);
     for _ in 0..((SETTLE + 6.0) * 30.0) as usize {
@@ -1034,6 +1033,74 @@ fn a_run_starts_from_the_overlay_scores_a_kill_and_ends_on_the_game_over_screen_
     let mut next = headless_with(store);
     step(&mut next, 1.0 / FPS);
     assert_eq!(next.world().resource::<BestScore>().0.as_ref(), Some(&best), "the best carries over");
+}
+
+fn climb(app: &App) -> Climb {
+    *app.world().resource::<Climb>()
+}
+
+#[test]
+fn the_climb_gauge_measures_the_pile_underfoot_and_the_tallest_heap_against_the_rim() {
+    let mut app = standing();
+    let c = climb(&app);
+    assert_eq!((c.under, c.tallest), (0.0, 0.0), "an empty box");
+    assert_eq!(c.rim, game_core::run::box_spec(1).rim);
+    // A block lying 3 m off: the tallest heap in the box, but not under the player.
+    let at = player(&mut app).0;
+    let spot = Vec3::new(at.x + 3.0, 0.0, at.z);
+    block(&mut app, [0.8, 0.6, 0.8], spot.with_y(0.3), 0.0);
+    step(&mut app, 0.1);
+    let c = climb(&app);
+    assert!((c.tallest - 0.6).abs() < 0.05 && c.under == 0.0, "{c:?}");
+    // Agents see it too: the observation's heightmap has the block in it.
+    let seen = game3d::observe::observe(app.world_mut()).heights.iter().copied().fold(0.0, f32::max);
+    assert!((seen - 0.6).abs() < 0.05, "the heightmap's tallest cell: {seen}");
+    // Standing on it.
+    teleport(&mut app, spot.with_y(0.6 + HEIGHT / 2.0 + 0.05));
+    step(&mut app, 0.3);
+    let c = climb(&app);
+    assert!((c.under - 0.6).abs() < 0.1 && c.tallest >= c.under, "{c:?}");
+}
+
+fn tip_showing(app: &App) -> bool {
+    app.world().resource::<GrabTip>().showing()
+}
+
+#[test]
+fn the_first_kill_of_a_run_tips_the_player_off_about_grabbing_blocks_until_they_grab_one() {
+    let mut app = standing();
+    assert!(!tip_showing(&app), "no tip before a kill");
+    kill_one(&mut app);
+    assert!(tip_showing(&app), "the first kill brings up the tip");
+    step(&mut app, game3d::hint::SHOW);
+    assert!(!tip_showing(&app), "it goes after a while");
+    teleport(&mut app, SPAWN + Vec3::X * -4.0);
+    step(&mut app, 0.5);
+    kill_one(&mut app);
+    assert!(!tip_showing(&app), "once a run");
+
+    // A fresh run tips again, until the player grabs a block.
+    time_out(&mut app);
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.5);
+    kill_one(&mut app);
+    assert!(tip_showing(&app), "a new run's first kill tips again");
+    let at = player(&mut app).0;
+    let part = block(&mut app, TORSO, Vec3::new(at.x - 0.9, TORSO[1] / 2.0, at.z), 0.0);
+    hold(&mut app, &[KeyCode::KeyA], 0.05);
+    step(&mut app, 0.2);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, part), "grabbed a block");
+    step(&mut app, 0.05);
+    assert!(!tip_showing(&app) && app.world().resource::<GrabTip>().learned, "learned: the tip goes for good");
+    tap(&mut app, KeyCode::KeyL);
+    time_out(&mut app);
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.5);
+    hold(&mut app, &[KeyCode::KeyD], 0.05);
+    step(&mut app, 0.3);
+    kill_one(&mut app);
+    assert!(!tip_showing(&app), "not even in a new run");
 }
 
 #[test]
@@ -1615,6 +1682,55 @@ fn the_demo_fight_punches_kicks_drop_kicks_and_spin_throws_with_a_kill_each_beat
     let (at, ..) = player(&mut app);
     let half = Arena::default().floor / 2.0;
     assert!(at.x.abs() < half.x - 1.0, "the player keeps off the walls: {at}");
+}
+
+#[test]
+fn the_tour_demo_shows_every_move_then_heaps_stacks_and_climbs_out_of_its_mini_box() {
+    let mut app = watched(|app| {
+        app.add_plugins(Demo { tour: true, ..default() });
+    });
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(app.world().resource::<Arena>().rim, game3d::demo::TOUR_RIM, "a mini box");
+    let (mut out, mut held_block) = (None, false);
+    for frame in 0..(40.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        held_block |= holding(&mut app).is_some_and(|c| c.kind == Held::Debris);
+        if box_number(&app) == 2 {
+            out = Some(frame as f32 / FPS);
+            break;
+        }
+    }
+    let seen = app.world().resource::<Seen>();
+    for mv in [Move::Punch, Move::Kick, Move::DropKick] {
+        assert!(seen.blows.contains(&Feel::of(mv)), "a {mv:?} landed: {:?}", seen.blows);
+    }
+    assert!(seen.thrown, "a fodder was spin-thrown");
+    assert!(held_block, "a block was grabbed");
+    let out = out.unwrap_or_else(|| panic!("climbed out: {:?}, {} kills", climb(&app), seen.kills));
+    eprintln!("tour: out of the mini box at {out:.1} s of play, {} kills", seen.kills);
+}
+
+#[test]
+fn the_tour_climbs_out_at_any_frame_rate() {
+    // The browser's frames are uneven, so the kills land a little differently: the tour must get out regardless. 300:
+    // the clip is recorded in slow motion (0.2), so its game frames are that fine.
+    for fps in [30.0, 60.0, 144.0, 300.0] {
+        let mut app = watched(|app| {
+            app.add_plugins(Demo { tour: true, ..default() });
+        });
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / fps)));
+        let mut out = None;
+        for frame in 0..(40.0 * fps) as usize {
+            app.update();
+            if box_number(&app) == 2 {
+                out = Some(frame as f32 / fps);
+                break;
+            }
+        }
+        let kills = app.world().resource::<Seen>().kills;
+        let out = out.unwrap_or_else(|| panic!("{fps} fps: never out: {:?}, {kills} kills", climb(&app)));
+        eprintln!("tour at {fps} fps: out at {out:.1} s, {kills} kills");
+    }
 }
 
 #[test]

@@ -15,7 +15,7 @@ use game_core::run::{BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
 
 use crate::Frame;
 use crate::arena::Arena;
-use crate::debris::{Piece, pile_under};
+use crate::debris::{ANY_HEIGHT, Piece, pile_under};
 use crate::enemy::{WallDoor, Waves};
 use crate::fighter::{Combat, Defeated, Hp, Team};
 use crate::flow::Phase;
@@ -24,6 +24,15 @@ use crate::player::{HEIGHT, MAX_HP, Player, SPAWN};
 /// The run in progress.
 #[derive(Resource, Default)]
 pub struct RunState(pub Run);
+
+/// How the climb out stands, for the HUD's climb gauge (playtest feedback, Q80): the pile under the player's feet, the
+/// tallest settled heap anywhere in the box, and the rim they must reach, all metres above the floor.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Climb {
+    pub under: f32,
+    pub tallest: f32,
+    pub rim: f32,
+}
 
 /// A box begins: the first one, the next one after an escape, or box 1 again after a death.
 #[derive(Message, Clone, Copy, Debug)]
@@ -51,13 +60,14 @@ pub struct InBox;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<RunState>()
+        .init_resource::<Climb>()
         .add_message::<BoxStarted>()
         .add_message::<BoxEnded>()
         .add_systems(Startup, |run: Res<RunState>, mut started: MessageWriter<BoxStarted>| {
             started.write(BoxStarted(run.0.spec));
         })
         .add_systems(Update, (clock, escape, die).chain().in_set(Frame::Resolve).after(Combat))
-        .add_systems(Update, announce.in_set(Frame::Show))
+        .add_systems(Update, (announce, measure).in_set(Frame::Show))
         // Leaving the game-over screen starts a fresh run.
         .add_systems(OnExit(Phase::Over), restart);
 }
@@ -119,8 +129,7 @@ fn escape(
 ) {
     let Ok((_, &Position(at), _, hp)) = reset.player.single() else { return };
     let hp = hp.0;
-    let feet = at.y - HEIGHT / 2.0;
-    if !escaped(pile_under(pieces.iter(), at.xz(), FOOTPRINT, feet + FEET), arena.rim) {
+    if !escaped(standing_on(pieces.iter(), at), arena.rim) {
         return;
     }
     ended.write(BoxEnded::Escaped { number: run.0.spec.number, time_left: run.0.time_left });
@@ -129,6 +138,33 @@ fn escape(
         hp.0.hp = refilled;
     }
     reset.apply(run.0.spec);
+}
+
+/// How high the pile under a player whose capsule is centred at `at` stands, metres above the floor: what the escape
+/// test measures (agents see it too, `observe`).
+pub fn standing_on<'a>(pieces: impl IntoIterator<Item = (&'a Piece, &'a Transform)>, at: Vec3) -> f32 {
+    let feet = at.y - HEIGHT / 2.0;
+    pile_under(pieces, at.xz(), FOOTPRINT, feet + FEET)
+}
+
+/// The climb gauge's numbers. The tallest heap counts only frozen debris, so a piece flung through the air doesn't
+/// flash a peak; it's each piece's top at its centre (`pile_under` over that one piece).
+fn measure(
+    arena: Res<Arena>,
+    pieces: Query<(&Piece, &Transform, &RigidBody), Without<Player>>,
+    player: Query<&Position, With<Player>>,
+    mut climb: ResMut<Climb>,
+) {
+    let under = player.single().map_or(0.0, |p| standing_on(pieces.iter().map(|(p, t, _)| (p, t)), p.0));
+    let tallest = pieces
+        .iter()
+        .filter(|(.., body)| **body == RigidBody::Static)
+        .map(|(p, t, _)| pile_under(std::iter::once((p, t)), t.translation.xz(), 0.05, ANY_HEIGHT))
+        .fold(under, f32::max);
+    let next = Climb { under, tallest, rim: arena.rim };
+    if *climb != next {
+        *climb = next;
+    }
 }
 
 /// The player's health ran out (a blow or the clock): the run ends on the game-over screen.

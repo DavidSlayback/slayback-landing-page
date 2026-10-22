@@ -1,7 +1,9 @@
-//! The screens (`bevy_ui`), as in the 2.5D game (decision Q34): the start overlay with the controls, the pause screen
-//! with the sound toggle, and the game-over screen with the score, the box reached and the best. On a touch screen
-//! (`input::Touch`) they give the touch controls and say "tap". Only the window adds this plugin, and it puts a fresh
-//! page on the start overlay (the demo skips it).
+//! The screens (`bevy_ui`), as in the 2.5D game (decision Q34): the start overlay with the goal and the controls, the
+//! pause screen with them again and the sound toggle (playtest feedback, Q80: they weren't anywhere once the game had
+//! started), and the game-over screen with the score, the box reached and the best. On a touch screen
+//! (`input::Touch`) they give the touch controls and say "tap". The start and pause screens keep their right side
+//! free for the tour clip, which the play page lays over the canvas there ([`CLIP`]). Only the window adds this
+//! plugin, and it puts a fresh page on the start overlay (the demo skips it).
 
 use bevy::prelude::*;
 
@@ -36,19 +38,31 @@ struct Prompt {
     touch: &'static str,
 }
 
+/// Where the tour clip goes on the start and pause screens, as shares of the stage: from its right edge, from its
+/// top, and the slot's width and height (16:9 on a 16:9 stage). `site/play/index.html` places the video by the same
+/// numbers; the screens' text keeps to the left of it.
+pub const CLIP: [f32; 4] = [0.04, 0.32, 0.36, 0.36];
+
+/// The goal, on the start and pause screens. Says outright that the blocks can be picked up (Q80: a playtester found
+/// out only after a dozen runs). Short lines: the text has the stage's left 60% (a phone held sideways is 670 to 930
+/// pixels across).
+const GOAL: &str = "Beaten enemies break into blocks. Grab them (even once\n\
+    they've landed), heap them up and climb: when the pile\n\
+    under your feet reaches the rim, you escape the box.";
+
 const CONTROLS: &str = "WASD / arrows  move      Space / Shift  dash\n\
     J / left click  punch      K / right click  kick\n\
-    attack while dashing  drop-kick\n\
-    L / middle click  grab      attack while holding  spin-throw\n\
-    Esc  pause      gamepad: stick, A dash, X punch, Y kick, B grab, Start pause\n\n\
-    Pile the fallen up to the rim to escape the box.";
+    dash + attack  drop-kick\n\
+    L / middle click  grab an enemy or a block\n\
+    holding + attack  spin-throw      Esc  pause\n\
+    gamepad: stick, A dash, X punch, Y kick, B grab, Start pause";
 
-// Short lines: a phone held sideways is about 670 to 930 pixels across.
+const TOUCH_GOAL: &str = GOAL;
+
 const TOUCH_CONTROLS: &str = "left thumb  move      right thumb  the buttons, or\n\
     tap  punch      swipe  dash that way      hold  grab\n\
     dash + attack  drop-kick      carrying + attack  spin-throw\n\
-    tap the score  pause\n\n\
-    Pile the fallen up to the rim to escape the box.";
+    tap the score  pause";
 
 fn text(s: impl Into<String>, size: f32) -> impl Bundle {
     (Text::new(s), TextFont::from_font_size(size), TextColor(INK), TextLayout::justify(Justify::Center))
@@ -61,6 +75,7 @@ fn spawn(mut commands: Commands) {
             Phase::Start,
             &[
                 (Prompt { keys: "ESCAPE THE BOX", touch: "ESCAPE THE BOX" }, 46.0),
+                (Prompt { keys: GOAL, touch: TOUCH_GOAL }, 20.0),
                 (Prompt { keys: CONTROLS, touch: TOUCH_CONTROLS }, 18.0),
                 (start, 22.0),
             ],
@@ -69,12 +84,17 @@ fn spawn(mut commands: Commands) {
             Phase::Paused,
             &[
                 (Prompt { keys: "PAUSED", touch: "PAUSED" }, 46.0),
+                (Prompt { keys: GOAL, touch: TOUCH_GOAL }, 20.0),
+                (Prompt { keys: CONTROLS, touch: TOUCH_CONTROLS }, 18.0),
                 (Prompt { keys: "Esc or Start to resume", touch: "Tap to resume" }, 22.0),
             ],
         ),
         (Phase::Over, &[(Prompt { keys: "GAME OVER", touch: "GAME OVER" }, 46.0)]),
     ];
     for (phase, lines) in screens {
+        // The start and pause screens leave the clip's slot (and a margin) to their right.
+        let clip = matches!(phase, Phase::Start | Phase::Paused);
+        let right = if clip { Val::Percent((CLIP[0] * 2.0 + CLIP[2]) * 100.0) } else { Val::Px(0.0) };
         commands
             .spawn((
                 Screen(phase),
@@ -85,7 +105,8 @@ fn spawn(mut commands: Commands) {
                     flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    row_gap: Val::Px(26.0),
+                    row_gap: Val::Px(22.0),
+                    padding: UiRect { right, ..default() },
                     display: Display::None,
                     ..default()
                 },

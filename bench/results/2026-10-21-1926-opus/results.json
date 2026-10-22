@@ -1,0 +1,560 @@
+{
+  "agent": "claude -p (Claude Code, headless) through box-mcp; subscription billing",
+  "claude_version": "2.1.305 (Claude Code)",
+  "game_commit": "b589b2e59546fdb284210a0fdaf4c4ab270c26f6",
+  "game_dirty": true,
+  "max_calls": 80,
+  "model": "opus",
+  "prompt": "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze where they land. You escape a box when the pile of debris under your feet reaches the rim's height; then the next box starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris in steps of up to 0.4 m, so heap kills in one place to build a ramp. The box clock running out costs 25 health and restarts it. One life: the run ends when your health reaches zero. Coordinates are metres on the floor from its centre: x is east (right), y is north (away from the camera, toward the back wall). The game is frozen between your tool calls; each action advances it. Call look often.\n\nYour goal: escape as many boxes as you can before you die. You have at most 80 tool calls in total (look and status count too), so make them count. Play until the run is over or your calls run out, then reply with one line saying how it went.",
+  "runs": [
+    {
+      "agent_turns": 83,
+      "analysis": {
+        "best_pile": 0.40687087178230286,
+        "calls": 82,
+        "ending": "out_of_calls",
+        "flags": [],
+        "game_seconds": 42.79999923706055,
+        "refused": 2,
+        "replayed": {
+          "box_number": 1,
+          "died": false,
+          "escapes": 0,
+          "kills": 11,
+          "obs_hash": 14137829480340230613,
+          "reward_bits": 1092041225,
+          "score": 1900,
+          "steps": 642
+        },
+        "verified": true,
+        "wall_share": 0.24922119081020355
+      },
+      "dir": "s1-t1",
+      "error": null,
+      "input_tokens": 2615908,
+      "output_tokens": 9122,
+      "plan_used": 0.04,
+      "reported_cost_usd": 1.466813,
+      "seed": 1,
+      "trial": 1,
+      "wall_seconds": 177.2716522216797
+    },
+    {
+      "agent_turns": 67,
+      "analysis": {
+        "best_pile": 0.10942172259092331,
+        "calls": 66,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 25.133333206176758,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 9,
+          "obs_hash": 4758807252451466694,
+          "reward_bits": 1069395356,
+          "score": 1250,
+          "steps": 377
+        },
+        "verified": true,
+        "wall_share": 0.14588859677314758
+      },
+      "dir": "s1-t2",
+      "error": null,
+      "input_tokens": 1783063,
+      "output_tokens": 6836,
+      "plan_used": 0.05,
+      "reported_cost_usd": 1.0625908000000002,
+      "seed": 1,
+      "trial": 2,
+      "wall_seconds": 138.68919372558594
+    },
+    {
+      "agent_turns": 81,
+      "analysis": {
+        "best_pile": 0.3950059711933136,
+        "calls": 80,
+        "ending": "out_of_calls",
+        "flags": [],
+        "game_seconds": 29.200000762939453,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": false,
+          "escapes": 0,
+          "kills": 10,
+          "obs_hash": 439186664225598581,
+          "reward_bits": 1091139804,
+          "score": 1600,
+          "steps": 438
+        },
+        "verified": true,
+        "wall_share": 0.027397260069847107
+      },
+      "dir": "s1-t3",
+      "error": null,
+      "input_tokens": 2707713,
+      "output_tokens": 8810,
+      "plan_used": 0.05,
+      "reported_cost_usd": 1.4149888000000004,
+      "seed": 1,
+      "trial": 3,
+      "wall_seconds": 141.4557647705078
+    },
+    {
+      "agent_turns": 75,
+      "analysis": {
+        "best_pile": 0.3599033057689667,
+        "calls": 74,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 31.933332443237305,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 8,
+          "obs_hash": 1793062387140718607,
+          "reward_bits": 1066702320,
+          "score": 1100,
+          "steps": 479
+        },
+        "verified": true,
+        "wall_share": 0.018789144232869148
+      },
+      "dir": "s2-t1",
+      "error": null,
+      "input_tokens": 2707461,
+      "output_tokens": 8969,
+      "plan_used": 0.05,
+      "reported_cost_usd": 1.3901,
+      "seed": 2,
+      "trial": 1,
+      "wall_seconds": 163.0374298095703
+    },
+    {
+      "agent_turns": 82,
+      "analysis": {
+        "best_pile": 0.44126638770103455,
+        "calls": 81,
+        "ending": "out_of_calls",
+        "flags": [],
+        "game_seconds": 33.46666717529297,
+        "refused": 1,
+        "replayed": {
+          "box_number": 1,
+          "died": false,
+          "escapes": 0,
+          "kills": 12,
+          "obs_hash": 4216581207992842004,
+          "reward_bits": 1093099100,
+          "score": 2150,
+          "steps": 502
+        },
+        "verified": true,
+        "wall_share": 0.1533864587545395
+      },
+      "dir": "s2-t2",
+      "error": null,
+      "input_tokens": 3510796,
+      "output_tokens": 9690,
+      "plan_used": 0.05,
+      "reported_cost_usd": 1.6217114000000006,
+      "seed": 2,
+      "trial": 2,
+      "wall_seconds": 151.01731872558594
+    },
+    {
+      "agent_turns": 59,
+      "analysis": {
+        "best_pile": 0.3719855844974518,
+        "calls": 58,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 28.799999237060547,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 7,
+          "obs_hash": 3297466714320623612,
+          "reward_bits": 1047367488,
+          "score": 900,
+          "steps": 432
+        },
+        "verified": true,
+        "wall_share": 0.1527777761220932
+      },
+      "dir": "s2-t3",
+      "error": null,
+      "input_tokens": 1532558,
+      "output_tokens": 6923,
+      "plan_used": 0.05,
+      "reported_cost_usd": 0.9628513999999998,
+      "seed": 2,
+      "trial": 3,
+      "wall_seconds": 144.255126953125
+    },
+    {
+      "agent_turns": 63,
+      "analysis": {
+        "best_pile": 0.25195980072021484,
+        "calls": 62,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 25.733333587646484,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 9,
+          "obs_hash": 5036434814938451156,
+          "reward_bits": 1073053424,
+          "score": 1250,
+          "steps": 386
+        },
+        "verified": true,
+        "wall_share": 0.09585492312908173
+      },
+      "dir": "s3-t1",
+      "error": null,
+      "input_tokens": 1837099,
+      "output_tokens": 7138,
+      "plan_used": 0.06,
+      "reported_cost_usd": 1.0537908,
+      "seed": 3,
+      "trial": 1,
+      "wall_seconds": 209.6244354248047
+    },
+    {
+      "agent_turns": 51,
+      "analysis": {
+        "best_pile": 0.29954618215560913,
+        "calls": 50,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 19.600000381469727,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 5,
+          "obs_hash": 6057670324199076595,
+          "reward_bits": 3219337184,
+          "score": 1000,
+          "steps": 294
+        },
+        "verified": true,
+        "wall_share": 0.16326530277729034
+      },
+      "dir": "s3-t2",
+      "error": null,
+      "input_tokens": 1136508,
+      "output_tokens": 6981,
+      "plan_used": 0.06,
+      "reported_cost_usd": 0.8151957999999999,
+      "seed": 3,
+      "trial": 2,
+      "wall_seconds": 109.94337463378906
+    },
+    {
+      "agent_turns": 70,
+      "analysis": {
+        "best_pile": 0.31741803884506226,
+        "calls": 69,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 29.266666412353516,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 8,
+          "obs_hash": 8579028753262074419,
+          "reward_bits": 1066325092,
+          "score": 1150,
+          "steps": 439
+        },
+        "verified": true,
+        "wall_share": 0.111617311835289
+      },
+      "dir": "s3-t3",
+      "error": null,
+      "input_tokens": 2257844,
+      "output_tokens": 8039,
+      "plan_used": 0.06,
+      "reported_cost_usd": 1.2328356000000005,
+      "seed": 3,
+      "trial": 3,
+      "wall_seconds": 253.17027282714844
+    },
+    {
+      "agent_turns": 81,
+      "analysis": {
+        "best_pile": 0.3597700595855713,
+        "calls": 80,
+        "ending": "out_of_calls",
+        "flags": [],
+        "game_seconds": 33.66666793823242,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": false,
+          "escapes": 0,
+          "kills": 14,
+          "obs_hash": 14978557620557733981,
+          "reward_bits": 1095189915,
+          "score": 2900,
+          "steps": 505
+        },
+        "verified": true,
+        "wall_share": 0.039603959769010544
+      },
+      "dir": "s4-t1",
+      "error": null,
+      "input_tokens": 3100072,
+      "output_tokens": 8776,
+      "plan_used": 0.06,
+      "reported_cost_usd": 1.4895648000000006,
+      "seed": 4,
+      "trial": 1,
+      "wall_seconds": 202.8154754638672
+    },
+    {
+      "agent_turns": 79,
+      "analysis": {
+        "best_pile": 0.3659030497074127,
+        "calls": 78,
+        "ending": "died",
+        "flags": [
+          "spread_the_pile"
+        ],
+        "game_seconds": 37.46666717529297,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 17,
+          "obs_hash": 14854744471967764397,
+          "reward_bits": 1092710294,
+          "score": 2850,
+          "steps": 562
+        },
+        "verified": true,
+        "wall_share": 0.0569395013153553
+      },
+      "dir": "s4-t2",
+      "error": null,
+      "input_tokens": 3325379,
+      "output_tokens": 9251,
+      "plan_used": 0.07,
+      "reported_cost_usd": 1.5560908000000009,
+      "seed": 4,
+      "trial": 2,
+      "wall_seconds": 146.9644775390625
+    },
+    {
+      "agent_turns": 55,
+      "analysis": {
+        "best_pile": 0.2266492396593094,
+        "calls": 54,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 23.733333587646484,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 6,
+          "obs_hash": 584695384923023017,
+          "reward_bits": 3212546392,
+          "score": 800,
+          "steps": 356
+        },
+        "verified": true,
+        "wall_share": 0.0
+      },
+      "dir": "s4-t3",
+      "error": null,
+      "input_tokens": 1063775,
+      "output_tokens": 5771,
+      "plan_used": 0.07,
+      "reported_cost_usd": 0.8020184,
+      "seed": 4,
+      "trial": 3,
+      "wall_seconds": 130.4619140625
+    },
+    {
+      "agent_turns": 76,
+      "analysis": {
+        "best_pile": 0.4532857835292816,
+        "calls": 75,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 32.0,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 12,
+          "obs_hash": 16252352122329275650,
+          "reward_bits": 1084954397,
+          "score": 1950,
+          "steps": 480
+        },
+        "verified": true,
+        "wall_share": 0.23333333432674408
+      },
+      "dir": "s5-t1",
+      "error": null,
+      "input_tokens": 2374402,
+      "output_tokens": 8272,
+      "plan_used": 0.07,
+      "reported_cost_usd": 1.3141675999999998,
+      "seed": 5,
+      "trial": 1,
+      "wall_seconds": 124.45193481445312
+    },
+    {
+      "agent_turns": 72,
+      "analysis": {
+        "best_pile": 0.24894960224628448,
+        "calls": 71,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 31.933332443237305,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 8,
+          "obs_hash": 3196620809454676565,
+          "reward_bits": 1065511960,
+          "score": 1100,
+          "steps": 479
+        },
+        "verified": true,
+        "wall_share": 0.17536534368991852
+      },
+      "dir": "s5-t2",
+      "error": null,
+      "input_tokens": 2638745,
+      "output_tokens": 9931,
+      "plan_used": 0.07,
+      "reported_cost_usd": 1.3809328,
+      "seed": 5,
+      "trial": 2,
+      "wall_seconds": 135.2030792236328
+    },
+    {
+      "agent_turns": 71,
+      "analysis": {
+        "best_pile": 0.27667152881622314,
+        "calls": 70,
+        "ending": "died",
+        "flags": [],
+        "game_seconds": 32.400001525878906,
+        "refused": 0,
+        "replayed": {
+          "box_number": 1,
+          "died": true,
+          "escapes": 0,
+          "kills": 10,
+          "obs_hash": 11976808849223611576,
+          "reward_bits": 1077883070,
+          "score": 1350,
+          "steps": 486
+        },
+        "verified": true,
+        "wall_share": 0.13374485075473785
+      },
+      "dir": "s5-t3",
+      "error": null,
+      "input_tokens": 2431851,
+      "output_tokens": 7689,
+      "plan_used": 0.07,
+      "reported_cost_usd": 1.2644187999999998,
+      "seed": 5,
+      "trial": 3,
+      "wall_seconds": 122.19124603271484
+    }
+  ],
+  "schema": "box-bench results v1 (crates/box-bench)",
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "summary": {
+    "endings": [
+      [
+        "escaped",
+        0
+      ],
+      [
+        "died",
+        11
+      ],
+      [
+        "out_of_calls",
+        4
+      ],
+      [
+        "out_of_time",
+        0
+      ],
+      [
+        "stopped",
+        0
+      ]
+    ],
+    "escape_rate": 0.0,
+    "flags": [
+      [
+        "looped",
+        0
+      ],
+      [
+        "hugged_walls",
+        0
+      ],
+      [
+        "spread_the_pile",
+        1
+      ],
+      [
+        "passive",
+        0
+      ],
+      [
+        "fumbled",
+        0
+      ]
+    ],
+    "mean_best_pile": 0.3256404995918274,
+    "mean_boxes_escaped": 0.0,
+    "mean_calls": 70.0,
+    "mean_game_seconds": 30.475555419921875,
+    "mean_kills": 9.733333587646484,
+    "pass_any": 0.0,
+    "pass_k": 0.0,
+    "reported_cost_usd": 18.828070800000006,
+    "runs": 15,
+    "verified": 15
+  },
+  "system_prompt": "You are an agent playing a video game through tools. Play it as well as you can.",
+  "trials": 3
+}

@@ -1,0 +1,28 @@
+{
+  "result": "HP 100, box 1, kills 0.",
+  "is_error": false,
+  "num_turns": 5,
+  "stop_reason": "end_turn",
+  "duration_ms": 4974,
+  "total_cost_usd": 0.0010544,
+  "permission_denials": [],
+  "model_usage": {
+    "claude-haiku-5-5": {
+      "inputTokens": 8,
+      "outputTokens": 179,
+      "cacheReadInputTokens": 27170,
+      "cacheCreationInputTokens": 3462,
+      "webSearchRequests": 0,
+      "costUSD": 0.0010544,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 0,
+      "canonicalModel": "claude-haiku-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "note": "total_cost_usd is Claude Code's list-price estimate; the run used David's subscription (no ANTHROPIC_API_KEY in the process).",
+  "command": "claude -p <prompt> --mcp-config box.json --strict-mcp-config --tools= --allowedTools=mcp__box__look,...,mcp__box__wait --setting-sources project --no-session-persistence --output-format json --model haiku",
+  "prompt": "You are connected to a game through the box tools. Smoke test, at most 6 tool calls: call look, then move north for 1 second, then punch, then status. Reply with one line: your hp, box number and kills from the last status."
+}

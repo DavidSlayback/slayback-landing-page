@@ -1,6 +1,8 @@
 //! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in Rumble Box's
 //! health green, then the box number, the box clock, and the score with its streak multiplier; on a touch screen, a
-//! pause sign first, since a tap on the HUD pauses. The start, pause and game-over screens are `screens`.
+//! pause sign first, since a tap on the HUD pauses. Under it, the climb gauge (Q80): how high the pile under the
+//! player stands against the rim, in the player's ring colour, with a tick at the tallest heap in the box. The start,
+//! pause and game-over screens are `screens`.
 
 use bevy::prelude::*;
 
@@ -9,11 +11,11 @@ use crate::input::Touch;
 use crate::look::Palette;
 use crate::paint::{Role, colour};
 use crate::player::Player;
-use crate::run::RunState;
+use crate::run::{Climb, RunState};
 use crate::score::RunScore;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, spawn).add_systems(Update, update.in_set(crate::Frame::Show));
+    app.add_systems(Startup, spawn).add_systems(Update, (update, update_climb).in_set(crate::Frame::Show));
 }
 
 #[derive(Component)]
@@ -21,6 +23,18 @@ struct HealthFill;
 
 #[derive(Component)]
 struct Readout;
+
+#[derive(Component)]
+struct ClimbFill;
+
+#[derive(Component)]
+struct ClimbTallest;
+
+#[derive(Component)]
+struct ClimbReadout;
+
+/// The climb gauge's length, pixels: the rim is its right end.
+const GAUGE: f32 = 240.0;
 
 /// Text colour, shared with the screens.
 pub(crate) const INK: Color = Color::srgb(0.93, 0.98, 0.9);
@@ -36,7 +50,9 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             left: Val::Px(0.0),
             right: Val::Px(0.0),
             padding: UiRect::horizontal(Val::Px(28.0)),
-            justify_content: JustifyContent::FlexEnd,
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::FlexEnd,
+            row_gap: Val::Px(8.0),
             ..default()
         })
         .id();
@@ -66,6 +82,73 @@ fn spawn(mut commands: Commands, palette: Res<Palette>) {
             ));
             hud.spawn((Readout, Text::new(""), TextFont::from_font_size(20.0), TextColor(INK), EDGE));
         });
+    // The climb gauge, on its own panel under the HUD: label, bar to the rim, the numbers.
+    commands
+        .spawn((
+            Node {
+                padding: UiRect::axes(Val::Px(16.0), Val::Px(6.0)),
+                column_gap: Val::Px(14.0),
+                align_items: AlignItems::Center,
+                border_radius: BorderRadius::all(Val::Px(8.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.6)),
+            ChildOf(row),
+        ))
+        .with_children(|gauge| {
+            gauge.spawn((Text::new("Climb"), TextFont::from_font_size(16.0), TextColor(INK), EDGE));
+            gauge
+                .spawn((
+                    Node { width: Val::Px(GAUGE), height: Val::Px(12.0), ..default() },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.14)),
+                ))
+                .with_children(|bar| {
+                    bar.spawn((
+                        ClimbFill,
+                        Node { width: Val::Px(0.0), height: Val::Percent(100.0), ..default() },
+                        BackgroundColor(colour(Role::Ring, &palette)),
+                    ));
+                    bar.spawn((
+                        ClimbTallest,
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(0.0),
+                            top: Val::Px(-3.0),
+                            width: Val::Px(3.0),
+                            height: Val::Px(18.0),
+                            ..default()
+                        },
+                        BackgroundColor(INK),
+                    ));
+                });
+            gauge.spawn((ClimbReadout, Text::new(""), TextFont::from_font_size(16.0), TextColor(INK), EDGE));
+        });
+}
+
+/// Where `height` sits along the gauge, pixels (the rim at the far end, nothing past it).
+fn along(height: f32, rim: f32) -> f32 {
+    if rim <= 0.0 { 0.0 } else { (height / rim).clamp(0.0, 1.0) * GAUGE }
+}
+
+#[allow(clippy::type_complexity)]
+fn update_climb(
+    climb: Res<Climb>,
+    mut fill: Query<&mut Node, (With<ClimbFill>, Without<ClimbTallest>)>,
+    mut tallest: Query<&mut Node, (With<ClimbTallest>, Without<ClimbFill>)>,
+    mut readout: Query<&mut Text, With<ClimbReadout>>,
+) {
+    if !climb.is_changed() {
+        return;
+    }
+    if let Ok(mut node) = fill.single_mut() {
+        node.width = Val::Px(along(climb.under, climb.rim));
+    }
+    if let Ok(mut node) = tallest.single_mut() {
+        node.left = Val::Px((along(climb.tallest, climb.rim) - 1.5).max(0.0));
+    }
+    if let Ok(mut t) = readout.single_mut() {
+        t.0 = format!("{:.1} / {:.1} m", climb.under, climb.rim);
+    }
 }
 
 fn update(

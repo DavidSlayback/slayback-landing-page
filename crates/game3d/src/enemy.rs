@@ -63,12 +63,15 @@ pub struct Waves {
     pub timer: Timer,
     /// The share of entries that are bomb-heads, overriding the box spec's (the demo's `bombs=1` makes it 1).
     pub bombs: Option<f32>,
+    /// The state of the dice that pick each entry's kind and bomb: a run is the same for the same seed and the same
+    /// play (the RL environment varies it per episode).
+    pub seed: u32,
 }
 
 impl Default for Waves {
     fn default() -> Self {
         let every = box_spec(1).interval;
-        Self { enabled: true, timer: Timer::from_seconds(every, TimerMode::Repeating), bombs: None }
+        Self { enabled: true, timer: Timer::from_seconds(every, TimerMode::Repeating), bombs: None, seed: 0 }
     }
 }
 
@@ -130,7 +133,6 @@ fn request_entries(
     enemies: Query<(), With<Brain>>,
     mut doors: Query<&mut WallDoor>,
     mut turn: Local<usize>,
-    mut seed: Local<u32>,
 ) {
     if !waves.enabled || !waves.timer.tick(time.delta()).just_finished() {
         return;
@@ -149,8 +151,8 @@ fn request_entries(
         let len = free.len();
         let door = &mut free[(first + k) % len];
         // xorshift (as in the 2.5D game): the box's mix of kinds and share of bomb-heads without a rand dependency.
-        *seed = seed.wrapping_add(0x9E37_79B9);
-        let mut s = *seed;
+        waves.seed = waves.seed.wrapping_add(0x9E37_79B9);
+        let mut s = waves.seed;
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;

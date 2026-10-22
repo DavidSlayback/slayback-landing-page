@@ -18,6 +18,13 @@
   body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   /* On a dark pill like the game's HUD panel: the boxes' backdrops run from white to black (Q75). */
   .back { position: fixed; top: 26px; left: 28px; z-index: 1; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.6); color: inherit; text-decoration: none; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; }
+  /* The tour clip (crates/game3d/src/demo.rs, tour=1): a run through every move and out of a mini box, at double
+     speed, in the slot the start and pause screens leave free (screens::CLIP: 4% from the right, 32% down, 36% x 36%
+     of the stage). Shown only on those screens; the game sets html[data-phase]. */
+  #tour { display: none; position: absolute; right: 4%; top: 32%; width: 36%; height: 36%; margin: 0; pointer-events: none; }
+  #tour video { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 6px; box-shadow: 0 0 0 1px rgba(166,255,0,.35); }
+  #tour figcaption { position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.6); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  html[data-phase="start"] #tour, html[data-phase="paused"] #tour { display: block; }
   /* The touch controls want both thumbs: a phone held upright is asked to turn. */
   .turn { display: none; }
   @media (pointer: coarse) and (orientation: portrait) {
@@ -28,7 +35,9 @@
 </head>
 <body>
 <p class="loading">Loading the box…</p>
-<div id="stage"><canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas></div>
+<div id="stage"><canvas id="game" tabindex="0" aria-label="Escape the box game"></canvas>
+  <figure id="tour"><video src="tour.mp4" poster="tour.jpg" muted loop playsinline preload="auto" aria-label="A run through every move: punch, kick, drop-kick, spin-throw, grabbing a block, and climbing out"></video><figcaption>How to escape · 2×</figcaption></figure>
+</div>
 <a class="back" href="../">← Back</a>
 <p class="turn">Turn your phone sideways to play</p>
 <script>
@@ -42,6 +51,12 @@
       const wake = () => { for (const c of contexts) if (c.state === 'suspended') c.resume().catch(() => {}); };
       for (const type of ['pointerdown', 'keydown', 'touchend']) addEventListener(type, wake, { capture: true });
     }
+  }
+  { // The tour clip plays only while it shows (the start and pause screens), so it costs nothing during play.
+    const clip = document.querySelector('#tour video'), root = document.documentElement;
+    new MutationObserver(() => {
+      if (['start', 'paused'].includes(root.dataset.phase)) clip.play().catch(() => {}); else clip.pause();
+    }).observe(root, { attributes: true, attributeFilter: ['data-phase'] });
   }
   { // Size the stage: 16:9, at most 1280 px wide in layout, then scaled to fill the viewport. On a touch screen it
     // fills the whole screen instead (still at most 1280x720 in layout), so the touch controls reach its edges.
