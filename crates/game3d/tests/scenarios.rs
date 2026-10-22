@@ -674,6 +674,9 @@ fn heap(app: &mut App, n: usize, centre: Vec2) {
 fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     let mut app = standing();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
+    // The heap is in a corner, against the walls: out of reach of the rim, so climbing it never ends the box (that
+    // would clear the pieces this watches). How high a climb gets differs a little between platforms' floats.
+    app.world_mut().resource_mut::<Arena>().rim = 10.0;
     let centre = Vec2::new(-6.6, -4.1);
     heap(&mut app, 25, centre);
     for _ in 0..((SETTLE + 6.0) * 30.0) as usize {
