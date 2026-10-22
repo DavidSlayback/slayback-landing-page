@@ -1,7 +1,8 @@
 //! The box: a floor about 3:2 (decision Q56) and four walls up to the rim, rebuilt at each box's rim as the run goes
 //! (`run::BoxStarted`). Every wall collides at full height; the front one, nearest the camera, is drawn as glass
 //! (Q57). An invisible fence stands on every wall, so neither the player nor a flung piece leaves over the rim: the
-//! way out is the pile (Q51). How it looks is up to `look`.
+//! way out is the pile, heaped against a wall (Q51, Q81). How it looks is up to `look`, which also lays the ground
+//! outside the box at the rim (no collider: nothing reaches it but the player climbing out, which ends the box).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
