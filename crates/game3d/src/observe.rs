@@ -10,7 +10,7 @@ use game_core::doors::Door;
 use crate::arena::Arena;
 use crate::bomb::BombHead;
 use crate::carry::{Carried, Carry};
-use crate::debris::{Piece, pile_under};
+use crate::debris::{ANY_HEIGHT, Piece, pile_under};
 use crate::enemy::{Brain, WallDoor};
 use crate::fighter::Hp;
 use crate::player::{Facing, Player};
@@ -74,8 +74,9 @@ pub fn observe(world: &mut World) -> Obs {
 
     // A cell's height is the pile's top anywhere over most of the cell.
     let reach = 0.5 * (floor[0] / GRID[0] as f32).min(floor[1] / GRID[1] as f32);
-    let heights =
-        (0..GRID[0] * GRID[1]).map(|i| pile_under(pile(), plane_on(cell_centre(i, floor)), reach, f32::MAX)).collect();
+    let heights = (0..GRID[0] * GRID[1])
+        .map(|i| pile_under(pile(), plane_on(cell_centre(i, floor)), reach, ANY_HEIGHT))
+        .collect();
 
     // The doors in a fixed order (round the walls by where they stand), however the world stores them.
     let mut doors: Vec<(Vec3, bool)> = door_q.iter(world).map(|d| (d.face, d.door != Door::Closed)).collect();

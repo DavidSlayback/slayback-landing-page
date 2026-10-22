@@ -12,6 +12,7 @@ In flight: nothing running.
 Next (on resume): David picks how the bench separates agents now that nothing escapes box 1, from bench/README.md and the options below: (1) headline a progress score (kills, survival, pile), the recommendation; (2) an easier first box for the bench, as a new version; (3) higher-level tools (fight nearest, heap at x,y). Then M7 #92 (lab page) or M2 #87.
 Waiting on: David: that choice. Compute for training (parked). WebMCP token (M8, later).
 Re-arm: nothing scheduled or watched.
+Flaw found after the sweeps: the agents' heightmap (obs `heights` / `pile_heights`) was all zeros in every run so far (`pile_under` with an f32::MAX ceiling); fixed with debris::ANY_HEIGHT. The first sweeps are v0; rerun the three models on the fixed build before drawing conclusions (bench/README.md says so).
 Verified: bench/results/2026-10-21-{1855-sonnet,1909-haiku,1926-opus,2006-brawler,2006-random}/results.json, every run verified: true by replay at game commit b589b2e.
 ```
 

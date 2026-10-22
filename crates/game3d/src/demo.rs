@@ -28,7 +28,7 @@ use game_core::enemy::Kind;
 
 use crate::arena::Arena;
 use crate::bomb::BombHead;
-use crate::debris::{Piece, piece, pile_under};
+use crate::debris::{ANY_HEIGHT, Piece, piece, pile_under};
 use crate::enemy::{Brain, RADIUS, Waves, enemy};
 use crate::fighter::Hp;
 use crate::flow::{PauseOnBlur, Phase};
@@ -279,7 +279,7 @@ fn fight(
         for (i, gap) in std::iter::once(beat.gap).chain(beat.beyond).enumerate() {
             let spot = Vec2::new((me.x + s.side * gap).clamp(-inside.x, inside.x), me.z.clamp(-inside.y, inside.y));
             // On top of whatever debris lies there, not inside it (which would fling it out).
-            let ground = pile_under(pieces.iter(), spot, RADIUS + 0.15, f32::MAX);
+            let ground = pile_under(pieces.iter(), spot, RADIUS + 0.15, ANY_HEIGHT);
             let at = Vec3::new(spot.x, ground + FODDER_HEIGHT / 2.0 + 0.05, spot.y);
             let mut health = Health::new(DEMO_FODDER_HP);
             // The throw's target stands dazed until the throw comes, rather than walking in to punch first.

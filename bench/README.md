@@ -21,7 +21,9 @@ LLM agents play *Escape the Box*, the 3D brawler on this site, through an MCP se
 
 Run it: `bash scripts/native.sh run -p box-bench -q -- --model sonnet --seeds 1,2,3,4,5 --trials 3 --max-calls 80 --allow-sweep` (see `crates/box-bench`).
 
-## Results, 2026-10-21
+## Results, 2026-10-21 (v0: the agents' heightmap was blank)
+
+**Read these with a flaw in mind.** The observation's `pile_heights` grid was all zeros in these runs: the pile-height test was given `f32::MAX` as its ceiling, and its downward ray lost all precision. Agents still saw the pile under their own feet (`standing_on_pile`), but not where any heap stood. It is fixed (`debris::ANY_HEIGHT`, tested in the scenarios). These results stand as v0 of the benchmark; a rerun on the fixed build is the next sweep. The baselines don't read the heightmap, so their numbers are unaffected.
 
 **Setup:**
 - 5 seeds × 3 trials per agent, at most 80 tool calls per run.

@@ -28,7 +28,7 @@ use game3d::flow::Phase;
 use game3d::hint::GrabTip;
 use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
-use game3d::run::{InBox, RunState};
+use game3d::run::{Climb, InBox, RunState};
 use game3d::score::{BEST_KEY, BestScore, LastRun, RunScore};
 use game3d::sound::{SOUND_KEY, Sound};
 use game3d::store::Store;
@@ -1030,6 +1030,33 @@ fn a_run_starts_from_the_overlay_scores_a_kill_and_ends_on_the_game_over_screen_
     let mut next = headless_with(store);
     step(&mut next, 1.0 / FPS);
     assert_eq!(next.world().resource::<BestScore>().0.as_ref(), Some(&best), "the best carries over");
+}
+
+fn climb(app: &App) -> Climb {
+    *app.world().resource::<Climb>()
+}
+
+#[test]
+fn the_climb_gauge_measures_the_pile_underfoot_and_the_tallest_heap_against_the_rim() {
+    let mut app = standing();
+    let c = climb(&app);
+    assert_eq!((c.under, c.tallest), (0.0, 0.0), "an empty box");
+    assert_eq!(c.rim, game_core::run::box_spec(1).rim);
+    // A block lying 3 m off: the tallest heap in the box, but not under the player.
+    let at = player(&mut app).0;
+    let spot = Vec3::new(at.x + 3.0, 0.0, at.z);
+    block(&mut app, [0.8, 0.6, 0.8], spot.with_y(0.3), 0.0);
+    step(&mut app, 0.1);
+    let c = climb(&app);
+    assert!((c.tallest - 0.6).abs() < 0.05 && c.under == 0.0, "{c:?}");
+    // Agents see it too: the observation's heightmap has the block in it.
+    let seen = game3d::observe::observe(app.world_mut()).heights.iter().copied().fold(0.0, f32::max);
+    assert!((seen - 0.6).abs() < 0.05, "the heightmap's tallest cell: {seen}");
+    // Standing on it.
+    teleport(&mut app, spot.with_y(0.6 + HEIGHT / 2.0 + 0.05));
+    step(&mut app, 0.3);
+    let c = climb(&app);
+    assert!((c.under - 0.6).abs() < 0.1 && c.tallest >= c.under, "{c:?}");
 }
 
 fn tip_showing(app: &App) -> bool {
