@@ -97,6 +97,39 @@ pub extern "C" fn world_flow_dims(p: *mut World, which: u32) -> f32 {
     [w as f32, h as f32, cell][which.min(2) as usize]
 }
 
+/// Per mask cell, the shard it belongs to plus one, little-endian in two bytes (0: none). Fixed until the next commit.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_shard_ids_ptr(p: *mut World) -> *const u8 {
+    world(p).erosion.shard_ids.as_ptr()
+}
+
+/// Per shard, its bounding box in mask cells: x0, y0, x1, y1 (inclusive). `world_shard_count` boxes.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_shard_boxes_ptr(p: *mut World) -> *const u16 {
+    world(p).erosion.shard_boxes.as_ptr()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn world_shard_count(p: *mut World) -> u32 {
+    world(p).erosion.shards() as u32
+}
+
+/// The shards that broke off since `world_broken_clear`: `world_broken_len` ids.
+#[unsafe(no_mangle)]
+pub extern "C" fn world_broken_ptr(p: *mut World) -> *const u32 {
+    world(p).erosion.broken.as_ptr()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn world_broken_len(p: *mut World) -> u32 {
+    world(p).erosion.broken.len() as u32
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn world_broken_clear(p: *mut World) {
+    world(p).erosion.broken.clear();
+}
+
 /// The text's erosion for the renderer: per mask cell, scorch, gone, glow (0..255 each) and 0. See `world_erosion_version`.
 #[unsafe(no_mangle)]
 pub extern "C" fn world_erosion_ptr(p: *mut World) -> *const u8 {

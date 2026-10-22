@@ -32,14 +32,17 @@ const PRESET = { ...SPARK_BASE, turb: 170, drag: 0.55, wander: 220, flowScale: 2
 // or G switches; the choice is kept.
 const GRAVITY = { name: { pull: 140, gravity: 0 }, down: { pull: 0, gravity: 220 } };
 const storedGravity = (() => { try { return localStorage.getItem('slayback-gravity'); } catch { return null; } })();
+// One typeface for every scheme, so the name keeps its size and shape when the scheme changes (David: "make the letter
+// sizes and fonts match across styles"). Schemes pick colours only.
+const TYPE = { font: '"Chakra Petch"', weight: 700, track: '.04em' };
 const PALETTES = [
-  { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00', font: '"Chakra Petch"', weight: 700, track: '.04em',
+  { key: 'netrunner', label: 'Netrunner', swatch: '#a6ff00',
     css: { fg: '#efffd6', muted: '#7d9a52', accent: '#a6ff00' },
     gl: { uP0: [0.62, 1.0, 0.0], uP1: [0.15, 1.0, 0.2], uP2: [0.0, 1.0, 0.72], uP3: [0.88, 1.0, 0.12], uShieldCol: [0.62, 1.0, 0.05] } },
-  { key: 'synthwave', label: 'Synthwave', swatch: '#ff2bd6', font: '"Orbitron"', weight: 900, track: '.06em',
+  { key: 'synthwave', label: 'Synthwave', swatch: '#ff2bd6',
     css: { fg: '#ffe9fb', muted: '#a0609a', accent: '#ff2bd6' },
     gl: { uP0: [1.0, 0.08, 0.72], uP1: [0.0, 0.9, 1.0], uP2: [1.0, 0.92, 0.05], uP3: [0.5, 0.15, 1.0], uShieldCol: [1.0, 0.18, 0.8] } },
-  { key: 'gold', label: 'Human Revolution', swatch: '#ffae2b', font: '"Rajdhani"', weight: 700, track: '.16em',
+  { key: 'gold', label: 'Human Revolution', swatch: '#ffae2b',
     css: { fg: '#fff1d0', muted: '#a07a35', accent: '#ffae2b' },
     gl: { uP0: [1.0, 0.55, 0.04], uP1: [1.0, 0.82, 0.2], uP2: [1.0, 0.3, 0.0], uP3: [1.0, 0.95, 0.65], uShieldCol: [1.0, 0.64, 0.12] } },
 ];
@@ -130,9 +133,9 @@ void main(){
   vec3 col=1.0-exp(-(texture(uScene,uv).rgb+b*uBloom+L*0.1+texture(uCur,uv).rgb*uCurGain));   // currents faintly under it all
   // text: an opaque surface the sparks pass behind, in dim ink of no scheme colour, lit only by the sparks' own light
   vec4 t=texture(uText,tuv); float s=texture(uSdf,tuv).r;
-  // erosion (sim): scorch darkens the face toward char, flaked-off cells are holes, re-welding cells glow
+  // erosion (sim): scorch darkens the face toward char, broken-off shards are holes, re-welding cells glow
   vec4 er=texture(uErosion,tuv); float scorch=er.r, weld=er.b;
-  t.rg*=1.0-smoothstep(0.35,0.65,er.g);
+  t.r*=1.0-smoothstep(0.35,0.65,er.g);
   float halo=(1.0-smoothstep(0.0,16.0,s))*(1.0-t.r);
   col*=1.0-0.82*halo;
   vec3 lit=1.0-exp(-L*uLit);                                    // the light falling here, in the sparks' colours
@@ -150,7 +153,6 @@ void main(){
   vec3 hot=vec3(1.0,0.72,0.42)*weld*1.1;                             // re-welding
   face=face*(1.0-0.8*scorch)+char_+hot;
   col=mix(col, min(face,vec3(1.0)), t.r);
-  col=mix(col, min((vec3(uInk*1.3)+lit*1.1)*(1.0-0.7*scorch)+char_+hot,vec3(1.0)), t.g*0.85);
   // forcefield: a hex shell that flares where sparks hit it
   if(uShield.z>0.5){
     float d=length(px-uShield.xy), r=uShield.z;
@@ -162,6 +164,17 @@ void main(){
   col+=(hash12(gl_FragCoord.xy+fract(uTime)*311.0)-0.5)*0.008;
   o=vec4(max(col,0.0),1.0);
 }`;
+// A shard that broke off the name (sim erosion): its box, turned about its middle and carried along, showing only its own
+// cells of the text (uShard holds each cell's shard id plus one). Hot as it breaks, cooling and fading as it falls.
+const VS_SHARD = HEAD + `uniform vec2 uRes, uOff; uniform vec4 uBox; uniform float uAng; out vec2 vT;
+void main(){ vec2 c=vec2(float(gl_VertexID&1), float(gl_VertexID>>1)), p=mix(uBox.xy,uBox.zw,c); vT=p/uRes;
+  vec2 m=(uBox.xy+uBox.zw)*0.5, d=p-m; float s=sin(uAng), k=cos(uAng);
+  vec2 q=m+vec2(k*d.x-s*d.y, s*d.x+k*d.y)+uOff;
+  gl_Position=vec4(q.x/uRes.x*2.0-1.0, 1.0-q.y/uRes.y*2.0, 0.0, 1.0); }`;
+const FS_SHARD = HEAD + `uniform sampler2D uText, uShard; uniform float uId, uHeat, uFade, uInk; in vec2 vT; out vec4 o;
+void main(){ vec2 b=floor(texture(uShard,vT).rg*255.0+0.5); if(abs(b.x+b.y*256.0-uId)>0.5) discard;
+  float a=texture(uText,vT).r; if(a<0.02) discard;
+  o=vec4(vec3(uInk*1.6)+vec3(1.0,0.42,0.1)*uHeat, a*uFade); }`;
 const FS_FADE = HEAD + `uniform float uKeep; out vec4 o; void main(){ o=vec4(0.0,0.0,0.0,1.0-uKeep); }`;
 
 // The current layer (David, 2026-10-17: "a 2 layer visualization system where one layer is back to something like the
@@ -222,7 +235,7 @@ function program(vs, fs) {
 const PROG = {
   spark: program(VS_SPARK, FS_SPARK), torch: program(VS_TORCH, FS_TORCH), final: program(VS_TRI, FS_FINAL),
   curSim: program(VS_TRI, FS_CUR_SIM), curDraw: program(VS_CUR_DRAW, FS_POINT),
-  down: program(VS_TRI, FS_DOWN), blur: program(VS_TRI, FS_BLUR), fade: program(VS_TRI, FS_FADE),
+  down: program(VS_TRI, FS_DOWN), blur: program(VS_TRI, FS_BLUR), fade: program(VS_TRI, FS_FADE), shard: program(VS_SHARD, FS_SHARD),
 };
 const SETTER = { [gl.FLOAT]: 'uniform1fv', [gl.FLOAT_VEC2]: 'uniform2fv', [gl.FLOAT_VEC3]: 'uniform3fv', [gl.FLOAT_VEC4]: 'uniform4fv', [gl.INT]: 'uniform1iv' };
 function use(P, textures, uniforms) {
@@ -278,9 +291,8 @@ function applyPreset() {
 }
 
 // ---------- Text → obstacles ----------
-// Every word of every [data-collide] element (or those matching `only`) is drawn where the DOM laid it out: red = fill,
-// green = outline.
-function rasterizeText(scale, w, h, outline, only = '[data-collide]') {
+// Every word of every [data-collide] element (or those matching `only`) is drawn where the DOM laid it out, in red.
+function rasterizeText(scale, w, h, only = '[data-collide]') {
   const c = document.createElement('canvas'); c.width = Math.max(1, w); c.height = Math.max(1, h);
   const x = c.getContext('2d', { willReadFrequently: true });
   x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height); x.setTransform(scale, 0, 0, scale, 0, 0);
@@ -288,7 +300,7 @@ function rasterizeText(scale, w, h, outline, only = '[data-collide]') {
   for (const el of hero.querySelectorAll(only)) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let node; (node = walker.nextNode());) {
-      const cs = getComputedStyle(node.parentElement), fs = parseFloat(cs.fontSize);
+      const cs = getComputedStyle(node.parentElement);
       x.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
       if ('letterSpacing' in x) x.letterSpacing = `${parseFloat(cs.letterSpacing) || 0}px`;
       const upper = cs.textTransform === 'uppercase';
@@ -298,8 +310,7 @@ function rasterizeText(scale, w, h, outline, only = '[data-collide]') {
         const word = upper ? m[0].toUpperCase() : m[0], met = x.measureText(word);
         const asc = met.fontBoundingBoxAscent, desc = met.fontBoundingBoxDescent;
         const bx = r.left - hr.left, by = r.top - hr.top + (r.height - (asc + desc)) / 2 + asc;
-        x.globalCompositeOperation = 'source-over'; x.fillStyle = 'rgb(255,0,0)'; x.fillText(word, bx, by);
-        if (outline) { x.globalCompositeOperation = 'lighter'; x.strokeStyle = 'rgb(0,255,0)'; x.lineWidth = Math.max(1, fs * 0.03); x.strokeText(word, bx, by); }
+        x.fillStyle = 'rgb(255,0,0)'; x.fillText(word, bx, by);
       }
     }
   }
@@ -307,13 +318,16 @@ function rasterizeText(scale, w, h, outline, only = '[data-collide]') {
 }
 let textTex = null, sdfTex = null, sdfSize = [1, 1], obstacleTimer = 0;
 let erosionTex = null, erosionSeen = -1, sdfSeen = -1;   // the sim's erosion picture and SDF, re-uploaded when they change
+// The name's shards (fixed per commit): which shard each mask cell is in, each shard's box in cells, and the ones falling.
+let shardTex = null, shardBoxes = new Uint16Array(0), falling = [];
+const MASK_SCALE = 0.5;   // mask cells per CSS px
 function updateObstacles() {
-  if (!world) return;
+  if (!world || !W || !H) return;   // a page laid out while hidden has no size yet: the resize after it rebuilds
   if (textTex) gl.deleteTexture(textTex);
-  textTex = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterizeText(DPR, canvas.width, canvas.height, true), gl.LINEAR, true);
-  const mw = Math.ceil(W * 0.5), mh = Math.ceil(H * 0.5), px = rasterizeText(0.5, mw, mh, false).getContext('2d').getImageData(0, 0, mw, mh).data;
+  textTex = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterizeText(DPR, canvas.width, canvas.height), gl.LINEAR, true);
+  const mw = Math.ceil(W * 0.5), mh = Math.ceil(H * 0.5), px = rasterizeText(0.5, mw, mh).getContext('2d').getImageData(0, 0, mw, mh).data;
   // Only the name ([data-erode]) can erode: the sim takes text it covers as 255 and the rest of the text as 200.
-  const ex = rasterizeText(0.5, mw, mh, false, '[data-erode]').getContext('2d').getImageData(0, 0, mw, mh).data;
+  const ex = rasterizeText(0.5, mw, mh, '[data-erode]').getContext('2d').getImageData(0, 0, mw, mh).data;
   const maskPtr = X.world_mask_alloc(world, mw, mh, 0.5);   // may grow WASM memory: take the buffer view after
   const mask = new Uint8Array(X.memory.buffer, maskPtr, mw * mh);
   for (let i = 0; i < mw * mh; i++) mask[i] = px[i * 4] > 127 ? (ex[i * 4] > 0 ? 255 : 200) : px[i * 4];
@@ -324,6 +338,39 @@ function updateObstacles() {
   if (erosionTex) gl.deleteTexture(erosionTex);
   erosionTex = mkTex(mw, mh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null, gl.LINEAR, true);
   erosionSeen = sdfSeen = -1;
+  if (shardTex) gl.deleteTexture(shardTex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);   // two bytes a cell: rows needn't be 4-byte aligned
+  shardTex = mkTex(mw, mh, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, new Uint8Array(X.memory.buffer, X.world_shard_ids_ptr(world), mw * mh * 2), gl.NEAREST, true);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  shardBoxes = new Uint16Array(X.memory.buffer, X.world_shard_boxes_ptr(world), X.world_shard_count(world) * 4).slice();
+  falling = []; X.world_broken_clear(world);
+}
+// Each shard that broke off falls: a small kick up and to the side, a spin, gravity, and a fade over its life.
+function dropShards(dt) {
+  const n = X.world_broken_len(world);
+  if (n) {
+    for (const id of new Uint32Array(X.memory.buffer, X.world_broken_ptr(world), n)) {
+      const b = shardBoxes.subarray(id * 4, id * 4 + 4);
+      if (b.length < 4) continue;
+      falling.push({ id, box: [b[0] / MASK_SCALE, b[1] / MASK_SCALE, (b[2] + 1) / MASK_SCALE, (b[3] + 1) / MASK_SCALE],
+        x: 0, y: 0, vx: (Math.random() - 0.5) * 140, vy: -40 - Math.random() * 110, ang: 0, spin: (Math.random() - 0.5) * 7, age: 0,
+        life: 1.6 + Math.random() * 0.8 });
+    }
+    X.world_broken_clear(world);
+  }
+  for (const f of falling) { f.age += dt; f.vy += 900 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.ang += f.spin * dt; }
+  falling = falling.filter(f => f.age < f.life && f.box[1] + f.y < H);
+}
+function drawShards() {
+  if (!falling.length) return;
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  for (const f of falling) {
+    const k = f.age / f.life;
+    use(PROG.shard, { uText: textTex, uShard: shardTex },
+      { uRes: [W, H], uBox: f.box, uOff: [f.x, f.y], uAng: f.ang, uId: f.id + 1, uHeat: 0.5 * Math.max(0, 1 - k * 2.5), uFade: 1 - k * k, uInk: INK });
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  gl.disable(gl.BLEND);
 }
 const scheduleObstacles = () => { clearTimeout(obstacleTimer); obstacleTimer = setTimeout(updateObstacles, 40); };
 new MutationObserver(scheduleObstacles).observe(hero, { subtree: true, childList: true, characterData: true });
@@ -339,10 +386,10 @@ async function setScheme(i, remember) {
   pi = i;
   const P = pal(), root = document.documentElement.style;
   for (const [k, v] of Object.entries(P.css)) root.setProperty('--' + k, v);
-  root.setProperty('--font', `${P.font}, ${FONT}`); root.setProperty('--weight', P.weight); root.setProperty('--track', P.track);
+  root.setProperty('--font', `${TYPE.font}, ${FONT}`); root.setProperty('--weight', TYPE.weight); root.setProperty('--track', TYPE.track);
   swatches.querySelectorAll('button').forEach((b, k) => b.setAttribute('aria-pressed', String(k === i)));
   if (remember) { try { localStorage.setItem('slayback-scheme', P.key); } catch {} }
-  await Promise.race([document.fonts.load(`${P.weight} 100px ${P.font}`).catch(() => {}), new Promise(r => setTimeout(r, 2500))]);
+  await Promise.race([document.fonts.load(`${TYPE.weight} 100px ${TYPE.font}`).catch(() => {}), new Promise(r => setTimeout(r, 2500))]);
   scheduleObstacles();   // the new face reflows the text: rebuild obstacles, keep the simulation running
 }
 
@@ -389,6 +436,10 @@ async function buildNow() {
   await setScheme(pi, false);
   await document.fonts.ready;
   if (!X) await loadPhysics();
+  // A page opened in a background tab may not be laid out yet: wait until the hero has a size.
+  if (!hero.clientWidth || !hero.clientHeight) {
+    await new Promise(done => { const ro = new ResizeObserver(() => { if (hero.clientWidth && hero.clientHeight) { ro.disconnect(); done(); } }); ro.observe(hero); });
+  }
   freeAll();
   W = hero.clientWidth; H = hero.clientHeight;
   const cw = canvas.width = Math.round(W * DPR), ch = canvas.height = Math.round(H * DPR);
@@ -448,6 +499,7 @@ function present(dt) {
   X.world_cursor(world, mouse.x, mouse.y, mouse.active && shield.r <= 4 ? 1 : 0);
   updateShield(dt);
   const t0 = performance.now(); X.world_step(world, dt); simMs = simMs * 0.9 + (performance.now() - t0) * 0.1;
+  dropShards(dt);
   shield.flash = Math.max(shield.flash * Math.pow(0.02, dt), Math.min(1, X.world_shield_hits(world) / 30));
   active = X.world_active(world);
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(X.memory.buffer, X.world_out_ptr(world), active * 8));
@@ -494,6 +546,7 @@ function present(dt) {
     { uCanvas: [canvas.width, canvas.height], uSdfTexel: [1 / sdfSize[0], 1 / sdfSize[1]], uRes: [W, H], uBloom: 0.7, uTime: simT, uInk: INK, uLit: LIT, uCurGain: CUR_GAIN,
       uShield: [mouse.x, mouse.y, shield.r, shield.flash], ...P });
   tri();
+  drawShards();
   document.documentElement.classList.add('gl');
 }
 let last = 0, frames = 0, fpsT = 0, fps = 0;

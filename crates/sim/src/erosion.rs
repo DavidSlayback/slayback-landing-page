@@ -3,17 +3,24 @@
 //! "Scorch, then flake").
 //!
 //! Works on the text mask's cells, only those the page marked erodible (255; other text is 200 and never erodes, so
-//! the tagline and links stay readable). A strike scorches the cell it lands on and, less, its neighbours; a cell scorched
-//! through flakes off (the mask loses it, so the SDF and the sparks treat it as open air), taking badly scorched
-//! neighbours with it. Once the given share of the text is gone, the letters re-weld: the lost cells come back in a
-//! random order over [`REWELD`] seconds, glowing as they return, while all scorch cools away.
+//! the tagline and links stay readable). The erodible text is cut into shards when it's committed: irregular pieces
+//! about [`SHARD`] cells across (a jittered Voronoi pattern). A strike scorches the cell it lands on and, less, its
+//! neighbours; once a shard's cells average [`BREAK`] scorch, the whole shard breaks off (David: "make the pieces
+//! actually come off when eroding instead of leaving the shapes intact"). The mask loses its cells at once, so the SDF
+//! and the sparks treat it as open air, and its id joins [`Erosion::broken`] for the page to drop it as a falling
+//! fragment. Once the given share of the text is gone, the letters re-weld: the lost cells come back in a random
+//! order over [`REWELD`] seconds, glowing as they return, while all scorch cools away.
 
 /// How long a re-weld takes, seconds.
 pub const REWELD: f32 = 1.5;
 /// How long a re-welded cell glows, seconds.
 const GLOW: f32 = 0.6;
-/// Scorch at which a cell's neighbour flakes off with it.
-const CRUMBLE: f32 = 0.7;
+/// Shards' spacing, mask cells (the page's mask is half its CSS pixels: about 12 px).
+pub const SHARD: usize = 6;
+/// The mean scorch over a shard's cells at which it breaks off.
+const BREAK: f32 = 0.5;
+/// No shard (open air, or text that doesn't erode).
+const NONE: u32 = u32::MAX;
 
 pub struct Erosion {
     w: usize,
@@ -28,6 +35,18 @@ pub struct Erosion {
     gone: usize,
     /// Seconds into a re-weld, while one runs.
     reweld: Option<f32>,
+    /// Each cell's shard, or [`NONE`].
+    shard: Vec<u32>,
+    /// Each shard's cells, its summed scorch, and whether it has broken off.
+    cells: Vec<Vec<u32>>,
+    heat: Vec<f32>,
+    off: Vec<bool>,
+    /// Per cell for the page: its shard's id plus one, little-endian in two bytes (0: no shard).
+    pub shard_ids: Vec<u8>,
+    /// Per shard for the page: its bounding box in cells, x0, y0, x1, y1 (inclusive).
+    pub shard_boxes: Vec<u16>,
+    /// Shards that broke off since the page last took them.
+    pub broken: Vec<u32>,
     /// Per cell for the renderer: scorch, gone, glow (0..255 each), 0. Repacked when anything changes.
     pub out: Vec<u8>,
     /// Bumped whenever `out` (and so possibly the mask) changes.
@@ -50,6 +69,13 @@ impl Erosion {
             hot: Vec::new(),
             gone: 0,
             reweld: None,
+            shard: Vec::new(),
+            cells: Vec::new(),
+            heat: Vec::new(),
+            off: Vec::new(),
+            shard_ids: Vec::new(),
+            shard_boxes: Vec::new(),
+            broken: Vec::new(),
             out: Vec::new(),
             version: 0,
             touched: Vec::new(),
@@ -73,6 +99,76 @@ impl Erosion {
         self.touched.clear();
         self.full = true;
         self.glowing = false;
+        self.cut_shards();
+    }
+
+    /// Cuts the erodible cells into shards: each goes to the nearest of a grid of seeds, one per [`SHARD`]-cell square,
+    /// each placed at a fixed pseudo-random spot in its square (so the same text always breaks the same way).
+    fn cut_shards(&mut self) {
+        let (w, h) = (self.w, self.h);
+        let (gw, gh) = (w.div_ceil(SHARD), h.div_ceil(SHARD));
+        let seed = |gx: usize, gy: usize| {
+            let mut v = (gx as u32).wrapping_mul(0x9E37_79B9) ^ (gy as u32).wrapping_mul(0x85EB_CA6B) ^ 0x2545_F491;
+            let mut next = || {
+                v ^= v << 13;
+                v ^= v >> 17;
+                v ^= v << 5;
+                0.15 + 0.7 * (v % 10_000) as f32 / 10_000.0
+            };
+            ((gx as f32 + next()) * SHARD as f32, (gy as f32 + next()) * SHARD as f32)
+        };
+        let mut id_of = vec![NONE; gw * gh];
+        self.shard = vec![NONE; w * h];
+        self.cells.clear();
+        for i in (0..w * h).filter(|&i| self.original[i]) {
+            let (x, y) = (i % w, i / w);
+            let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+            let (gx0, gy0) = (x / SHARD, y / SHARD);
+            let mut best = (f32::MAX, 0usize);
+            for gy in gy0.saturating_sub(1)..(gy0 + 2).min(gh) {
+                for gx in gx0.saturating_sub(1)..(gx0 + 2).min(gw) {
+                    let (sx, sy) = seed(gx, gy);
+                    let d = (sx - cx).powi(2) + (sy - cy).powi(2);
+                    if d < best.0 {
+                        best = (d, gy * gw + gx);
+                    }
+                }
+            }
+            if id_of[best.1] == NONE {
+                id_of[best.1] = self.cells.len() as u32;
+                self.cells.push(Vec::new());
+            }
+            let id = id_of[best.1];
+            self.shard[i] = id;
+            self.cells[id as usize].push(i as u32);
+        }
+        let n = self.cells.len();
+        self.heat = vec![0.0; n];
+        self.off = vec![false; n];
+        self.broken.clear();
+        self.shard_ids = vec![0; w * h * 2];
+        for (i, &s) in self.shard.iter().enumerate().filter(|(_, s)| **s != NONE) {
+            let tag = (s + 1) as u16;
+            self.shard_ids[i * 2] = (tag & 0xFF) as u8;
+            self.shard_ids[i * 2 + 1] = (tag >> 8) as u8;
+        }
+        self.shard_boxes = self
+            .cells
+            .iter()
+            .flat_map(|cells| {
+                let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
+                for &c in cells {
+                    let (x, y) = (c as usize % w, c as usize / w);
+                    (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+                }
+                [x0 as u16, y0 as u16, x1 as u16, y1 as u16]
+            })
+            .collect();
+    }
+
+    /// How many shards the text was cut into.
+    pub fn shards(&self) -> usize {
+        self.cells.len()
     }
 
     /// The share of the text's cells gone, 0..1.
@@ -94,15 +190,17 @@ impl Erosion {
             if !self.original[i] {
                 continue;
             }
-            self.scorch[i] += if dx == 0 && dy == 0 { amount } else { amount * 0.5 };
+            let add = if dx == 0 && dy == 0 { amount } else { amount * 0.5 };
+            self.scorch[i] += add;
+            self.heat[self.shard[i] as usize] += add;
             self.hot.push(i as u32);
             self.touched.push(i as u32);
         }
     }
 
-    /// Moves on `dt` seconds over `mask` (255 solid, 0 open): flakes off what's scorched through, starts a re-weld
-    /// once `reweld_at` of the text is gone, and carries one on. Returns the cells that flaked this tick, and whether
-    /// the mask changed (so the SDF must be rebuilt).
+    /// Moves on `dt` seconds over `mask` (255 solid, 0 open): breaks off the shards scorched through (adding them to
+    /// [`Erosion::broken`]), starts a re-weld once `reweld_at` of the text is gone, and carries one on. Returns the
+    /// cells that came off this tick, and whether the mask changed (so the SDF must be rebuilt).
     // Walks the mask, the original and the scorch together, cell by cell.
     #[allow(clippy::needless_range_loop)]
     pub fn tick(
@@ -115,19 +213,16 @@ impl Erosion {
         let mut flaked = Vec::new();
         let mut mask_changed = false;
         for &i in &std::mem::take(&mut self.hot) {
-            let i = i as usize;
-            if self.scorch[i] < 1.0 || mask[i] == 0 {
+            let s = self.shard[i as usize] as usize;
+            if self.off[s] || self.heat[s] < BREAK * self.cells[s].len() as f32 {
                 continue;
             }
-            // Through: it flakes, and badly scorched neighbours crumble with it.
-            let (x, y) = (i % self.w, i / self.w);
-            for (dx, dy) in [(0i32, 0i32), (-1, 0), (1, 0), (0, -1), (0, 1)] {
-                let (cx, cy) = (x as i32 + dx, y as i32 + dy);
-                if cx < 0 || cy < 0 || cx as usize >= self.w || cy as usize >= self.h {
-                    continue;
-                }
-                let j = cy as usize * self.w + cx as usize;
-                if self.original[j] && mask[j] != 0 && (j == i || self.scorch[j] >= CRUMBLE) {
+            // Through: the whole shard comes away.
+            self.off[s] = true;
+            self.broken.push(s as u32);
+            for &j in &self.cells[s] {
+                let j = j as usize;
+                if mask[j] != 0 {
                     mask[j] = 0;
                     self.gone += 1;
                     flaked.push(j as u32);
@@ -166,6 +261,8 @@ impl Erosion {
                 }
                 self.gone = 0;
                 self.reweld = None;
+                self.heat.iter_mut().for_each(|h| *h = 0.0);
+                self.off.iter_mut().for_each(|o| *o = false);
                 mask_changed = true;
             } else {
                 self.reweld = Some(t);
@@ -267,19 +364,53 @@ mod tests {
         assert_eq!(e.out[0], 0, "open air (the corner cell) never scorches");
     }
 
+    /// A bigger block, 60 × 36 cells inside a 70 × 40 mask, so it's cut into many shards.
+    fn slab() -> (Erosion, Vec<u8>) {
+        let (w, h) = (70, 40);
+        let mask: Vec<u8> = (0..w * h)
+            .map(|i| if (5..65).contains(&(i % w)) && (2..38).contains(&(i / w)) { 255 } else { 0 })
+            .collect();
+        let mut e = Erosion::new();
+        e.reset(&mask.iter().map(|m| *m > 127).collect::<Vec<_>>(), w, h);
+        (e, mask)
+    }
+
     #[test]
-    fn a_cell_scorched_through_flakes_off_with_its_badly_scorched_neighbours() {
-        let (mut e, mut mask) = block();
+    fn the_text_is_cut_into_irregular_shards_about_the_shard_size_across() {
+        let (e, mask) = slab();
+        let cells = mask.iter().filter(|m| **m == 255).count();
+        let mean = cells as f32 / e.shards() as f32;
+        let square = (SHARD * SHARD) as f32;
+        assert!(mean > square * 0.6 && mean < square * 1.4, "{} shards, {mean} cells each", e.shards());
+        assert!(e.cells.iter().all(|c| !c.is_empty()));
+        // Every erodible cell is in exactly one shard, and the page's id map says which.
+        let tagged = e.shard_ids.chunks(2).filter(|t| t[0] != 0 || t[1] != 0).count();
+        assert_eq!(tagged, cells);
+        // Not a grid: shards' boxes differ in size.
+        let sizes: std::collections::HashSet<_> = e.shard_boxes.chunks(4).map(|b| (b[2] - b[0], b[3] - b[1])).collect();
+        assert!(sizes.len() > 3, "{sizes:?}");
+    }
+
+    #[test]
+    fn a_shard_scorched_through_breaks_off_whole_and_its_neighbours_stand() {
+        let (mut e, mut mask) = slab();
         let mut r = rng();
-        for _ in 0..3 {
-            e.strike(8, 4, 0.5);
+        let (x, y) = (30, 20);
+        let s = e.shard[y * 70 + x] as usize;
+        let mut n = 0;
+        while !e.off[s] && n < 1000 {
+            e.strike(x, y, 0.2);
+            e.tick(0.016, &mut mask, 0.9, &mut r);
+            n += 1;
         }
-        let (flaked, changed) = e.tick(0.016, &mut mask, 0.4, &mut r);
-        assert!(changed && flaked.contains(&(4 * 20 + 8)), "flaked: {flaked:?}");
-        assert!(flaked.len() >= 5, "neighbours scorched to 0.75 crumble too: {flaked:?}");
-        assert_eq!(mask[4 * 20 + 8], 0, "the mask lost it: sparks pass through");
-        assert_eq!(e.out[(4 * 20 + 8) * 4 + 1], 255, "and the renderer sees a hole");
-        assert!(e.eroded() > 0.05);
+        assert!(e.off[s], "broke after {n} strikes");
+        assert_eq!(e.broken, vec![s as u32], "reported once, for the page");
+        for &c in &e.cells[s] {
+            assert_eq!(mask[c as usize], 0, "every cell of it is gone");
+            assert_eq!(e.out[c as usize * 4 + 1], 255, "and the renderer sees the hole");
+        }
+        let left = mask.iter().filter(|m| **m == 255).count();
+        assert!(left + e.cells[s].len() == 60 * 36, "nothing else came off");
     }
 
     #[test]
@@ -288,7 +419,7 @@ mod tests {
         let mut r = rng();
         // Burn away more than 40% of it.
         for y in 2..8 {
-            for x in 5..10 {
+            for x in 5..12 {
                 e.strike(x, y, 3.0);
             }
         }
