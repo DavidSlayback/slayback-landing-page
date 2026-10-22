@@ -92,12 +92,18 @@ fn load_kit(
 
 /// The black bars along the rim and round the glass, metres thick (Rumble Box's thick black edges, Q66).
 const EDGE: f32 = 0.14;
+/// The ground outside the box, at the rim (David: "it'd be cool if somehow you could see the lip of the wall and the
+/// floor above without messing up the camera view"): how far it reaches out from each solid wall, and how thick it is,
+/// metres. Far enough to fill the view behind the back wall.
+const LEDGE: f32 = 12.0;
+const LEDGE_THICK: f32 = 0.3;
 /// Rumble Box's tiles: a line every metre across the floor and up the walls (the checker's tiles too), this thick.
 pub const TILE: f32 = 1.0;
 const LINE: f32 = 0.05;
 
-/// A wall's solid face, its rim bar or one of its tile lines. A wall the camera is behind turns to glass and loses
-/// its lines and bar, so it never hides the fight.
+/// A wall's solid face, its rim bar, one of its tile lines, or the ground outside it at the rim. A wall the camera is
+/// behind turns to glass and loses the rest, so it never hides the fight: in particular the ground outside a wall only
+/// shows while the camera is on the box's side of that wall, where it can't be between the camera and the box.
 #[derive(Component)]
 struct WallFace {
     /// The wall's centre and its outward normal, on the floor.
@@ -147,6 +153,15 @@ fn dress_slabs(mut commands: Commands, kit: Res<Kit>, slabs: Query<(Entity, &Sla
                 cube(s, Vec3::ZERO, &kit.tiles, face(true));
                 // The rim bar goes with the wall when the camera is behind it, or it would slice across the fight.
                 cube(Vec3::new(s.x + 0.02, EDGE, s.z + 0.02), Vec3::Y * s.y / 2.0, &kit.edge, face(false));
+                // The ground above: outside the wall, its top level with the rim, so the bar reads as the lip of the
+                // pit you climb out of. The back wall's spans the corners behind the side walls' too.
+                let out = Vec3::new(outward.x, 0.0, outward.y) * (WALL / 2.0 + LEDGE / 2.0);
+                let ledge = if along_z {
+                    Vec3::new(s.x + 2.0 * LEDGE, LEDGE_THICK, LEDGE)
+                } else {
+                    Vec3::new(LEDGE, LEDGE_THICK, s.z + 2.0 * WALL)
+                };
+                cube(ledge, out + Vec3::Y * (s.y - LEDGE_THICK) / 2.0, &kit.tiles, face(false));
                 // Tile lines on the inner face: across at each metre of height, and up at each metre along.
                 let inward = -Vec3::new(outward.x, 0.0, outward.y) * (WALL / 2.0 + 0.004);
                 let span = if along_z { s.x - 2.0 * WALL } else { s.z };

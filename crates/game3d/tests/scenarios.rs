@@ -599,42 +599,56 @@ fn from_a_pile_just_under_the_rim_the_player_can_neither_step_onto_the_glass_nor
     assert_eq!(box_number(&app), 1, "and that is no escape");
 }
 
-#[test]
-fn the_player_climbs_a_pile_of_debris_and_escapes_to_box_2() {
-    let mut app = standing();
+/// A rough ramp of torso-sized blocks rising toward +x, its tallest column's far face at `end` (floor x): columns each
+/// a block taller than the last and slightly askew, dropped loose so they settle and freeze like a real pile. Returns
+/// the ramp's foot (floor x of its first column).
+fn ramp(app: &mut App, end: f32, z: f32) -> f32 {
     let rim = app.world().resource::<Arena>().rim;
-    // A rough ramp: columns of torso-sized blocks, each a block taller than the last and slightly askew, dropped loose
-    // so they settle and freeze like a real pile.
     let columns = (rim / TORSO[1]).ceil() as usize + 1;
+    let first = end - TORSO[0] / 2.0 - 0.01 - 0.48 * (columns - 1) as f32;
     for c in 0..columns {
         for layer in 0..=c {
             for side in [-1.0, 1.0] {
                 let wobble = ((c * 7 + layer * 3) % 5) as f32 * 0.04 - 0.08;
-                let at = Vec3::new(1.0 + 0.48 * c as f32, TORSO[1] * (layer as f32 + 0.5) + 0.01, -2.0 + side * 0.26);
+                let at = Vec3::new(first + 0.48 * c as f32, TORSO[1] * (layer as f32 + 0.5) + 0.01, z + side * 0.26);
                 let turn = Quat::from_rotation_y(wobble);
                 app.world_mut().spawn(piece(Solid::Cube(TORSO), 1, at, turn, 0.0));
             }
         }
     }
-    step(&mut app, SETTLE + 1.0);
-    let settled = pieces(&mut app);
+    step(app, SETTLE + 1.0);
+    let settled = pieces(app);
     assert!(settled.iter().all(|(_, b)| *b == RigidBody::Static), "the pile settled and froze");
     let peak = settled.iter().fold(0.0f32, |m, (at, _)| m.max(at.y + TORSO[1] / 2.0));
     assert!(peak >= rim, "and stands up to the rim ({rim} m): {peak}");
-    let score = app.world().resource::<RunScore>().0.points;
-    // From the foot of the ramp, up it.
-    teleport(&mut app, Vec3::new(-0.5, HEIGHT / 2.0 + 0.02, -2.0));
-    step(&mut app, 0.2);
-    press(&mut app, &[KeyCode::KeyD]);
+    first
+}
+
+/// Walks right (D) from `foot` (floor x) for `seconds`, up whatever is there; the highest the feet got.
+fn walk_up(app: &mut App, foot: f32, z: f32, seconds: f32) -> f32 {
+    teleport(app, Vec3::new(foot - 1.5, HEIGHT / 2.0 + 0.02, z));
+    step(app, 0.2);
+    press(app, &[KeyCode::KeyD]);
     let mut top: f32 = 0.0;
-    for _ in 0..(4.0 * FPS) as usize {
-        step(&mut app, 1.0 / FPS);
-        if box_number(&app) == 2 {
+    for _ in 0..(seconds * FPS) as usize {
+        step(app, 1.0 / FPS);
+        if box_number(app) == 2 {
             break;
         }
-        top = top.max(feet(&mut app));
+        top = top.max(feet(app));
     }
-    keys(&mut app).release_all();
+    keys(app).release_all();
+    top
+}
+
+#[test]
+fn the_player_climbs_a_pile_of_debris_against_a_wall_and_escapes_to_box_2() {
+    let mut app = standing();
+    let rim = app.world().resource::<Arena>().rim;
+    let wall = app.world().resource::<Arena>().floor.x / 2.0;
+    let foot = ramp(&mut app, wall, -2.0);
+    let score = app.world().resource::<RunScore>().0.points;
+    let top = walk_up(&mut app, foot, -2.0, 4.0);
     assert_eq!(box_number(&app), 2, "escaped to box 2 (feet reached {top} of the rim's {rim})");
     step(&mut app, 0.1);
     assert!(pieces(&mut app).is_empty(), "the next box starts empty");
@@ -645,6 +659,17 @@ fn the_player_climbs_a_pile_of_debris_and_escapes_to_box_2() {
     let mut walls = app.world_mut().query::<&Slab>();
     let tallest = walls.iter(app.world()).fold(0.0f32, |m, s| m.max(s.size.y));
     assert!((tallest - next).abs() < 1e-5, "the walls were rebuilt at the new rim: {tallest}");
+}
+
+#[test]
+fn a_pile_out_in_the_middle_reaches_the_rim_but_is_no_way_out() {
+    let mut app = standing();
+    let rim = app.world().resource::<Arena>().rim;
+    // The same ramp, ending mid-floor: the player tops it, and walks off its far end.
+    let foot = ramp(&mut app, 3.5, -2.0);
+    let top = walk_up(&mut app, foot, -2.0, 4.0);
+    assert!(top >= rim - 0.05, "stood as high as the rim: {top} of {rim}");
+    assert_eq!(box_number(&app), 1, "but out in the middle there's no wall to climb over");
 }
 
 /// `n` fodder burst one after another around `centre`, each standing on the heap so far, as kills in one spot would
@@ -1040,26 +1065,36 @@ fn climb(app: &App) -> Climb {
 }
 
 #[test]
-fn the_climb_gauge_measures_the_pile_underfoot_and_the_tallest_heap_against_the_rim() {
+fn the_climb_gauge_measures_the_pile_underfoot_and_the_tallest_heap_against_a_wall() {
     let mut app = standing();
     let c = climb(&app);
     assert_eq!((c.under, c.tallest), (0.0, 0.0), "an empty box");
     assert_eq!(c.rim, game_core::run::box_spec(1).rim);
-    // A block lying 3 m off: the tallest heap in the box, but not under the player.
+    // A block lying 3 m off, out in the middle: no heap against a wall yet.
     let at = player(&mut app).0;
-    let spot = Vec3::new(at.x + 3.0, 0.0, at.z);
-    block(&mut app, [0.8, 0.6, 0.8], spot.with_y(0.3), 0.0);
+    let middle = Vec3::new(at.x + 3.0, 0.0, at.z);
+    block(&mut app, [0.8, 0.6, 0.8], middle.with_y(0.3), 0.0);
     step(&mut app, 0.1);
     let c = climb(&app);
-    assert!((c.tallest - 0.6).abs() < 0.05 && c.under == 0.0, "{c:?}");
-    // Agents see it too: the observation's heightmap has the block in it.
+    assert!(c.tallest == 0.0 && c.under == 0.0, "a heap in the middle is no way out: {c:?}");
+    // Agents see it all the same: the observation's heightmap has the block in it.
     let seen = game3d::observe::observe(app.world_mut()).heights.iter().copied().fold(0.0, f32::max);
     assert!((seen - 0.6).abs() < 0.05, "the heightmap's tallest cell: {seen}");
-    // Standing on it.
-    teleport(&mut app, spot.with_y(0.6 + HEIGHT / 2.0 + 0.05));
+    // Standing on it: underfoot, but not at a wall.
+    teleport(&mut app, middle.with_y(0.6 + HEIGHT / 2.0 + 0.05));
     step(&mut app, 0.3);
     let c = climb(&app);
-    assert!((c.under - 0.6).abs() < 0.1 && c.tallest >= c.under, "{c:?}");
+    assert!((c.under - 0.6).abs() < 0.1 && !c.at_wall, "{c:?}");
+    // A block against the right wall: the tallest heap there, and standing on it is at a wall.
+    let wall = app.world().resource::<Arena>().floor.x / 2.0;
+    let against = Vec3::new(wall - 0.41, 0.0, at.z);
+    block(&mut app, [0.8, 0.9, 0.8], against.with_y(0.45), 0.0);
+    step(&mut app, 0.1);
+    assert!((climb(&app).tallest - 0.9).abs() < 0.05, "{:?}", climb(&app));
+    teleport(&mut app, against.with_y(0.9 + HEIGHT / 2.0 + 0.05));
+    step(&mut app, 0.3);
+    let c = climb(&app);
+    assert!((c.under - 0.9).abs() < 0.1 && c.at_wall, "{c:?}");
 }
 
 fn tip_showing(app: &App) -> bool {

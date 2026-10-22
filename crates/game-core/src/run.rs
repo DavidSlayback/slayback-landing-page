@@ -100,9 +100,15 @@ pub const FIRST_RIM: f32 = 1.5;
 /// The highest rim, metres: about what 50 kills heaped in a corner reach, well inside the frozen-debris cap.
 pub const MAX_RIM: f32 = 3.0;
 
-/// The escape test: the pile under the player (how high the player stands above the floor) has reached the rim.
-pub fn escaped(standing_height: f32, rim: f32) -> bool {
-    standing_height >= rim
+/// How near a wall the player must stand to climb out over it, metres from the wall's inner face to the player's
+/// centre: about a body's width, so the pile must be heaped against the wall (David: "you should need to stack the
+/// boxes against a wall, you can't just climb out from the middle").
+pub const AT_WALL: f32 = 0.8;
+
+/// The escape test: the pile under the player (how high the player stands above the floor) has reached the rim, and
+/// the player stands `from_wall` metres from the nearest wall, within [`AT_WALL`].
+pub fn escaped(standing_height: f32, rim: f32, from_wall: f32) -> bool {
+    standing_height >= rim && from_wall <= AT_WALL
 }
 
 /// What the clock did this frame.
@@ -250,10 +256,12 @@ mod tests {
     }
 
     #[test]
-    fn the_exit_opens_when_the_pile_under_the_player_reaches_the_rim() {
+    fn the_exit_opens_when_the_pile_under_the_player_reaches_the_rim_against_a_wall() {
         let rim = box_spec(1).rim;
-        assert!(!escaped(rim - 0.01, rim));
-        assert!(escaped(rim, rim));
+        assert!(!escaped(rim - 0.01, rim, 0.4), "not high enough");
+        assert!(escaped(rim, rim, 0.4), "high enough, at a wall");
+        assert!(escaped(rim, rim, AT_WALL));
+        assert!(!escaped(rim + 1.0, rim, AT_WALL + 0.01), "high enough, but out in the middle");
     }
 
     #[test]

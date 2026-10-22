@@ -38,6 +38,7 @@ pub fn obs_json(obs: &Obs) -> Value {
             "position": [r(p.at[0]), r(p.at[2])],
             "height": r(p.at[1]),
             "standing_on_pile": r(p.pile),
+            "distance_to_nearest_wall": r(p.wall_gap),
             "velocity": [r(p.velocity[0]), r(p.velocity[2])],
             "facing_radians": r(p.yaw),
             "hp": r(p.hp),

@@ -57,6 +57,8 @@ pub struct PlayerObs {
     pub carrying: bool,
     /// The top of the pile under the player, metres above the floor: what the escape test measures against the rim.
     pub pile: f32,
+    /// Metres to the nearest wall: the escape test also wants this within `run::AT_WALL`.
+    pub wall_gap: f32,
 }
 
 /// One enemy, as an observation carries it.
@@ -99,7 +101,7 @@ pub struct Obs {
 
 /// Floats in [`Obs::flat`].
 pub const FLAT: usize = PLAYER_FLAT + NEAREST * ENEMY_FLAT + GRID[0] * GRID[1] + 4 + BOX_FLAT;
-const PLAYER_FLAT: usize = 11;
+const PLAYER_FLAT: usize = 12;
 const ENEMY_FLAT: usize = 10;
 const BOX_FLAT: usize = 3;
 /// Speeds are divided by this to bring them near 1 (a dash is a little over the run).
@@ -128,6 +130,7 @@ impl Obs {
             p.hp / p.max_hp.max(1e-3),
             p.carrying as u8 as f32,
             p.pile / rim,
+            p.wall_gap / half[1],
         ]);
         for i in 0..NEAREST {
             match self.enemies.get(i) {

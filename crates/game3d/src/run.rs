@@ -2,7 +2,7 @@
 //! the clock, checks the escape test, empties the box between boxes, and on death shows the game-over screen; leaving
 //! it starts a fresh run at box 1. `arena` rebuilds the box at each rim and `score` keeps the score and the best.
 //!
-//! Escape (Q51): the pile under the player has reached the rim. The pile's height under the player's footprint comes
+//! Escape (Q51, Q81): the pile under the player has reached the rim, with the player against a wall. The pile's height under the player's footprint comes
 //! from the debris pieces as data (`game_core::climb::pile_height`), so only debris counts: not the floor, the walls
 //! or anything above the player's feet.
 
@@ -11,7 +11,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use game_core::combat::{Health, HitOutcome};
 use game_core::doors::Door;
-use game_core::run::{BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
+use game_core::run::{AT_WALL, BoxSpec, Run, TIMEOUT_PENALTY, Tick, escaped};
 
 use crate::Frame;
 use crate::arena::Arena;
@@ -26,12 +26,20 @@ use crate::player::{HEIGHT, MAX_HP, Player, SPAWN};
 pub struct RunState(pub Run);
 
 /// How the climb out stands, for the HUD's climb gauge (playtest feedback, Q80): the pile under the player's feet, the
-/// tallest settled heap anywhere in the box, and the rim they must reach, all metres above the floor.
+/// tallest settled heap against a wall, and the rim they must reach, all metres above the floor; and whether the
+/// player stands at a wall, where a pile at the rim gets them out (Q81).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct Climb {
     pub under: f32,
     pub tallest: f32,
     pub rim: f32,
+    pub at_wall: bool,
+}
+
+/// How far `spot` (floor x and z) is from the nearest wall's inner face, metres.
+pub fn from_wall(arena: &Arena, spot: Vec2) -> f32 {
+    let half = arena.floor / 2.0;
+    (half.x - spot.x.abs()).min(half.y - spot.y.abs())
 }
 
 /// A box begins: the first one, the next one after an escape, or box 1 again after a death.
@@ -129,7 +137,7 @@ fn escape(
 ) {
     let Ok((_, &Position(at), _, hp)) = reset.player.single() else { return };
     let hp = hp.0;
-    if !escaped(standing_on(pieces.iter(), at), arena.rim) {
+    if !escaped(standing_on(pieces.iter(), at), arena.rim, from_wall(&arena, at.xz())) {
         return;
     }
     ended.write(BoxEnded::Escaped { number: run.0.spec.number, time_left: run.0.time_left });
@@ -147,21 +155,24 @@ pub fn standing_on<'a>(pieces: impl IntoIterator<Item = (&'a Piece, &'a Transfor
     pile_under(pieces, at.xz(), FOOTPRINT, feet + FEET)
 }
 
-/// The climb gauge's numbers. The tallest heap counts only frozen debris, so a piece flung through the air doesn't
-/// flash a peak; it's each piece's top at its centre (`pile_under` over that one piece).
+/// The climb gauge's numbers. The tallest heap counts only frozen debris against a wall, so a piece flung through the
+/// air doesn't flash a peak and a heap out in the middle doesn't promise a way out; it's each piece's top at its centre
+/// (`pile_under` over that one piece).
 fn measure(
     arena: Res<Arena>,
     pieces: Query<(&Piece, &Transform, &RigidBody), Without<Player>>,
     player: Query<&Position, With<Player>>,
     mut climb: ResMut<Climb>,
 ) {
-    let under = player.single().map_or(0.0, |p| standing_on(pieces.iter().map(|(p, t, _)| (p, t)), p.0));
+    let (under, at_wall) = player.single().map_or((0.0, false), |p| {
+        (standing_on(pieces.iter().map(|(p, t, _)| (p, t)), p.0), from_wall(&arena, p.0.xz()) <= AT_WALL)
+    });
     let tallest = pieces
         .iter()
-        .filter(|(.., body)| **body == RigidBody::Static)
+        .filter(|(_, t, body)| **body == RigidBody::Static && from_wall(&arena, t.translation.xz()) <= AT_WALL)
         .map(|(p, t, _)| pile_under(std::iter::once((p, t)), t.translation.xz(), 0.05, ANY_HEIGHT))
-        .fold(under, f32::max);
-    let next = Climb { under, tallest, rim: arena.rim };
+        .fold(if at_wall { under } else { 0.0 }, f32::max);
+    let next = Climb { under, tallest, rim: arena.rim, at_wall };
     if *climb != next {
         *climb = next;
     }
