@@ -39,5 +39,5 @@ avian3d = { version = "=0.7.0", default-features = false, features = ["3d", "f32
 # score and sound setting (localStorage; the best dated with the browser's clock), pausing when the page loses focus,
 # and reduced motion (prefers-reduced-motion).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Document", "Location", "Storage", "MediaQueryList"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "Location", "Storage", "MediaQueryList"] }
 js-sys = "0.3"

@@ -1682,6 +1682,55 @@ fn the_demo_fight_punches_kicks_drop_kicks_and_spin_throws_with_a_kill_each_beat
 }
 
 #[test]
+fn the_tour_demo_shows_every_move_then_heaps_stacks_and_climbs_out_of_its_mini_box() {
+    let mut app = watched(|app| {
+        app.add_plugins(Demo { tour: true, ..default() });
+    });
+    step(&mut app, 1.0 / FPS);
+    assert_eq!(app.world().resource::<Arena>().rim, game3d::demo::TOUR_RIM, "a mini box");
+    let (mut out, mut held_block) = (None, false);
+    for frame in 0..(40.0 * FPS) as usize {
+        step(&mut app, 1.0 / FPS);
+        held_block |= holding(&mut app).is_some_and(|c| c.kind == Held::Debris);
+        if box_number(&app) == 2 {
+            out = Some(frame as f32 / FPS);
+            break;
+        }
+    }
+    let seen = app.world().resource::<Seen>();
+    for mv in [Move::Punch, Move::Kick, Move::DropKick] {
+        assert!(seen.blows.contains(&Feel::of(mv)), "a {mv:?} landed: {:?}", seen.blows);
+    }
+    assert!(seen.thrown, "a fodder was spin-thrown");
+    assert!(held_block, "a block was grabbed");
+    let out = out.unwrap_or_else(|| panic!("climbed out: {:?}, {} kills", climb(&app), seen.kills));
+    eprintln!("tour: out of the mini box at {out:.1} s of play, {} kills", seen.kills);
+}
+
+#[test]
+fn the_tour_climbs_out_at_any_frame_rate() {
+    // The browser's frames are uneven, so the kills land a little differently: the tour must get out regardless. 300:
+    // the clip is recorded in slow motion (0.2), so its game frames are that fine.
+    for fps in [30.0, 60.0, 144.0, 300.0] {
+        let mut app = watched(|app| {
+            app.add_plugins(Demo { tour: true, ..default() });
+        });
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / fps)));
+        let mut out = None;
+        for frame in 0..(40.0 * fps) as usize {
+            app.update();
+            if box_number(&app) == 2 {
+                out = Some(frame as f32 / fps);
+                break;
+            }
+        }
+        let kills = app.world().resource::<Seen>().kills;
+        let out = out.unwrap_or_else(|| panic!("{fps} fps: never out: {:?}, {kills} kills", climb(&app)));
+        eprintln!("tour at {fps} fps: out at {out:.1} s, {kills} kills");
+    }
+}
+
+#[test]
 fn the_demo_knobs_load_debris_and_set_the_clock_and_health() {
     let mut app = headless_and(fresh_store(), |app| {
         app.add_plugins(Demo { debris: 600, timer: Some(6.0), hp: Some(20.0), ..default() });

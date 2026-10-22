@@ -64,7 +64,7 @@ test.describe('/play', () => {
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 
-  test('the start overlay shows, a click starts the game and Esc pauses it', async ({ page }) => {
+  test('the start overlay shows with the tour clip, a click starts the game and Esc pauses it', async ({ page }) => {
     test.setTimeout(180_000);
     const built = existsSync(join(DIST, 'play', 'game_bg.wasm'));
     if (process.env.REQUIRE_GAME) expect(built).toBe(true);
@@ -75,21 +75,27 @@ test.describe('/play', () => {
     const after = (from, text) => () => logs.slice(from).some(l => l.includes(text));
     await page.goto('/play/');
     await expect.poll(after(0, 'phase start'), { timeout: 150_000 }).toBe(true);
-    const canvas = page.locator('#game');
+    const canvas = page.locator('#game'), tour = page.locator('#tour');
     await page.waitForTimeout(1000);
+    // The tour clip shows beside the start screen's text, playing.
+    await expect(tour).toBeVisible();
+    await expect.poll(() => page.evaluate(() => { const v = document.querySelector('#tour video'); return !v.paused && v.readyState >= 2; })).toBe(true);
     // The overlay dims the box behind it (the controls' text is small): far fewer bright pixels until it starts. The
     // bar is 0.5: G4's pale muted arena still clears 0.35 under the overlay (55% both ways; at 0.5, 2% against 56%).
-    const dimmed = await litFraction(page, await canvas.screenshot(), 0.5);
+    // The clip is masked out: it's bright on purpose.
+    const dimmed = await litFraction(page, await canvas.screenshot({ mask: [tour], maskColor: '#000' }), 0.5);
     let from = logs.length;
     await canvas.click();
     await expect.poll(after(from, 'phase playing')).toBe(true);
     await page.waitForTimeout(1000);
     const lit = await litFraction(page, await canvas.screenshot(), 0.5);
     expect(lit, `the overlay is gone (lit ${lit} vs ${dimmed} under it)`).toBeGreaterThan(dimmed * 3);
+    await expect(tour, 'the clip goes during play').toBeHidden();
     expect(logs.slice(from).some(l => l.includes('phase paused')), 'the focused page keeps playing').toBe(false);
     from = logs.length;
     await page.keyboard.press('Escape');
     await expect.poll(after(from, 'phase paused')).toBe(true);
+    await expect(tour, 'and comes back on the pause screen').toBeVisible();
     expect(errors.filter(e => !e.includes('Using exceptions for control flow'))).toEqual([]);
   });
 

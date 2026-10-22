@@ -81,7 +81,13 @@ fn pause_when_page_unfocused(on: Res<PauseOnBlur>, phase: Res<State<Phase>>, mut
     }
 }
 
-/// Logged for the browser harness, which waits for "phase start" and then "phase playing".
+/// Logged for the browser harness, which waits for "phase start" and then "phase playing". In the browser it is also
+/// set on the page as `html[data-phase]`, which shows the tour clip on the start and pause screens (`screens`).
 fn log(phase: Res<State<Phase>>) {
-    info!("phase {}", format!("{:?}", phase.get()).to_lowercase());
+    let name = format!("{:?}", phase.get()).to_lowercase();
+    info!("phase {name}");
+    #[cfg(target_arch = "wasm32")]
+    if let Some(root) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) {
+        let _ = root.set_attribute("data-phase", &name);
+    }
 }
