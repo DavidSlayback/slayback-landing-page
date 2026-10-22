@@ -1,8 +1,9 @@
 //! The HUD (`bevy_ui`), top right, clear of the host page's back link: the player's health as a bar in Rumble Box's
 //! health green, then the box number, the box clock, and the score with its streak multiplier; on a touch screen, a
 //! pause sign first, since a tap on the HUD pauses. Under it, the climb gauge (Q80): how high the pile under the
-//! player stands against the rim, in the player's ring colour, with a tick at the tallest heap in the box. The start,
-//! pause and game-over screens are `screens`.
+//! player stands against the rim, in the player's ring colour at a wall and grey away from one (only a pile against a
+//! wall gets you out, Q81), with a tick at the tallest heap against a wall. The start, pause and game-over screens are
+//! `screens`.
 
 use bevy::prelude::*;
 
@@ -130,24 +131,30 @@ fn along(height: f32, rim: f32) -> f32 {
     if rim <= 0.0 { 0.0 } else { (height / rim).clamp(0.0, 1.0) * GAUGE }
 }
 
+/// The gauge's fill away from a wall: a pile there doesn't get you out.
+const OFF_WALL: Color = Color::srgba(1.0, 1.0, 1.0, 0.35);
+
 #[allow(clippy::type_complexity)]
 fn update_climb(
     climb: Res<Climb>,
-    mut fill: Query<&mut Node, (With<ClimbFill>, Without<ClimbTallest>)>,
+    palette: Res<Palette>,
+    mut fill: Query<(&mut Node, &mut BackgroundColor), (With<ClimbFill>, Without<ClimbTallest>)>,
     mut tallest: Query<&mut Node, (With<ClimbTallest>, Without<ClimbFill>)>,
     mut readout: Query<&mut Text, With<ClimbReadout>>,
 ) {
     if !climb.is_changed() {
         return;
     }
-    if let Ok(mut node) = fill.single_mut() {
+    if let Ok((mut node, mut paint)) = fill.single_mut() {
         node.width = Val::Px(along(climb.under, climb.rim));
+        paint.0 = if climb.at_wall { colour(Role::Ring, &palette) } else { OFF_WALL };
     }
     if let Ok(mut node) = tallest.single_mut() {
         node.left = Val::Px((along(climb.tallest, climb.rim) - 1.5).max(0.0));
     }
     if let Ok(mut t) = readout.single_mut() {
-        t.0 = format!("{:.1} / {:.1} m", climb.under, climb.rim);
+        let wall = if climb.at_wall || climb.under < 0.05 { "" } else { "   needs a wall" };
+        t.0 = format!("{:.1} / {:.1} m{wall}", climb.under, climb.rim);
     }
 }
 

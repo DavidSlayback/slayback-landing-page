@@ -17,9 +17,9 @@ pub const SHOW: f32 = 8.0;
 
 /// What the tip says, with the keys and gamepad, or on a touch screen.
 pub const KEYS: &str = "Beaten enemies break into blocks, and you can pick the blocks up even after they land: \
-    L (or B) grabs one.\nHeap them under you and climb. When the pile under your feet reaches the rim, you're out.";
+    L (or B) grabs one.\nHeap them against a wall and climb. When the pile under your feet reaches the rim, you're out.";
 pub const TOUCH: &str = "Beaten enemies break into blocks, and you can pick them up even after they land: \
-    hold to grab one.\nHeap them under you and climb. When the pile under your feet reaches the rim, you're out.";
+    hold to grab one.\nHeap them against a wall and climb. When the pile under your feet reaches the rim, you're out.";
 
 /// The tip's state.
 #[derive(Resource, Debug, Default)]

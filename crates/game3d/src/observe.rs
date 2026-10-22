@@ -14,7 +14,7 @@ use crate::debris::{ANY_HEIGHT, Piece, pile_under};
 use crate::enemy::{Brain, WallDoor};
 use crate::fighter::Hp;
 use crate::player::{Facing, Player};
-use crate::run::{RunState, standing_on};
+use crate::run::{RunState, from_wall, standing_on};
 use crate::{plane, plane_on};
 
 /// The observation now. Before the player exists (the first frame) it describes an empty box with a dead player.
@@ -44,6 +44,7 @@ pub fn observe(world: &mut World) -> Obs {
             max_hp: hp.0.max,
             carrying,
             pile: standing_on(pile(), at),
+            wall_gap: from_wall(&arena, at.xz()),
         }
     });
     let player = player.unwrap_or_default();

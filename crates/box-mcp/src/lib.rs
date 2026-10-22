@@ -20,9 +20,9 @@ const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-
 /// What the server tells the agent once, at the start: the game's rules and conventions.
 pub const INSTRUCTIONS: &str = "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming \
 through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze \
-where they land. You escape a box when the pile of debris under your feet reaches the rim's height; then the next box \
-starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris \
-in steps of up to 0.4 m, so heap kills in one place to build a ramp. The box clock running out costs 25 health and \
+where they land. You escape a box when the pile of debris under your feet reaches the rim's height while you stand \
+against a wall (within 0.8 m of it: a pile out in the middle doesn't get you out); then the next box starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris \
+in steps of up to 0.4 m, so heap kills against a wall to build a ramp up to it. The box clock running out costs 25 health and \
 restarts it. One life: the run ends when your health reaches zero. Coordinates are metres on the floor from its \
 centre: x is east (right), y is north (away from the camera, toward the back wall). The game is frozen between your \
 tool calls; each action advances it. Call look often.";

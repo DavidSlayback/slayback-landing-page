@@ -10,8 +10,8 @@
 //!
 //! Per step, from what changed ([`reward`]):
 //! - [`KILL`] for each enemy defeated;
-//! - [`CLIMB`] times the rise, in rims, of the highest the player has stood on the pile in this box (only new
-//!   highs count, so stepping on and off a pile pays once);
+//! - [`CLIMB`] times the rise, in rims, of the highest the player has stood on the pile against a wall in this box
+//!   (only new highs count, so stepping on and off a pile pays once; a pile out in the middle can't get them out);
 //! - [`ESCAPE`] for each box escaped;
 //! - minus [`HURT`] times the health lost, as a share of the maximum (blows and the box clock's penalty);
 //! - minus [`DEATH`] when the run ends in death;
@@ -84,7 +84,7 @@ pub struct Progress {
     pub rim: f32,
     pub hp: f32,
     pub max_hp: f32,
-    /// The highest the player has stood on the pile in this box, metres.
+    /// The highest the player has stood on the pile against a wall in this box, metres.
     pub best_pile: f32,
 }
 
@@ -98,7 +98,7 @@ impl Progress {
             rim: obs.rim,
             hp: obs.player.hp,
             max_hp: obs.player.max_hp,
-            best_pile: best.max(obs.player.pile),
+            best_pile: if obs.player.wall_gap <= game_core::run::AT_WALL { best.max(obs.player.pile) } else { best },
         }
     }
 }
@@ -411,9 +411,26 @@ mod tests {
         obs.player.max_hp = 100.0;
         obs.player.hp = 100.0;
         obs.player.pile = 0.2;
+        obs.player.wall_gap = 0.4;
         let after = Progress::after(&before, &obs);
         assert_eq!(after.best_pile, 0.75, "the best stands");
         assert_eq!(reward(&before, &after, &Events::default()), -STEP);
+    }
+
+    #[test]
+    fn a_pile_out_in_the_middle_pays_nothing_and_one_at_a_wall_does() {
+        let mut obs = placeholder();
+        obs.rim = 1.5;
+        obs.player.max_hp = 100.0;
+        obs.player.hp = 100.0;
+        obs.player.pile = 0.75;
+        obs.player.wall_gap = 3.0;
+        let before = at(100.0, 0.0);
+        let middle = Progress::after(&before, &obs);
+        assert_eq!(reward(&before, &middle, &Events::default()), -STEP, "the middle: no way out");
+        obs.player.wall_gap = 0.5;
+        let wall = Progress::after(&before, &obs);
+        assert!((reward(&before, &wall, &Events::default()) - (CLIMB * 0.5 - STEP)).abs() < 1e-6);
     }
 
     #[test]

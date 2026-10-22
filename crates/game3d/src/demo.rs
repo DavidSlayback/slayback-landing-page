@@ -12,11 +12,11 @@
 //! - `bombs=1`: they step up as bomb-heads (G7), as in the 2.5D demo.
 //! - `timer=6`, `hp=20`: the box clock and the player's health at the start, to end a run on cue (e.g. to check the
 //!   game-over screen and the best).
-//! - `stairs=1`: no fight; each box gets a staircase of debris up past its rim and the player walks right, up it and
-//!   out, box after box (the browser harness's scripted climb).
+//! - `stairs=1`: no fight; each box gets a staircase of debris up to its right wall, past its rim, and the player
+//!   walks right, up it and out, box after box (the browser harness's scripted climb).
 //! - `tour=1`: the clip on the start and pause screens. A mini box (box 1 with a low rim, [`TOUR_RIM`]) where the
-//!   player runs round, punches, kicks, drop-kicks and spin-throws, heaps more kills in one spot, grabs a block and
-//!   sets it on the heap, then climbs the heap and out. `rim=0.8` sets the first box's rim for any demo.
+//!   player runs round, punches, kicks, drop-kicks and spin-throws, walks to the right wall and heaps more kills
+//!   against it, grabs a block and sets it on the heap, then climbs the heap and out over the wall. `rim=0.8` sets the first box's rim for any demo.
 //!
 //! One knob works without the demo too, for reviewing the look: `stage=1` starts the run's colours that many stages on
 //! (`look`; box 1 in box 2's orange checker).
@@ -39,7 +39,7 @@ use crate::flow::{PauseOnBlur, Phase};
 use crate::hint::GrabTip;
 use crate::input::{Actions, ReadActions};
 use crate::player::{Facing, Player, SPAWN};
-use crate::run::{BoxEnded, BoxStarted, FOOTPRINT, RunState};
+use crate::run::{BoxEnded, BoxStarted, FOOTPRINT, RunState, from_wall};
 use game_core::run::{BoxSpec, Run, box_spec};
 
 /// A demo setting from the page query (`demo=1&stairs=1`) or, natively, the environment (`DEMO=1 STAIRS=1`).
@@ -364,6 +364,8 @@ fn place_beat(
 pub const TOUR_RIM: f32 = 0.7;
 /// Extra punches into one spot after the four moves, to build the heap.
 const HEAP_KILLS: usize = 3;
+/// How far short of the right wall the player stands for the heap's kills, metres: the fodder go in between.
+const WALL_STAND: f32 = 1.7;
 /// The climb's search grid spacing, metres, and how long it tries before heaping more.
 const CLIMB_GRID: f32 = 0.2;
 const CLIMB_FOR: f32 = 3.0;
@@ -386,6 +388,7 @@ enum Stage {
     Land,
     RunRound,
     Moves,
+    ToWall,
     Heap,
     Stack,
     Climb,
@@ -460,12 +463,25 @@ fn tour(
             }
             if s.t > BEAT {
                 let (count, after) =
-                    if s.stage == Stage::Moves { (BEATS.len(), Stage::Heap) } else { (HEAP_KILLS, Stage::Stack) };
+                    if s.stage == Stage::Moves { (BEATS.len(), Stage::ToWall) } else { (HEAP_KILLS, Stage::Stack) };
                 (s.t, s.placed) = (0.0, false);
                 s.beat += 1;
                 if s.beat >= count {
                     next(&mut s, after);
                 }
+            }
+        }
+        Stage::ToWall => {
+            // Over to the right wall, stopping a punch's reach short of it and facing it: the heap's kills fall against
+            // the wall, where a pile gets you out (Q81).
+            let stop = arena.floor.x / 2.0 - WALL_STAND;
+            if me.x < stop {
+                actions.dir = [1.0, 0.0];
+            } else if s.t > 0.2 {
+                next(&mut s, Stage::Heap);
+            }
+            if s.t > 4.0 {
+                next(&mut s, Stage::Heap);
             }
         }
         Stage::Stack => {
@@ -489,8 +505,10 @@ fn tour(
             // Up the heap: walk at the highest place nearby a player could stand (the pile under a footprint, on a
             // grid round the player), not just the tallest piece, which may be a lone head with no room on top.
             let around = me.xz();
+            let reach = game_core::run::AT_WALL - 0.15;
             let best = (-10..=10)
                 .flat_map(|i| (-10..=10).map(move |j| around + Vec2::new(i as f32, j as f32) * CLIMB_GRID))
+                .filter(|spot| (0.0..=reach).contains(&from_wall(&arena, *spot)))
                 .map(|spot| (pile_under(pieces.iter(), spot, FOOTPRINT, ANY_HEIGHT), spot))
                 .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.distance(around).total_cmp(&a.1.distance(around))));
             if let Some((_, spot)) = best {
@@ -521,17 +539,16 @@ const RISE: f32 = 0.75 * MAX_STEP;
 /// Each step's depth along x and width along z, metres.
 const TREAD: f32 = 0.55;
 const WIDTH: f32 = 1.2;
-/// Where the first step starts, right of the spawn, metres.
-const FIRST: f32 = 0.8;
 
-/// A staircase of frozen debris to the right of the spawn, up to the rim: blocks from the floor, each a step taller
-/// than the last, the top one level with or above the rim.
-fn build_stairs(mut commands: Commands, time: Res<Time>, mut started: MessageReader<BoxStarted>) {
+/// A staircase of frozen debris against the right wall, up to the rim: blocks from the floor, each a step taller than
+/// the last, the top one level with or above the rim and touching the wall (only a pile against a wall gets you out).
+fn build_stairs(mut commands: Commands, time: Res<Time>, arena: Res<Arena>, mut started: MessageReader<BoxStarted>) {
     let Some(BoxStarted(spec)) = started.read().last() else { return };
     let steps = (spec.rim / RISE).ceil() as usize;
+    let first = arena.floor.x / 2.0 - TREAD * steps as f32;
     for i in 0..steps {
         let h = RISE * (i + 1) as f32;
-        let at = Vec3::new(FIRST + TREAD * (i as f32 + 0.5), h / 2.0, SPAWN.z);
+        let at = Vec3::new(first + TREAD * (i as f32 + 0.5), h / 2.0, SPAWN.z);
         let block = piece(Solid::Cube([TREAD, h, WIDTH]), 0, at, Quat::IDENTITY, time.elapsed_secs());
         commands.spawn(block).insert(avian3d::prelude::RigidBody::Static);
     }

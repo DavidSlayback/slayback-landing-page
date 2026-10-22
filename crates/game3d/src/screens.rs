@@ -47,8 +47,8 @@ pub const CLIP: [f32; 4] = [0.04, 0.32, 0.36, 0.36];
 /// out only after a dozen runs). Short lines: the text has the stage's left 60% (a phone held sideways is 670 to 930
 /// pixels across).
 const GOAL: &str = "Beaten enemies break into blocks. Grab them (even once\n\
-    they've landed), heap them up and climb: when the pile\n\
-    under your feet reaches the rim, you escape the box.";
+    they've landed), heap them against a wall and climb: when\n\
+    the pile under your feet reaches the rim, you're out.";
 
 const CONTROLS: &str = "WASD / arrows  move      Space / Shift  dash\n\
     J / left click  punch      K / right click  kick\n\
