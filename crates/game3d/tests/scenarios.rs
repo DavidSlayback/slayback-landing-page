@@ -25,6 +25,7 @@ use game3d::demo::Demo;
 use game3d::enemy::{Brain, Waves, enemy, fodder};
 use game3d::fighter::{Defeated, Hit, Hp, Team};
 use game3d::flow::Phase;
+use game3d::hint::GrabTip;
 use game3d::input::{Actions, ViewYaw};
 use game3d::player::{Facing, HEIGHT, Player, RADIUS, SPAWN};
 use game3d::run::{InBox, RunState};
@@ -1029,6 +1030,47 @@ fn a_run_starts_from_the_overlay_scores_a_kill_and_ends_on_the_game_over_screen_
     let mut next = headless_with(store);
     step(&mut next, 1.0 / FPS);
     assert_eq!(next.world().resource::<BestScore>().0.as_ref(), Some(&best), "the best carries over");
+}
+
+fn tip_showing(app: &App) -> bool {
+    app.world().resource::<GrabTip>().showing()
+}
+
+#[test]
+fn the_first_kill_of_a_run_tips_the_player_off_about_grabbing_blocks_until_they_grab_one() {
+    let mut app = standing();
+    assert!(!tip_showing(&app), "no tip before a kill");
+    kill_one(&mut app);
+    assert!(tip_showing(&app), "the first kill brings up the tip");
+    step(&mut app, game3d::hint::SHOW);
+    assert!(!tip_showing(&app), "it goes after a while");
+    teleport(&mut app, SPAWN + Vec3::X * -4.0);
+    step(&mut app, 0.5);
+    kill_one(&mut app);
+    assert!(!tip_showing(&app), "once a run");
+
+    // A fresh run tips again, until the player grabs a block.
+    time_out(&mut app);
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.5);
+    kill_one(&mut app);
+    assert!(tip_showing(&app), "a new run's first kill tips again");
+    let at = player(&mut app).0;
+    let part = block(&mut app, TORSO, Vec3::new(at.x - 0.9, TORSO[1] / 2.0, at.z), 0.0);
+    hold(&mut app, &[KeyCode::KeyA], 0.05);
+    step(&mut app, 0.2);
+    tap(&mut app, KeyCode::KeyL);
+    assert!(carried(&app, part), "grabbed a block");
+    step(&mut app, 0.05);
+    assert!(!tip_showing(&app) && app.world().resource::<GrabTip>().learned, "learned: the tip goes for good");
+    tap(&mut app, KeyCode::KeyL);
+    time_out(&mut app);
+    tap(&mut app, KeyCode::Enter);
+    step(&mut app, 0.5);
+    hold(&mut app, &[KeyCode::KeyD], 0.05);
+    step(&mut app, 0.3);
+    kill_one(&mut app);
+    assert!(!tip_showing(&app), "not even in a new run");
 }
 
 #[test]

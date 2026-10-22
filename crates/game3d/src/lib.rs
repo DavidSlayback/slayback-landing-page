@@ -20,6 +20,7 @@ pub mod figure;
 pub mod flat;
 pub mod flow;
 pub mod headless;
+pub mod hint;
 #[cfg(feature = "render")]
 pub mod hud;
 #[cfg(feature = "render")]
@@ -100,6 +101,7 @@ pub fn plugin(app: &mut App) {
             run::plugin,
             score::plugin,
             sound::plugin,
+            hint::plugin,
         ));
 }
 
