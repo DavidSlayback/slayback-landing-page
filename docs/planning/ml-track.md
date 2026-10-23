@@ -7,12 +7,12 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: Thu 2026-10-22. Resumed (bench v1 and the RL agent, see Settled). Branch rl-agent.
-In flight: (1) one progress score in box-env, the RL reward and the bench's secondary metric; (2) bench v1 sweep on the mini box (Haiku, Sonnet, Opus, 5 seeds x 3 trials, plus baselines; ~10% of the plan's window); (3) M2 #87 Python bindings, M3 #88 PPO in PyTorch (CUDA) and JAX (CPU); (4) train on the mini box, then a policy row in the bench.
-Next: (1).
-Waiting on: nothing for (1)-(4). WebMCP token (M8, later).
+As of: Fri 2026-10-23. Bench v1 done, with the RL agent; branch rl-agent.
+Done: (1) the progress score is the env's summed reward, the RL objective and the bench's secondary number; (2) bench v1 on the mini box with a 60 s play limit for all: RL policy 12/15 escapes, Opus 3/15, every other agent 0/15 (bench/README.md); (3) M2 #87 as box-vec (a binary protocol over stdio, not PyO3) + ml/boxenv.py, M3 #88 PPO in PyTorch (CUDA) and JAX (CPU); M4 #89's Rust forward pass (box_env::policy) for the bench; (4) torch-mini-1: 10M steps, 2.4 h, ml/models/torch-mini-1/.
+Next: the policy in the browser (M4 #89's game side: ?agent= watch mode), the JAX run for the PyTorch-vs-JAX comparison, the lab page (M7 #92), the write-ups (M10 #95), profiling (M9 #94: training throughput fell from 1,640 to 1,170 steps/s as boxes filled).
+Waiting on: WebMCP token (M8, later).
 Re-arm: nothing scheduled.
-Verified: v0 results bench/results/2026-10-21-* (superseded: blank heightmap, pre-wall rule).
+Verified: bench/results/2026-10-23-*/results.json, every run verified by replay; ml tests 6 passed; box-env policy parity test.
 ```
 
 M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.

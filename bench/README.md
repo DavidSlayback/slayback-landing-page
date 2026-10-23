@@ -21,6 +21,45 @@ LLM agents play *Escape the Box*, the 3D brawler on this site, through an MCP se
 
 Run it: `bash scripts/native.sh run -p box-bench -q -- --model sonnet --seeds 1,2,3,4,5 --trials 3 --max-calls 80 --allow-sweep` (see `crates/box-bench`).
 
+## Results v1: the mini box
+
+**Setup:**
+- **Box:** a "mini box": box 1 with a 0.7 m rim (David: "Progress score is a good reward shaping option", and the RL agent "Probably should" be in it).
+- **Rules:** escaping needs the pile under you at the rim *against a wall* (Q81).
+- **Runs:** 5 seeds × 3 trials per agent. Every agent gets 60 s of game time; LLM runs also stop at 80 tool calls, which ended them at 14–42 s.
+- **Scoring:** escapes are the headline. The **progress score** (the episode's summed reward: kills, pile at a wall, escapes, minus harm and death) is the secondary number, and also the RL agent's training objective.
+- **Agents:**
+  - LLMs: headless Claude Code 2.1.305 with Haiku 5.5, Sonnet 5.5 and Opus 5.5.
+  - Model-free, played natively: the RL policy, the scripted brawler, and random.
+  - The policy samples its actions as it was trained to, from a generator seeded per seed and trial, so its runs repeat and its trials differ.
+- **Verification:** every run below was replayed and reproduced its outcome.
+
+| Agent | Verified | Escaped | pass^3 | Progress score (mean) | Kills | Survived (s) | Best pile (share of rim) | Calls |
+|---|---|---|---|---|---|---|---|---|
+| **RL policy torch-mini-1** | 15/15 | **12/15** | **40%** | **32.0** | 26.7 | 54 | 74% | n/a |
+| Opus 5.5 | 15/15 | 3/15 | 0% | 8.6 | 9.9 | 33 | 72% | 73 |
+| brawler (scripted) | 15/15 | 0/15 | 0% | 5.2 | 11.8 | 28 | 56% | n/a |
+| Haiku 5.5 | 15/15 | 0/15 | 0% | 0.1 | 7.1 | 24 | 49% | 55 |
+| Sonnet 5.5 | 15/15 | 0/15 | 0% | −0.6 | 5.9 | 22 | 38% | 54 |
+| random | 15/15 | 0/15 | 0% | −2.2 | 4.7 | 22 | 39% | n/a |
+
+`python bench/table.py 1` regenerates the table from `bench/results/` (sweeps marked `bench_version: 1`).
+
+**The RL policy:**
+- **Training:** PPO in PyTorch on the RTX 4060 (`ml/ppo_torch.py`), 10M env steps in the mini box, about 2.4 h at 1,170–1,640 steps/s, 16 envs in 16 `box-vec` processes.
+- **Network:** a 2×256 tanh actor and critic over the game's 175-float observation.
+- **Files:** `ml/models/torch-mini-1/` holds `policy.bin` (the actor, read by `box_env::policy`), the run's config, and its learning curve, every 25th update.
+- **Learning curve:** its training episodes' escape rate rose to 32% at 2M steps, 51% at 4M, and about 70% from 6M on.
+- **Greedy play is worse:** taking the top action every step made it die at about 30 s every time, with piles at 88% of the rim. It hugs the walls: it learned the wall rule from the climb reward alone.
+
+**What it shows:**
+- **The mini box separates the agents.** One LLM escapes at all: Opus, in 3 of 15 runs, with the most kills and the highest piles of the three.
+- **A small trained policy does far better.** About 120k parameters for the actor, running in microseconds a step, escapes 12 of 15 at no API cost.
+- **The comparison is unequal by design, and that's the point.** The LLMs read rules and act turn by turn from text; the policy has 10M steps of experience. Both are measured on the same seeds, box and time limit, with replays checked.
+- **Caveats:**
+  - Five seeds, one training run (one seed), no confidence intervals.
+  - The LLMs act through coarse tools, which costs them precision in fights; the policy acts every 4 frames.
+
 ## Results, 2026-10-21 (v0: the agents' heightmap was blank)
 
 **Read these with a flaw in mind.** The observation's `pile_heights` grid was all zeros in these runs: the pile-height test was given `f32::MAX` as its ceiling, and its downward ray lost all precision. Agents still saw the pile under their own feet (`standing_on_pile`), but not where any heap stood. It is fixed (`debris::ANY_HEIGHT`, tested in the scenarios). These results stand as v0 of the benchmark; a rerun on the fixed build is the next sweep. The rules have changed since too: a pile now only gets you out against a wall (Q81), and agents see their distance to the nearest wall. The baselines don't read the heightmap, so their numbers are unaffected.

@@ -10,6 +10,15 @@ import sys
 here = os.path.dirname(os.path.abspath(__file__))
 version = int(sys.argv[1]) if len(sys.argv) > 1 else 1
 rows = []
+
+
+def label(model: str) -> str:
+    """A policy by its run's name (ml/models/<run>/policy.bin), the rest as they are."""
+    if model.startswith("policy:"):
+        return "RL policy " + os.path.basename(os.path.dirname(model.split(":", 1)[1].replace("\\", "/")))
+    return model
+
+
 for f in sorted(glob.glob(os.path.join(here, "results", "*", "results.json"))):
     r = json.load(open(f, encoding="utf-8"))
     if r.get("bench_version", 0) != version or r.get("trials") != 3 or len(r.get("seeds", [])) != 5:
@@ -21,7 +30,7 @@ for f in sorted(glob.glob(os.path.join(here, "results", "*", "results.json"))):
     s = r["summary"]
     escaped = sum(x["replayed"]["escapes"] > 0 for x in a)
     rows.append({
-        "agent": r["model"].replace("policy:", "policy "),
+        "agent": label(r["model"]),
         "verified": f"{len(a)}/{len(r['runs'])}",
         "escaped": f"{escaped}/{len(a)}",
         "pass_k": f"{s['pass_k']:.0%}",
