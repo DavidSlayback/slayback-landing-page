@@ -264,7 +264,7 @@ impl Env {
         let (dir, verbs) = action.decode();
         for frame in 0..self.config.frame_skip {
             let pressed = if frame == 0 { verbs } else { Default::default() };
-            self.app.world_mut().resource_mut::<Command>().0 = Actions { dir, verbs: pressed };
+            self.app.world_mut().resource_mut::<Command>().0 = Actions { dir, verbs: pressed, aim: None };
             self.app.update();
             if self.app.world().resource::<Tally>().0.died {
                 break;
