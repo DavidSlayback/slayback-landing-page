@@ -16,3 +16,7 @@ node_modules/
 .env
 .env.local
 /.wrangler/
+# Python trainers (ml/): the environment and training runs stay local; results worth keeping are copied out.
+/ml/.venv/
+/ml/runs/
+__pycache__/

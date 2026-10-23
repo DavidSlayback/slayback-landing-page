@@ -7,13 +7,12 @@ David, 2026-10-19, after research into what gets ML engineers hired: "Ooh, good 
 ## Status
 
 ```text
-As of: Thu 2026-10-22. PARKED by David ("Hand this off for later"): the bench works and its first results are in (bench/README.md), at 7cc6718 on hero-sparks.
-In flight: nothing running.
-Next (on resume): David picks how the bench separates agents now that nothing escapes box 1, from bench/README.md and the options below: (1) headline a progress score (kills, survival, pile), the recommendation; (2) an easier first box for the bench, as a new version; (3) higher-level tools (fight nearest, heap at x,y). Then M7 #92 (lab page) or M2 #87.
-Waiting on: David: that choice. Compute for training (parked). WebMCP token (M8, later).
-Re-arm: nothing scheduled or watched.
-Flaw found after the sweeps: the agents' heightmap (obs `heights` / `pile_heights`) was all zeros in every run so far (`pile_under` with an f32::MAX ceiling); fixed with debris::ANY_HEIGHT. The first sweeps are v0; rerun the three models on the fixed build before drawing conclusions (bench/README.md says so).
-Verified: bench/results/2026-10-21-{1855-sonnet,1909-haiku,1926-opus,2006-brawler,2006-random}/results.json, every run verified: true by replay at game commit b589b2e.
+As of: Fri 2026-10-23. Bench v1 done, with the RL agent; branch rl-agent.
+Done: (1) the progress score is the env's summed reward, the RL objective and the bench's secondary number; (2) bench v1 on the mini box with a 60 s play limit for all: RL policy 12/15 escapes, Opus 3/15, every other agent 0/15 (bench/README.md); (3) M2 #87 as box-vec (a binary protocol over stdio, not PyO3) + ml/boxenv.py, M3 #88 PPO in PyTorch (CUDA) and JAX (CPU); M4 #89's Rust forward pass (box_env::policy) for the bench; (4) torch-mini-1: 10M steps, 2.4 h, ml/models/torch-mini-1/.
+Next: the policy in the browser (M4 #89's game side: ?agent= watch mode), the JAX run for the PyTorch-vs-JAX comparison, the lab page (M7 #92), the write-ups (M10 #95), profiling (M9 #94: training throughput fell from 1,640 to 1,170 steps/s as boxes filled).
+Waiting on: WebMCP token (M8, later).
+Re-arm: nothing scheduled.
+Verified: bench/results/2026-10-23-*/results.json, every run verified by replay; ml tests 6 passed; box-env policy parity test.
 ```
 
 M1 result: crates/box-env (reset/step, reward, Trace/replay bit for bit, JSON obs, scripted `brawler` baseline); game3d::headless shared with the scenarios (68 still pass); Waves.seed. Speed, one core, random actions in a light box: 2,092 steps/s release (140x real time), 1,818 dev; ~16 envs on this 14-core CPU should give ~25k steps/s, before the box fills with debris (unmeasured). The brawler baseline: ~10 kills, dies ~24 s into box 1, never escapes.
@@ -48,6 +47,8 @@ M6 so far: crates/box-bench runs `claude -p` per seed x trial through box-mcp, a
 | RL stack | "Jax and PyTorch both. I don't intend to train on the machine just yet." The env stays Rust with Python bindings; one PPO trainer in each framework, same hyperparameters and metrics, so they can be compared. |
 | LLM spend | "Use my Claude subscription": agents run as headless Claude Code (`claude -p`), no API key, no extra spend. Results measure Claude Code as the agent, and runs draw on the plan's usage limits. |
 | #4 target | "Both": nanoGPT-124M's training step and the PPO update step (in both frameworks). |
+| Bench v1 (David, 2026-10-22) | Asked "What is the next benchmark design choice?", then: "Are we using an RL agent too? Probably should. Progress score is a good reward shaping option". Settled: the bench moves to a mini box (box 1's rim at 0.7 m, the tour's), where escape rate is the headline; one progress score (kills, survival, pile at a wall, escape, harm) is both every agent's secondary metric and the RL reward; a trained policy is a row in the table beside the LLMs and the baselines. |
+| Training compute (David, 2026-10-22) | "Use the GPU if you can, it's the only thing that actually has memory to spare" (15.6 GB RAM, ~2 GB free; RTX 4060 8 GB, ~7.8 GB free). Training is unparked on this machine: PyTorch on CUDA for the policy; the game worlds step on the CPU (Bevy), so about 8 envs, sized by measured memory. JAX: CPU on Windows (CUDA JAX needs WSL). |
 
 ## Defaults (recorded, not asked)
 

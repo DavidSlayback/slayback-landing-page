@@ -1,0 +1,28 @@
+[project]
+name = "box-ml"
+version = "0.1.0"
+description = "Escape the Box: PPO in PyTorch (CUDA) and JAX over the game's environment (ML track, docs/planning/ml-track.md)."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=2.1",
+    "torch>=2.8",
+    "jax>=0.7",
+    "optax>=0.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# CUDA builds of PyTorch (the RTX 4060 is compute 8.9; CUDA 12.8 wheels cover it). JAX stays on the CPU: CUDA JAX
+# has no native Windows wheels.
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

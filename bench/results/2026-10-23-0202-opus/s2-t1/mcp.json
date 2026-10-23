@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "box": {
+      "args": [
+        "--seed",
+        "2",
+        "--max-calls",
+        "80",
+        "--rim",
+        "0.7",
+        "--trace",
+        "C:\\Users\\david\\repos\\portfolio\\.claude\\worktrees\\portfolio-rebase-sequence-d6c275\\bench\\results\\2026-10-23-0202-opus\\s2-t1\\record.json"
+      ],
+      "command": "C:\\Users\\david\\repos\\portfolio\\target\\release\\box-mcp.exe"
+    }
+  }
+}

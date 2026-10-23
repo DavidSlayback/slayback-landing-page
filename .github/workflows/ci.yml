@@ -47,12 +47,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo test --release --locked
-      - run: cargo test -p game3d --no-default-features --locked
-      # game3d's unit tests behind `render` (figure, paint) need Bevy's Linux audio and gamepad headers.
-      - run: sudo apt-get update -q && sudo apt-get install -yq libasound2-dev libudev-dev
+      # The headless game, and the ML track's crates over it (the env, its MCP server, the benchmark runner).
+      - run: cargo test -p game3d -p box-env -p box-mcp -p box-bench --no-default-features --locked
+      # game3d's unit tests behind `render` (figure, paint) need Bevy's Linux audio and gamepad headers. Binaryen's
+      # wasm-opt shrinks hero.wasm as every deploy from a workstation does, so the budget below measures what ships.
+      - run: sudo apt-get update -q && sudo apt-get install -yq libasound2-dev libudev-dev binaryen
       - run: cargo test -p game3d --lib --locked
       - run: cargo clippy --all-targets --release -- -D warnings
-      - run: cargo clippy -p game3d --no-default-features --all-targets -- -D warnings
+      - run: cargo clippy -p game3d -p box-env -p box-mcp -p box-bench --no-default-features --all-targets -- -D warnings
       - run: SKIP_GAME=1 bash scripts/build.sh
       - name: hero.wasm size budget (80 KB)
         run: test "$(wc -c < dist/hero.wasm)" -le 81920

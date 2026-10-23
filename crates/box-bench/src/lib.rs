@@ -65,6 +65,8 @@ pub struct Analysis {
     /// Share of steps spent within [`WALL`] of a wall.
     pub wall_share: f32,
     pub game_seconds: f32,
+    /// The progress score: the episode's summed reward (`box_env` module docs), the bench's secondary number.
+    pub score: f32,
     pub calls: usize,
     pub refused: usize,
 }
@@ -130,30 +132,46 @@ pub fn analyse(record: &Record) -> Analysis {
         best_pile,
         wall_share,
         game_seconds: replayed.steps as f32 * trace.config.frame_skip as f32 / 60.0,
+        score: f32::from_bits(replayed.reward_bits),
         calls: record.calls.len(),
         refused,
     }
 }
 
-/// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor.
+/// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor. A trained policy
+/// plays the same way: `policy:<path to policy.bin>`, sampling its actions as in training (`box_env::policy`), from
+/// the same per-seed-and-trial generator as `random`, so its runs repeat and its trials differ.
 pub const BASELINES: [&str; 2] = ["brawler", "random"];
+
+/// Whether `model` is played natively (a baseline or a trained policy) rather than by an LLM through box-mcp.
+pub fn native(model: &str) -> bool {
+    BASELINES.contains(&model) || model.starts_with("policy:")
+}
 
 /// Plays baseline `name` (one of [`BASELINES`]) on `seed` until the run ends, as a record like a session's (with no
 /// calls). `random` draws its actions from `seed` and `trial`; `brawler` (`box_env::brawler`: walk at the nearest
 /// enemy, punch in reach) plays the same every trial.
-pub fn baseline(name: &str, seed: u32, trial: u32) -> Option<Record> {
-    let mut env = Env::new(EnvConfig { seed, ..EnvConfig::default() });
+pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>, max_steps: u32) -> Option<Record> {
+    let policy = match name.strip_prefix("policy:") {
+        Some(path) => Some(box_env::policy::Policy::load(std::path::Path::new(path)).ok()?),
+        None => None,
+    };
+    let mut env = Env::new(EnvConfig { seed, rim, max_steps, ..EnvConfig::default() });
+    // One xorshift stream per seed and trial: random actions for `random`, uniform draws for a policy's sampling.
     let mut s = (seed.wrapping_mul(31) ^ trial.wrapping_mul(0x9E37_79B9)).max(1);
-    let mut random = move || {
+    let mut next = move || {
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;
-        Action((s % ACTIONS as u32) as u8)
+        s
     };
     while !env.done() {
         let a = match name {
+            _ if policy.is_some() => {
+                policy.as_ref().unwrap().sample(env.last(), (next() >> 8) as f32 / (1u32 << 24) as f32)
+            }
             "brawler" => box_env::brawler(env.last()),
-            "random" => random(),
+            "random" => Action((next() % ACTIONS as u32) as u8),
             _ => return None,
         };
         env.step(a);
@@ -203,6 +221,7 @@ pub struct Summary {
     pub mean_best_pile: f32,
     pub mean_calls: f32,
     pub mean_game_seconds: f32,
+    pub mean_score: f32,
     pub endings: Vec<(Ending, usize)>,
     pub flags: Vec<(Flag, usize)>,
     pub reported_cost_usd: f64,
@@ -246,6 +265,7 @@ pub fn summarise(runs: &[RunResult]) -> Summary {
         mean_best_pile: mean(&|a| a.best_pile),
         mean_calls: mean(&|a| a.calls as f32),
         mean_game_seconds: mean(&|a| a.game_seconds),
+        mean_score: mean(&|a| a.score),
         endings,
         flags,
         reported_cost_usd: runs.iter().map(|r| r.reported_cost_usd).sum(),
@@ -315,10 +335,10 @@ mod tests {
     #[test]
     fn baselines_play_until_they_die_and_verify() {
         for name in BASELINES {
-            let a = analyse(&baseline(name, 1, 1).unwrap());
+            let a = analyse(&baseline(name, 1, 1, None, 20_000).unwrap());
             assert!(a.verified && a.ending == Ending::Died, "{name}: {a:?}");
         }
-        assert!(baseline("nobody", 1, 1).is_none());
+        assert!(baseline("nobody", 1, 1, None, 20_000).is_none());
     }
 
     #[test]
@@ -344,6 +364,7 @@ mod tests {
                 best_pile: 0.5,
                 wall_share: 0.0,
                 game_seconds: 4.0,
+                score: 2.0,
                 calls: 10,
                 refused: 0,
             }),
