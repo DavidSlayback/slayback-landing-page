@@ -139,7 +139,8 @@ pub fn analyse(record: &Record) -> Analysis {
 }
 
 /// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor. A trained policy
-/// plays the same way: `policy:<path to policy.bin>` (greedy, `box_env::policy`).
+/// plays the same way: `policy:<path to policy.bin>`, sampling its actions as in training (`box_env::policy`), from
+/// the same per-seed-and-trial generator as `random`, so its runs repeat and its trials differ.
 pub const BASELINES: [&str; 2] = ["brawler", "random"];
 
 /// Whether `model` is played natively (a baseline or a trained policy) rather than by an LLM through box-mcp.
@@ -150,24 +151,27 @@ pub fn native(model: &str) -> bool {
 /// Plays baseline `name` (one of [`BASELINES`]) on `seed` until the run ends, as a record like a session's (with no
 /// calls). `random` draws its actions from `seed` and `trial`; `brawler` (`box_env::brawler`: walk at the nearest
 /// enemy, punch in reach) plays the same every trial.
-pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>) -> Option<Record> {
+pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>, max_steps: u32) -> Option<Record> {
     let policy = match name.strip_prefix("policy:") {
         Some(path) => Some(box_env::policy::Policy::load(std::path::Path::new(path)).ok()?),
         None => None,
     };
-    let mut env = Env::new(EnvConfig { seed, rim, ..EnvConfig::default() });
+    let mut env = Env::new(EnvConfig { seed, rim, max_steps, ..EnvConfig::default() });
+    // One xorshift stream per seed and trial: random actions for `random`, uniform draws for a policy's sampling.
     let mut s = (seed.wrapping_mul(31) ^ trial.wrapping_mul(0x9E37_79B9)).max(1);
-    let mut random = move || {
+    let mut next = move || {
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;
-        Action((s % ACTIONS as u32) as u8)
+        s
     };
     while !env.done() {
         let a = match name {
-            _ if policy.is_some() => policy.as_ref().unwrap().act(env.last()),
+            _ if policy.is_some() => {
+                policy.as_ref().unwrap().sample(env.last(), (next() >> 8) as f32 / (1u32 << 24) as f32)
+            }
             "brawler" => box_env::brawler(env.last()),
-            "random" => random(),
+            "random" => Action((next() % ACTIONS as u32) as u8),
             _ => return None,
         };
         env.step(a);
@@ -331,10 +335,10 @@ mod tests {
     #[test]
     fn baselines_play_until_they_die_and_verify() {
         for name in BASELINES {
-            let a = analyse(&baseline(name, 1, 1, None).unwrap());
+            let a = analyse(&baseline(name, 1, 1, None, 20_000).unwrap());
             assert!(a.verified && a.ending == Ending::Died, "{name}: {a:?}");
         }
-        assert!(baseline("nobody", 1, 1, None).is_none());
+        assert!(baseline("nobody", 1, 1, None, 20_000).is_none());
     }
 
     #[test]

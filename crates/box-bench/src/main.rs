@@ -1,5 +1,5 @@
-//! `box-bench --model M [--seeds 1,2,3] [--trials K] [--max-calls N] [--rim M|game] [--timeout S] [--out DIR]
-//! [--allow-sweep]`
+//! `box-bench --model M [--seeds 1,2,3] [--trials K] [--max-calls N] [--rim M|game] [--max-seconds S] [--timeout S]
+//! [--out DIR] [--allow-sweep]`
 //!
 //! Bench v1 plays the mini box (`box_env::MINI_RIM`, `--rim game` for the game's own first box). It plays *Escape the
 //! Box* with headless Claude Code (`claude -p`) through `box-mcp`, once per seed x trial, then
@@ -37,6 +37,15 @@ struct Args {
     budget_usd: f64,
     /// The first box's rim: the mini box by default (bench v1); `--rim game` for the game's own.
     rim: Option<f32>,
+    /// The play-time limit, seconds of game time, the same for every agent (bench v1: 60; LLM runs end sooner, at
+    /// their call cap).
+    max_seconds: f32,
+}
+
+impl Args {
+    fn max_steps(&self) -> u32 {
+        (self.max_seconds * 60.0 / box_env::EnvConfig::default().frame_skip as f32).round() as u32
+    }
 }
 
 fn main() {
@@ -77,7 +86,7 @@ fn main() {
             std::fs::create_dir_all(&dir).expect("a run directory");
             eprintln!("box-bench: seed {seed} trial {trial} ({})", args.model);
             let (r, limited) = if native {
-                (play_baseline(&args.model, &dir, seed, trial, args.rim), false)
+                (play_baseline(&args.model, &dir, seed, trial, args.rim, args.max_steps()), false)
             } else {
                 run(&args, &server, &dir, seed, &prompt, system)
             };
@@ -121,9 +130,10 @@ fn main() {
 }
 
 /// A baseline's run: played here, its record kept beside it like a session's.
-fn play_baseline(name: &str, dir: &Path, seed: u32, trial: u32, rim: Option<f32>) -> RunResult {
+fn play_baseline(name: &str, dir: &Path, seed: u32, trial: u32, rim: Option<f32>, max_steps: u32) -> RunResult {
     let started = Instant::now();
-    let record = baseline(name, seed, trial, rim).unwrap_or_else(|| fail(&format!("no baseline or policy {name:?}")));
+    let record =
+        baseline(name, seed, trial, rim, max_steps).unwrap_or_else(|| fail(&format!("no baseline or policy {name:?}")));
     std::fs::write(dir.join("record.json"), serde_json::to_string_pretty(&record).unwrap() + "\n").unwrap();
     RunResult {
         seed,
@@ -247,6 +257,7 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
 /// box-mcp's arguments for a run: its seed, the first box's rim, the call cap and where to keep its record.
 fn server_args(args: &Args, seed: u32, record: &Path) -> Vec<String> {
     let mut a = vec!["--seed".to_owned(), seed.to_string(), "--max-calls".to_owned(), args.max_calls.to_string()];
+    a.extend(["--max-steps".to_owned(), args.max_steps().to_string()]);
     if let Some(rim) = args.rim {
         a.extend(["--rim".to_owned(), rim.to_string()]);
     }
@@ -294,6 +305,7 @@ fn write(sweep: &Path, args: &Args, prompt: &str, system: &str, results: &[RunRe
         "max_calls": args.max_calls,
         "bench_version": 1,
         "first_rim": args.rim,
+        "max_seconds": args.max_seconds,
         "system_prompt": system,
         "prompt": prompt,
         "summary": summarise(results),
@@ -344,6 +356,7 @@ fn parse() -> Args {
         trials: 1,
         max_calls: SMOKE_CALLS,
         rim: Some(box_env::MINI_RIM),
+        max_seconds: 60.0,
         timeout: 1800,
         out: PathBuf::from("bench/results"),
         allow_sweep: false,
@@ -362,6 +375,7 @@ fn parse() -> Args {
             "--seeds" => a.seeds = v.split(',').map(|s| num(s.trim()) as u32).collect(),
             "--trials" => a.trials = num(&v) as u32,
             "--max-calls" => a.max_calls = num(&v) as u32,
+            "--max-seconds" => a.max_seconds = v.parse().unwrap_or_else(|_| fail("--max-seconds: a number")),
             "--rim" => {
                 a.rim = if v == "game" {
                     None

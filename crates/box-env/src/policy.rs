@@ -1,6 +1,7 @@
 //! A trained policy, as the Python trainers export it (`ml/policy.py`): the actor MLP's layers from `policy.bin`
 //! (`b"BOXP"`, version 1, the layer count, then per layer its sizes, weights `out x in` row-major and biases,
-//! little-endian; tanh between layers). It plays greedily: the action with the highest logit.
+//! little-endian; tanh between layers). It plays as it was trained, sampling each action from its softmax ([`Policy::sample`],
+//! with a caller's seeded generator, so a run repeats), or greedily ([`Policy::act`]).
 
 use crate::{ACTIONS, Action, FLAT};
 use game_core::agent::Obs;
@@ -70,6 +71,21 @@ impl Policy {
             x = y;
         }
         x
+    }
+
+    /// An action drawn from the policy's distribution for `obs`, with `u` a uniform draw in 0..1.
+    pub fn sample(&self, obs: &Obs, u: f32) -> Action {
+        let logits = self.logits(&obs.flat());
+        let top = logits.iter().copied().fold(f32::MIN, f32::max);
+        let weights: Vec<f32> = logits.iter().map(|l| (l - top).exp()).collect();
+        let mut left = u * weights.iter().sum::<f32>();
+        for (i, w) in weights.iter().enumerate() {
+            left -= w;
+            if left <= 0.0 {
+                return Action(i as u8);
+            }
+        }
+        Action((ACTIONS - 1) as u8)
     }
 
     /// The greedy action for `obs`.
