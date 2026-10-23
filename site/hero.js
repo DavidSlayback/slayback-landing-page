@@ -164,11 +164,11 @@ void main(){
   col+=(hash12(gl_FragCoord.xy+fract(uTime)*311.0)-0.5)*0.008;
   o=vec4(max(col,0.0),1.0);
 }`;
-// A shard that broke off the name (sim erosion): its box, turned about its middle and carried along, showing only its own
-// cells of the text (uShard holds each cell's shard id plus one). Hot as it breaks, cooling and fading as it falls.
-const VS_SHARD = HEAD + `uniform vec2 uRes, uOff; uniform vec4 uBox; uniform float uAng; out vec2 vT;
+// A shard that broke off the name (sim erosion): its box, turned about its piece's middle and carried along, showing only
+// its own cells of the text (uShard holds each cell's shard id plus one). Hot as it breaks, cooling and fading as it falls.
+const VS_SHARD = HEAD + `uniform vec2 uRes, uOff, uPivot; uniform vec4 uBox; uniform float uAng; out vec2 vT;
 void main(){ vec2 c=vec2(float(gl_VertexID&1), float(gl_VertexID>>1)), p=mix(uBox.xy,uBox.zw,c); vT=p/uRes;
-  vec2 m=(uBox.xy+uBox.zw)*0.5, d=p-m; float s=sin(uAng), k=cos(uAng);
+  vec2 m=uPivot, d=p-m; float s=sin(uAng), k=cos(uAng);
   vec2 q=m+vec2(k*d.x-s*d.y, s*d.x+k*d.y)+uOff;
   gl_Position=vec4(q.x/uRes.x*2.0-1.0, 1.0-q.y/uRes.y*2.0, 0.0, 1.0); }`;
 const FS_SHARD = HEAD + `uniform sampler2D uText, uShard; uniform float uId, uHeat, uFade, uInk; in vec2 vT; out vec4 o;
@@ -326,11 +326,12 @@ function updateObstacles() {
   if (textTex) gl.deleteTexture(textTex);
   textTex = mkTex(0, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterizeText(DPR, canvas.width, canvas.height), gl.LINEAR, true);
   const mw = Math.ceil(W * 0.5), mh = Math.ceil(H * 0.5), px = rasterizeText(0.5, mw, mh).getContext('2d').getImageData(0, 0, mw, mh).data;
-  // Only the name ([data-erode]) can erode: the sim takes text it covers as 255 and the rest of the text as 200.
+  // Only the name ([data-erode]) can erode: the sim takes every cell its letters touch as 255 (the anti-aliased edge
+  // too, so it erodes with the rest) and the rest of the text as 200.
   const ex = rasterizeText(0.5, mw, mh, '[data-erode]').getContext('2d').getImageData(0, 0, mw, mh).data;
   const maskPtr = X.world_mask_alloc(world, mw, mh, 0.5);   // may grow WASM memory: take the buffer view after
   const mask = new Uint8Array(X.memory.buffer, maskPtr, mw * mh);
-  for (let i = 0; i < mw * mh; i++) mask[i] = px[i * 4] > 127 ? (ex[i * 4] > 0 ? 255 : 200) : px[i * 4];
+  for (let i = 0; i < mw * mh; i++) mask[i] = ex[i * 4] > 0 ? 255 : px[i * 4] > 127 ? 200 : px[i * 4];
   X.world_mask_commit(world);
   if (sdfTex) gl.deleteTexture(sdfTex);
   sdfTex = mkTex(mw, mh, gl.R16F, gl.RED, gl.FLOAT, new Float32Array(X.memory.buffer, X.world_sdf_ptr(world), mw * mh), gl.LINEAR, true);
@@ -345,16 +346,27 @@ function updateObstacles() {
   shardBoxes = new Uint16Array(X.memory.buffer, X.world_shard_boxes_ptr(world), X.world_shard_count(world) * 4).slice();
   falling = []; X.world_broken_clear(world);
 }
-// Each shard that broke off falls: a small kick up and to the side, a spin, gravity, and a fade over its life.
+// Each piece that broke off falls under gravity, fading over its life. A shard scorched through is kicked up and to the
+// side, spinning; a loose island (the sim's LOOSE, its shards after the first marked JOINED) drops as one rigid piece,
+// tipping slowly.
+const LOOSE = 0x80000000, JOINED = 0x40000000;
 function dropShards(dt) {
   const n = X.world_broken_len(world);
   if (n) {
-    for (const id of new Uint32Array(X.memory.buffer, X.world_broken_ptr(world), n)) {
-      const b = shardBoxes.subarray(id * 4, id * 4 + 4);
+    for (const raw of new Uint32Array(X.memory.buffer, X.world_broken_ptr(world), n)) {
+      const id = raw & 0x3fffffff, b = shardBoxes.subarray(id * 4, id * 4 + 4);
       if (b.length < 4) continue;
-      falling.push({ id, box: [b[0] / MASK_SCALE, b[1] / MASK_SCALE, (b[2] + 1) / MASK_SCALE, (b[3] + 1) / MASK_SCALE],
-        x: 0, y: 0, vx: (Math.random() - 0.5) * 140, vy: -40 - Math.random() * 110, ang: 0, spin: (Math.random() - 0.5) * 7, age: 0,
-        life: 1.6 + Math.random() * 0.8 });
+      const box = [b[0] / MASK_SCALE, b[1] / MASK_SCALE, (b[2] + 1) / MASK_SCALE, (b[3] + 1) / MASK_SCALE];
+      const piece = falling[falling.length - 1];
+      if (raw & JOINED && piece) {
+        piece.parts.push({ id, box });
+        piece.box = [Math.min(piece.box[0], box[0]), Math.min(piece.box[1], box[1]), Math.max(piece.box[2], box[2]), Math.max(piece.box[3], box[3])];
+        continue;
+      }
+      const loose = (raw & LOOSE) !== 0;
+      falling.push({ parts: [{ id, box }], box, x: 0, y: 0, ang: 0, age: 0, life: 1.6 + Math.random() * 0.8, loose,
+        vx: (Math.random() - 0.5) * (loose ? 30 : 140), vy: loose ? -Math.random() * 20 : -40 - Math.random() * 110,
+        spin: (Math.random() - 0.5) * (loose ? 1.2 : 7) });
     }
     X.world_broken_clear(world);
   }
@@ -365,10 +377,13 @@ function drawShards() {
   if (!falling.length) return;
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   for (const f of falling) {
-    const k = f.age / f.life;
-    use(PROG.shard, { uText: textTex, uShard: shardTex },
-      { uRes: [W, H], uBox: f.box, uOff: [f.x, f.y], uAng: f.ang, uId: f.id + 1, uHeat: 0.5 * Math.max(0, 1 - k * 2.5), uFade: 1 - k * k, uInk: INK });
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    const k = f.age / f.life, pivot = [(f.box[0] + f.box[2]) / 2, (f.box[1] + f.box[3]) / 2];
+    for (const p of f.parts) {
+      use(PROG.shard, { uText: textTex, uShard: shardTex },
+        { uRes: [W, H], uBox: p.box, uPivot: pivot, uOff: [f.x, f.y], uAng: f.ang, uId: p.id + 1,
+          uHeat: (f.loose ? 0.15 : 0.5) * Math.max(0, 1 - k * 2.5), uFade: 1 - k * k, uInk: INK });
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
   }
   gl.disable(gl.BLEND);
 }
