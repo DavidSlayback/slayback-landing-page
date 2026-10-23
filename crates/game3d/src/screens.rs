@@ -59,9 +59,9 @@ const CONTROLS: &str = "WASD / arrows  move      Space / Shift  dash\n\
 
 const TOUCH_GOAL: &str = GOAL;
 
-const TOUCH_CONTROLS: &str = "left thumb  move      right thumb  the buttons, or\n\
-    tap  punch      swipe  dash that way      hold  grab\n\
-    dash + attack  drop-kick      carrying + attack  spin-throw\n\
+const TOUCH_CONTROLS: &str = "left stick  move      right stick  aim and punch\n\
+    KICK, GRAB, DASH  the buttons above it\n\
+    dash + attack  drop-kick      carrying + aim  spin-throw\n\
     tap the score  pause";
 
 fn text(s: impl Into<String>, size: f32) -> impl Bundle {

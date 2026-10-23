@@ -2,8 +2,8 @@
 //! with the 2.5D game (`game_core::controls`, which has the table). Gameplay reads [`Actions`]; only this module reads
 //! devices. A standard gamepad needs nothing set up: the left stick or d-pad moves, A or the right trigger dashes,
 //! X punches, Y kicks, B grabs, Start pauses or starts, and Select toggles sound on the pause screen. A touch screen
-//! gets the touch controls of `game_core::touch` (Q78): a stick under the left thumb, buttons and gestures under the
-//! right, a tap on the HUD to pause, and a tap anywhere to leave a screen.
+//! gets the twin sticks of `game_core::touch` (Q82): the left moves, the right aims and punches, with Kick, Grab and
+//! Dash above it; a tap on the HUD pauses, and a tap anywhere leaves a screen.
 
 use bevy::input::InputSystems;
 use bevy::input::touch::{TouchInput, TouchPhase};
@@ -22,6 +22,9 @@ pub struct Actions {
     pub dir: [f32; 2],
     /// Verbs just pressed this frame.
     pub verbs: Verbs,
+    /// Where to face, apart from the move (a `game_core` plane vector, unit length, turned like `dir`): the touch
+    /// aim stick, while it's pushed. None for every other device, which faces the way it moves.
+    pub aim: Option<[f32; 2]>,
 }
 
 /// Which way the camera looks across the floor (Q65): its yaw, radians, turning the view's "up the screen" from -z
@@ -141,10 +144,10 @@ fn read(
         dir = first_direction(dir, p.direction());
         verbs = verbs.or(p.verbs());
     }
-    *actions = Actions { dir: to_floor(dir, view.0), verbs };
+    *actions = Actions { dir: to_floor(dir, view.0), verbs, aim: None };
 }
 
-/// Adds the touch controls' frame to the actions: in play, their move and verbs; on the pause screen, a tap resumes (or,
+/// Adds the touch controls' frame to the actions: in play, their move, aim and verbs; on the pause screen, a tap resumes (or,
 /// low down, toggles sound); on the start and game-over screens, a tap starts.
 fn read_touch(
     mut touches: MessageReader<TouchInput>,
@@ -170,23 +173,23 @@ fn read_touch(
         match t.phase {
             TouchPhase::Started => {
                 touch.used = true;
-                touch.pad.down(id, at, now);
+                touch.pad.down(id, at);
             }
             TouchPhase::Moved => touch.pad.moved(id, at),
             TouchPhase::Ended => touch.pad.up(id),
             TouchPhase::Canceled => touch.pad.cancel(id),
         }
     }
-    let frame = touch.pad.frame(now);
+    let frame = touch.pad.frame();
     let settled = now - touch.since >= SETTLE;
     let verbs = &mut actions.verbs;
     match phase {
         None | Some(Phase::Playing) => {
             *verbs = verbs.or(frame.verbs);
-            // A swipe's dash goes the swipe's way, whatever else is held.
-            if frame.dir != [0.0, 0.0] && (frame.verbs.dash || actions.dir == [0.0, 0.0]) {
+            if actions.dir == [0.0, 0.0] {
                 actions.dir = to_floor(frame.dir, view.0);
             }
+            actions.aim = frame.aim.map(|a| to_floor(a, view.0));
         }
         Some(Phase::Paused) => {
             if let Some([_, y]) = frame.landed {

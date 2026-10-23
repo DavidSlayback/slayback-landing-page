@@ -492,8 +492,7 @@ impl World {
         let (w, h) = (self.mw, self.mh);
         let solid: Vec<bool> = self.mask.iter().map(|&m| m > 127).collect();
         // The page marks the text that may erode 255 (the name) and the rest of the text 200.
-        let erodible: Vec<bool> = self.mask.iter().map(|&m| m == 255).collect();
-        self.erosion.reset(&erodible, w, h);
+        self.erosion.reset(&self.mask, w, h);
         self.rebuild_sdf();
         let (mut sx, mut sy, mut n) = (0.0f64, 0.0f64, 0usize);
         for (k, _) in solid.iter().enumerate().filter(|(_, s)| **s) {

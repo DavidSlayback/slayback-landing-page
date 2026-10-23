@@ -15,7 +15,7 @@ use game_core::enemy::{Kind, THUG};
 use game_core::grab::{Held, impact};
 use game_core::impact::Feel;
 use game_core::plane::RUN_SPEED;
-use game_core::touch::{Button, Layout};
+use game_core::touch::{Button, Layout, Stick};
 use game3d::arena::{Arena, Slab};
 use game3d::bomb::{BombHead, Exploded, LitBomb, RADIUS as BOMB_RADIUS, lit_bomb};
 use game3d::carry::{Carried, Carry, Thrown};
@@ -2094,37 +2094,46 @@ fn finger_tap(app: &mut App, id: u64, at: [f32; 2]) {
 }
 
 #[test]
-fn on_a_touch_screen_the_left_thumb_walks_the_buttons_punch_a_swipe_dashes_and_the_hud_pauses() {
+fn on_a_touch_screen_the_left_stick_walks_the_right_aims_and_punches_and_the_hud_pauses() {
     let mut app = standing();
     let screen = Layout { size: [1280.0, 720.0] };
+    let (m, a) = (screen.stick(Stick::Move), screen.stick(Stick::Aim));
     let (start, _, _) = player(&mut app);
-    finger(&mut app, 1, TouchPhase::Started, [200.0, 500.0]);
+    finger(&mut app, 1, TouchPhase::Started, m);
     step(&mut app, 1.0 / FPS);
-    finger(&mut app, 1, TouchPhase::Moved, [270.0, 500.0]);
+    finger(&mut app, 1, TouchPhase::Moved, [m[0] + 50.0, m[1]]);
     step(&mut app, 0.5);
     let (walked, _, _) = player(&mut app);
     let moved = (walked - start).xz();
-    assert!(moved.x > 1.0 && moved.y.abs() < 0.05, "dragging the stick right walks right: moved {moved}");
-    finger(&mut app, 1, TouchPhase::Ended, [270.0, 500.0]);
+    assert!(moved.x > 1.0 && moved.y.abs() < 0.05, "pushing the left stick right walks right: moved {moved}");
+    finger(&mut app, 1, TouchPhase::Ended, [m[0] + 50.0, m[1]]);
     step(&mut app, 0.5);
     assert!(player(&mut app).1.length() < 0.1, "letting go stops");
 
-    let ahead = fodder_at(&mut app, [1.1, 0.0]);
+    // Walk left while the right stick aims right: the body faces the aim, not the walk, and punches what's there.
+    let behind = fodder_at(&mut app, [1.1, 0.0]);
     step(&mut app, 0.05);
-    finger_tap(&mut app, 2, screen.button(Button::Punch));
-    step(&mut app, 0.2);
-    assert!(hp(&app, ahead) < FULL, "the punch button punched");
-    step(&mut app, 0.5);
+    finger(&mut app, 1, TouchPhase::Started, [m[0] - 50.0, m[1]]);
+    finger(&mut app, 2, TouchPhase::Started, [a[0] + 50.0, a[1]]);
+    step(&mut app, 0.4);
+    let (_, _, yaw) = player(&mut app);
+    assert!(yaw.abs() < 0.1, "facing the aim (+x) while the left stick says go left: yaw {yaw}");
+    assert!(hp(&app, behind) < FULL, "the aim stick punched");
+    let first = hp(&app, behind);
+    step(&mut app, 0.8);
+    assert!(hp(&app, behind) < first, "held, it keeps punching");
+    finger(&mut app, 2, TouchPhase::Ended, [a[0] + 50.0, a[1]]);
+    step(&mut app, 0.3);
+    let (_, _, yaw) = player(&mut app);
+    assert!(yaw.abs() > 2.5, "let go, the body turns back to the walk (-x): yaw {yaw}");
 
-    // A swipe down the screen on the right half: a dash toward the camera (+z), whichever way the player faced.
-    let pad = [900.0, 300.0];
-    finger(&mut app, 3, TouchPhase::Started, pad);
-    step(&mut app, 1.0 / FPS);
-    finger(&mut app, 3, TouchPhase::Moved, [pad[0], pad[1] + 60.0]);
-    step(&mut app, 2.0 / FPS);
+    // Dash, with the left stick held down the screen: toward the camera (+z).
+    finger(&mut app, 1, TouchPhase::Moved, [m[0], m[1] + 50.0]);
+    step(&mut app, 0.2);
+    finger_tap(&mut app, 3, screen.button(Button::Dash));
     let (_, v, _) = player(&mut app);
     assert!(v.z > RUN_SPEED && v.x.abs() < 0.1, "dashed down the screen: {v}");
-    finger(&mut app, 3, TouchPhase::Ended, [pad[0], pad[1] + 60.0]);
+    finger(&mut app, 1, TouchPhase::Ended, [m[0], m[1] + 50.0]);
     step(&mut app, 0.5);
 
     finger_tap(&mut app, 4, [1200.0, 30.0]);
@@ -2136,13 +2145,24 @@ fn on_a_touch_screen_the_left_thumb_walks_the_buttons_punch_a_swipe_dashes_and_t
 }
 
 #[test]
-fn a_touch_held_on_the_pad_grabs() {
+fn the_grab_button_grabs_and_the_aim_stick_throws_its_way() {
     let mut app = standing();
+    let screen = Layout { size: [1280.0, 720.0] };
     let foe = fodder_at(&mut app, [0.9, 0.0]);
     step(&mut app, 0.05);
-    finger(&mut app, 1, TouchPhase::Started, [900.0, 300.0]);
-    step(&mut app, 0.4);
-    assert!(app.world().get::<Carried>(foe).is_some(), "held still, the touch grabbed the fodder in front");
+    finger_tap(&mut app, 1, screen.button(Button::Grab));
+    assert!(app.world().get::<Carried>(foe).is_some(), "the grab button grabbed the fodder in front");
+    let a = screen.stick(Stick::Aim);
+    finger(&mut app, 2, TouchPhase::Started, [a[0], a[1] - 50.0]);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 2, TouchPhase::Ended, [a[0], a[1] - 50.0]);
+    step(&mut app, 1.5);
+    let (me, _, _) = player(&mut app);
+    let at = app.world().get::<Transform>(foe).map(|t| t.translation);
+    assert!(app.world().get::<Carried>(foe).is_none(), "thrown");
+    if let Some(at) = at {
+        assert!(at.z < me.z - 1.0, "up the screen (-z), the aim's way: {at} from {me}");
+    }
 }
 
 #[test]

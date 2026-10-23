@@ -1,39 +1,37 @@
-//! Touch controls (decision Q78): a floating stick under the left thumb, and under the right thumb a diamond of
-//! buttons laid out like the gamepad's face (punch left, kick top, grab right, dash bottom) on a pad that also takes
-//! gestures, since the game may move too fast for buttons alone: a tap punches, a swipe dashes the way it went, a held
-//! touch grabs. Tapping the HUD pauses. Engine-free: the game feeds it touches and draws it ([`TouchPad::stick`],
-//! [`Layout`], [`TouchPad::held`]).
+//! Touch controls (decision Q82, replacing Q78's floating stick, diamond and gestures): twin sticks, fixed and always
+//! drawn in the bottom corners. The left one moves. The right one aims and attacks: pushed, the fighter turns that way
+//! and punches, again and again while it's held, so it can back away while punching forward. Kick, Grab and Dash are
+//! three buttons arced just above the right stick. Tapping the HUD pauses. Engine-free: the game feeds it touches and
+//! draws it ([`TouchPad::stick`], [`Layout`], [`TouchPad::held`]).
 //!
-//! Screen positions are logical pixels with y down, as touches arrive; the move direction it reports has y up the
-//! screen, as the keys' and sticks' do.
+//! Screen positions are logical pixels with y down, as touches arrive; the directions it reports have y up the screen,
+//! as the keys' and sticks' do.
 
 use crate::controls::{Verbs, eight_way};
 
-/// The buttons in the diamond.
+/// The buttons over the right stick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Button {
-    Punch,
     Kick,
     Grab,
     Dash,
 }
 
 impl Button {
-    pub const ALL: [Button; 4] = [Button::Punch, Button::Kick, Button::Grab, Button::Dash];
+    pub const ALL: [Button; 3] = [Button::Kick, Button::Grab, Button::Dash];
 
-    /// Where it sits in the diamond, as a unit offset from its centre (y down).
-    fn offset(self) -> [f32; 2] {
+    /// Where it sits round the right stick: an angle, radians, with y down (so -π/2 is straight up).
+    fn angle(self) -> f32 {
+        use std::f32::consts::PI;
         match self {
-            Button::Punch => [-1.0, 0.0],
-            Button::Kick => [0.0, -1.0],
-            Button::Grab => [1.0, 0.0],
-            Button::Dash => [0.0, 1.0],
+            Button::Kick => -PI / 2.0,
+            Button::Grab => -PI * 0.75,
+            Button::Dash => PI,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Button::Punch => "PUNCH",
             Button::Kick => "KICK",
             Button::Grab => "GRAB",
             Button::Dash => "DASH",
@@ -41,27 +39,37 @@ impl Button {
     }
 }
 
+/// The two sticks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stick {
+    /// Bottom left: moves.
+    Move,
+    /// Bottom right: aims and punches.
+    Aim,
+}
+
 /// What a touch landed on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Zone {
     /// The HUD, top right: pauses.
     Pause,
-    /// One of the diamond's buttons.
+    /// One of the buttons over the right stick.
     Button(Button),
-    /// The left half: the stick, centred where the thumb lands.
-    Stick,
-    /// The rest of the right half: gestures.
-    Pad,
+    /// A stick: the move stick takes the whole left half, the aim stick a thumb landing within [`CATCH`] of it.
+    Stick(Stick),
+    /// Anywhere else: nothing, in play.
+    None,
 }
 
-/// How far a touch must slide before it is a swipe rather than a tap or a hold, pixels.
-pub const SWIPE: f32 = 40.0;
-/// How long a touch held still (within [`SWIPE`]) is before it grabs, seconds.
-pub const HOLD: f32 = 0.3;
-/// The stick's travel: past `DEAD` pixels from where the thumb landed it moves, and the knob is drawn no further than
-/// `RANGE`.
-pub const DEAD: f32 = 14.0;
+/// The knob's travel from a stick's centre, pixels: the knob is drawn no further, and it is the stick's radius.
 pub const RANGE: f32 = 56.0;
+/// How far the knob must be pushed before the move stick walks, pixels.
+pub const DEAD: f32 = 14.0;
+/// How far the aim stick must be pushed before it attacks, pixels: further than the move stick's, so a thumb resting
+/// on it doesn't punch.
+pub const AIM_DEAD: f32 = 24.0;
+/// How near the aim stick's centre a thumb must land to take it, pixels.
+pub const CATCH: f32 = RANGE * 2.5;
 /// The HUD's band at the top of the screen, pixels.
 const HUD_BAND: f32 = 72.0;
 
@@ -77,22 +85,27 @@ impl Layout {
         (self.size[0].min(self.size[1]) * 0.085).clamp(24.0, 40.0)
     }
 
-    /// How far from the bottom corners the stick's resting place and the diamond's centre are.
+    /// How far from the bottom corners the sticks' centres are.
     fn inset(&self) -> f32 {
-        self.radius() * 3.2
+        RANGE + 28.0
     }
 
-    /// A button's centre.
-    pub fn button(&self, b: Button) -> [f32; 2] {
+    /// A stick's centre.
+    pub fn stick(&self, s: Stick) -> [f32; 2] {
         let [w, h] = self.size;
-        let (r, at) = (self.radius(), self.inset());
-        let [dx, dy] = b.offset();
-        [w - at + dx * r * 1.75, h - at + dy * r * 1.75]
+        let at = self.inset();
+        match s {
+            Stick::Move => [at, h - at],
+            Stick::Aim => [w - at, h - at],
+        }
     }
 
-    /// Where the stick is drawn while no thumb holds it: a hint at the bottom left.
-    pub fn stick_home(&self) -> [f32; 2] {
-        [self.inset(), self.size[1] - self.inset()]
+    /// A button's centre, on an arc just outside the aim stick.
+    pub fn button(&self, b: Button) -> [f32; 2] {
+        let [cx, cy] = self.stick(Stick::Aim);
+        let ring = RANGE + self.radius() + 10.0;
+        let (s, c) = b.angle().sin_cos();
+        [cx + c * ring, cy + s * ring]
     }
 
     pub fn zone(&self, p: [f32; 2]) -> Zone {
@@ -105,7 +118,13 @@ impl Layout {
         if let Some(b) = Button::ALL.into_iter().find(|&b| distance(p, self.button(b)) <= reach) {
             return Zone::Button(b);
         }
-        if p[0] < half { Zone::Stick } else { Zone::Pad }
+        if p[0] < half {
+            Zone::Stick(Stick::Move)
+        } else if distance(p, self.stick(Stick::Aim)) <= CATCH {
+            Zone::Stick(Stick::Aim)
+        } else {
+            Zone::None
+        }
     }
 }
 
@@ -118,19 +137,20 @@ fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
 struct Finger {
     id: u64,
     zone: Zone,
-    start: [f32; 2],
     at: [f32; 2],
-    since: f64,
-    /// It has done what it does (a button pressed, a swipe's dash, a hold's grab), so it does nothing on release.
+    /// It does nothing more: it pressed a button, paused, found its stick already held, or left a screen.
     spent: bool,
 }
 
 /// One frame of touch input.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
-    /// The move direction (y up the screen): one of eight unit directions or zero. A swipe's dash goes its way.
+    /// The move direction (y up the screen): one of eight unit directions or zero.
     pub dir: [f32; 2],
-    /// Punch, kick, grab, dash and pause, as pressed this frame.
+    /// Where the aim stick points (y up the screen, unit length), while it's pushed past [`AIM_DEAD`]; it punches
+    /// then too.
+    pub aim: Option<[f32; 2]>,
+    /// Punch, kick, grab, dash and pause: pressed this frame, or for the punch, aimed.
     pub verbs: Verbs,
     /// Where a finger landed this frame, if one did, anywhere: what starts, resumes or restarts from a screen.
     pub landed: Option<[f32; 2]>,
@@ -149,7 +169,7 @@ impl TouchPad {
         Self { layout: Layout { size }, fingers: Vec::new(), pending: Frame::default() }
     }
 
-    pub fn down(&mut self, id: u64, p: [f32; 2], t: f64) {
+    pub fn down(&mut self, id: u64, p: [f32; 2]) {
         let zone = self.layout.zone(p);
         self.pending.landed.get_or_insert(p);
         let spent = match zone {
@@ -158,91 +178,84 @@ impl TouchPad {
                 true
             }
             Zone::Button(b) => {
-                self.press(b);
+                let v = &mut self.pending.verbs;
+                match b {
+                    Button::Kick => v.kick = true,
+                    Button::Grab => v.grab = true,
+                    Button::Dash => v.dash = true,
+                }
                 true
             }
-            // Only one stick: a second finger on the left half is ignored.
-            Zone::Stick if self.fingers.iter().any(|f| f.zone == Zone::Stick) => true,
-            Zone::Stick | Zone::Pad => false,
+            // One thumb to a stick: a second finger on it is ignored.
+            Zone::Stick(s) => self.held_by(s).is_some(),
+            Zone::None => true,
         };
         self.fingers.retain(|f| f.id != id);
-        self.fingers.push(Finger { id, zone, start: p, at: p, since: t, spent });
+        self.fingers.push(Finger { id, zone, at: p, spent });
     }
 
     pub fn moved(&mut self, id: u64, p: [f32; 2]) {
-        let Some(f) = self.fingers.iter_mut().find(|f| f.id == id) else { return };
-        f.at = p;
-        let d = [p[0] - f.start[0], f.start[1] - p[1]];
-        if f.zone == Zone::Pad && !f.spent && d[0].hypot(d[1]) >= SWIPE {
-            f.spent = true;
-            self.pending.verbs.dash = true;
-            self.pending.dir = eight_way(d);
+        if let Some(f) = self.fingers.iter_mut().find(|f| f.id == id) {
+            f.at = p;
         }
     }
 
-    /// A finger lifted: a touch on the pad that never swiped or held was a tap, and punches.
     pub fn up(&mut self, id: u64) {
-        let Some(i) = self.fingers.iter().position(|f| f.id == id) else { return };
-        let f = self.fingers.swap_remove(i);
-        if f.zone == Zone::Pad && !f.spent {
-            self.pending.verbs.punch = true;
-        }
+        self.fingers.retain(|f| f.id != id);
     }
 
     /// A finger the browser took away (a system gesture): it does nothing more.
     pub fn cancel(&mut self, id: u64) {
-        self.fingers.retain(|f| f.id != id);
+        self.up(id);
     }
 
-    /// Forgets every finger, so a touch that started or resumed the game doesn't also punch when it lifts.
+    /// Forgets every finger, so a touch that started or resumed the game doesn't also walk or punch.
     pub fn clear(&mut self) {
         for f in &mut self.fingers {
             f.spent = true;
         }
     }
 
-    fn press(&mut self, b: Button) {
-        let v = &mut self.pending.verbs;
-        match b {
-            Button::Punch => v.punch = true,
-            Button::Kick => v.kick = true,
-            Button::Grab => v.grab = true,
-            Button::Dash => v.dash = true,
-        }
-    }
-
-    /// This frame's input at time `t`, seconds; what was pressed is cleared for the next frame.
-    pub fn frame(&mut self, t: f64) -> Frame {
-        for f in &mut self.fingers {
-            if f.zone == Zone::Pad && !f.spent && t - f.since >= HOLD as f64 {
-                f.spent = true;
-                self.pending.verbs.grab = true;
-            }
-        }
+    /// This frame's input; what was pressed is cleared for the next frame.
+    pub fn frame(&mut self) -> Frame {
         let mut out = std::mem::take(&mut self.pending);
-        if out.dir == [0.0, 0.0]
-            && let Some((origin, at)) = self.stick_finger()
+        if let Some(d) = self.push(Stick::Move)
+            && d[0].hypot(d[1]) >= DEAD
         {
-            let d = [at[0] - origin[0], origin[1] - at[1]];
-            if d[0].hypot(d[1]) >= DEAD {
-                out.dir = eight_way(d);
+            out.dir = eight_way(d);
+        }
+        if let Some(d) = self.push(Stick::Aim) {
+            let len = d[0].hypot(d[1]);
+            if len >= AIM_DEAD {
+                out.aim = Some([d[0] / len, d[1] / len]);
+                out.verbs.punch = true;
             }
         }
         out
     }
 
-    fn stick_finger(&self) -> Option<([f32; 2], [f32; 2])> {
-        self.fingers.iter().find(|f| f.zone == Zone::Stick && !f.spent).map(|f| (f.start, f.at))
+    /// The finger holding stick `s`, if one is.
+    fn held_by(&self, s: Stick) -> Option<&Finger> {
+        self.fingers.iter().find(|f| f.zone == Zone::Stick(s) && !f.spent)
     }
 
-    /// The stick under a thumb, to draw: its centre, and the knob's place (within [`RANGE`] of it). None while no
-    /// thumb holds it.
-    pub fn stick(&self) -> Option<([f32; 2], [f32; 2])> {
-        self.stick_finger().map(|(o, at)| {
-            let d = [at[0] - o[0], at[1] - o[1]];
-            let k = (RANGE / d[0].hypot(d[1]).max(1e-3)).min(1.0);
-            (o, [o[0] + d[0] * k, o[1] + d[1] * k])
-        })
+    /// How far stick `s` is pushed, y up the screen, while a thumb holds it.
+    fn push(&self, s: Stick) -> Option<[f32; 2]> {
+        let [cx, cy] = self.layout.stick(s);
+        self.held_by(s).map(|f| [f.at[0] - cx, cy - f.at[1]])
+    }
+
+    /// Stick `s` to draw: its centre, the knob's place (within [`RANGE`] of it), and whether a thumb holds it.
+    pub fn stick(&self, s: Stick) -> ([f32; 2], [f32; 2], bool) {
+        let o = self.layout.stick(s);
+        match self.held_by(s) {
+            Some(f) => {
+                let d = [f.at[0] - o[0], f.at[1] - o[1]];
+                let k = (RANGE / d[0].hypot(d[1]).max(1e-3)).min(1.0);
+                (o, [o[0] + d[0] * k, o[1] + d[1] * k], true)
+            }
+            None => (o, o, false),
+        }
     }
 
     /// Whether a finger is on the button, for drawing it pressed.
@@ -257,8 +270,6 @@ mod tests {
 
     /// A landscape phone.
     const SIZE: [f32; 2] = [800.0, 380.0];
-    const LEFT: [f32; 2] = [150.0, 250.0];
-    const RIGHT: [f32; 2] = [520.0, 180.0];
 
     fn pad() -> TouchPad {
         TouchPad::new(SIZE)
@@ -269,101 +280,106 @@ mod tests {
     }
 
     #[test]
-    fn the_stick_centres_where_the_thumb_lands_and_points_up_the_screen() {
+    fn the_move_stick_points_from_its_fixed_centre_and_up_the_screen() {
         let mut p = pad();
-        assert_eq!(p.layout.zone(LEFT), Zone::Stick);
-        p.down(1, LEFT, 0.0);
-        p.moved(1, plus(LEFT, [DEAD - 2.0, 0.0]));
-        assert_eq!(p.frame(0.02).dir, [0.0, 0.0], "a little slide is inside the dead zone");
-        p.moved(1, plus(LEFT, [0.0, -30.0]));
-        assert_eq!(p.frame(0.04).dir, [0.0, 1.0], "dragging up the screen walks up it");
-        p.moved(1, plus(LEFT, [200.0, 0.0]));
-        assert_eq!(p.frame(0.06).dir, [1.0, 0.0], "held, it keeps walking");
-        assert_eq!(p.stick(), Some((LEFT, plus(LEFT, [RANGE, 0.0]))), "the knob stops at the stick's edge");
+        let c = p.layout.stick(Stick::Move);
+        assert_eq!(p.layout.zone([300.0, 100.0]), Zone::Stick(Stick::Move), "the whole left half takes it");
+        p.down(1, plus(c, [DEAD - 2.0, 0.0]));
+        assert_eq!(p.frame().dir, [0.0, 0.0], "a thumb near the middle is inside the dead zone");
+        p.moved(1, plus(c, [0.0, -30.0]));
+        assert_eq!(p.frame().dir, [0.0, 1.0], "pushed up the screen it walks up it");
+        p.moved(1, plus(c, [200.0, 0.0]));
+        assert_eq!(p.frame().dir, [1.0, 0.0], "held, it keeps walking");
+        assert_eq!(p.stick(Stick::Move), (c, plus(c, [RANGE, 0.0]), true), "the knob stops at the stick's edge");
         p.up(1);
-        let f = p.frame(0.08);
-        assert_eq!(f.dir, [0.0, 0.0]);
-        assert_eq!(f.verbs, Verbs::default(), "letting go of the stick does nothing else");
-        assert_eq!(p.stick(), None);
+        let f = p.frame();
+        assert_eq!((f.dir, f.aim, f.verbs), ([0.0, 0.0], None, Verbs::default()), "letting go does nothing else");
+        assert_eq!(p.stick(Stick::Move), (c, c, false), "and the knob is back in the middle, still drawn");
     }
 
     #[test]
-    fn a_button_presses_the_frame_it_is_touched_while_the_stick_is_held() {
+    fn the_aim_stick_punches_its_way_every_frame_it_is_pushed_while_the_other_thumb_walks() {
         let mut p = pad();
-        p.down(1, LEFT, 0.0);
-        p.moved(1, plus(LEFT, [-40.0, 0.0]));
+        let (m, a) = (p.layout.stick(Stick::Move), p.layout.stick(Stick::Aim));
+        p.down(1, m);
+        p.moved(1, plus(m, [-40.0, 0.0]));
+        p.down(2, a);
+        p.moved(2, plus(a, [AIM_DEAD - 4.0, 0.0]));
+        let f = p.frame();
+        assert!(f.aim.is_none() && !f.verbs.punch, "resting on it doesn't punch");
+        p.moved(2, plus(a, [0.0, -40.0]));
+        for _ in 0..3 {
+            let f = p.frame();
+            assert_eq!(f.dir, [-1.0, 0.0], "walking left");
+            assert_eq!(f.aim, Some([0.0, 1.0]), "while aiming up the screen");
+            assert!(f.verbs.punch, "and punching, every frame it's held");
+        }
+        p.moved(2, plus(a, [30.0, 10.0]));
+        let [x, y] = p.frame().aim.unwrap();
+        assert!((x - 0.9487).abs() < 1e-3 && (y + 0.3162).abs() < 1e-3, "aim isn't snapped to eight ways: {x} {y}");
+        p.up(2);
+        let f = p.frame();
+        assert!(f.aim.is_none() && !f.verbs.punch);
+    }
+
+    #[test]
+    fn a_button_presses_once_the_frame_it_is_touched() {
+        let mut p = pad();
         for b in Button::ALL {
-            p.down(2, p.layout.button(b), 0.1);
+            p.down(2, p.layout.button(b));
             assert!(p.held(b));
-            let f = p.frame(0.1);
-            assert_eq!(f.dir, [-1.0, 0.0], "{b:?}: still walking");
-            let pressed = [f.verbs.punch, f.verbs.kick, f.verbs.grab, f.verbs.dash];
-            assert_eq!(pressed.iter().filter(|&&x| x).count(), 1, "{b:?}");
+            let v = p.frame().verbs;
+            assert_eq!([v.punch, v.kick, v.grab, v.dash].iter().filter(|&&x| x).count(), 1, "{b:?}");
+            assert_eq!(p.frame().verbs, Verbs::default(), "{b:?}: once, not while held");
             p.up(2);
-            assert_eq!(p.frame(0.9).verbs, Verbs::default(), "{b:?}: once, not on release or held");
         }
     }
 
     #[test]
-    fn on_the_pad_a_tap_punches_a_swipe_dashes_its_way_and_a_hold_grabs() {
+    fn the_hud_pauses_far_taps_do_nothing_and_any_touch_is_a_touch() {
         let mut p = pad();
-        assert_eq!(p.layout.zone(RIGHT), Zone::Pad);
-        p.down(1, RIGHT, 0.0);
-        assert!(!p.frame(0.05).verbs.punch, "not until it lifts: it might be a swipe");
-        p.up(1);
-        assert!(p.frame(0.1).verbs.punch, "a tap");
-
-        p.down(2, RIGHT, 1.0);
-        p.moved(2, plus(RIGHT, [-30.0, 30.0]));
-        let f = p.frame(1.05);
-        assert!(f.verbs.dash);
-        assert_eq!(f.dir, eight_way([-1.0, -1.0]), "down and to the left");
-        p.up(2);
-        assert_eq!(p.frame(1.1).verbs, Verbs::default(), "a swipe doesn't punch when it lifts");
-
-        p.down(3, RIGHT, 2.0);
-        assert!(!p.frame(2.0 + HOLD as f64 * 0.9).verbs.grab);
-        assert!(p.frame(2.0 + HOLD as f64).verbs.grab, "held still");
-        assert!(!p.frame(3.0).verbs.grab, "once");
-        p.up(3);
-        assert_eq!(p.frame(3.1).verbs, Verbs::default(), "nor does a hold");
-    }
-
-    #[test]
-    fn the_hud_pauses_and_any_touch_is_a_touch() {
-        let mut p = pad();
-        p.down(1, [SIZE[0] - 60.0, 30.0], 0.0);
-        let f = p.frame(0.0);
+        p.down(1, [SIZE[0] - 60.0, 30.0]);
+        let f = p.frame();
         assert!(f.verbs.pause && f.landed == Some([SIZE[0] - 60.0, 30.0]));
-        p.down(2, LEFT, 0.1);
-        assert_eq!(p.frame(0.1).landed, Some(LEFT));
-        assert_eq!(p.frame(0.2).landed, None, "only the frame it lands");
+        let far = [SIZE[0] / 2.0 + 20.0, 90.0];
+        assert_eq!(p.layout.zone(far), Zone::None);
+        p.down(2, far);
+        let f = p.frame();
+        assert_eq!((f.verbs, f.aim, f.landed), (Verbs::default(), None, Some(far)));
+        assert_eq!(p.frame().landed, None, "only the frame it lands");
     }
 
     #[test]
-    fn cleared_fingers_do_nothing_more() {
+    fn a_second_thumb_on_a_held_stick_and_cleared_fingers_do_nothing() {
         let mut p = pad();
-        p.down(1, RIGHT, 0.0);
-        p.down(2, LEFT, 0.0);
-        p.moved(2, plus(LEFT, [40.0, 0.0]));
-        p.frame(0.0);
+        let a = p.layout.stick(Stick::Aim);
+        p.down(1, plus(a, [-40.0, 0.0]));
+        p.down(2, plus(a, [0.0, -40.0]));
+        assert_eq!(p.frame().aim, Some([-1.0, 0.0]), "the first thumb keeps it");
         p.clear();
-        p.up(1);
-        assert_eq!(p.frame(1.0), Frame::default(), "the touch that left a screen neither punches, grabs nor walks");
+        assert_eq!(p.frame(), Frame::default(), "the touch that left a screen neither aims nor punches");
     }
 
     #[test]
-    fn the_buttons_fit_on_screen_on_the_right_without_overlapping() {
+    fn the_sticks_and_buttons_fit_on_screen_without_overlapping() {
         for size in [[800.0, 380.0], [568.0, 320.0], [1280.0, 720.0], [380.0, 800.0]] {
             let l = Layout { size };
             let r = l.radius();
-            for (i, a) in Button::ALL.into_iter().enumerate() {
-                let c = l.button(a);
-                assert!(c[0] - r >= 0.0 && c[0] + r <= size[0] && c[1] + r <= size[1], "{size:?} {a:?}");
-                assert!(c[0] > size[0] / 2.0, "{size:?} {a:?} under the right thumb");
-                assert_eq!(l.zone(c), Zone::Button(a));
-                for b in Button::ALL.into_iter().skip(i + 1) {
-                    assert!(distance(c, l.button(b)) > 2.0 * r, "{size:?}: {a:?} and {b:?} overlap");
+            let (m, a) = (l.stick(Stick::Move), l.stick(Stick::Aim));
+            for c in [m, a] {
+                assert!(c[0] - RANGE >= 0.0 && c[0] + RANGE <= size[0] && c[1] + RANGE <= size[1], "{size:?}");
+            }
+            assert!(distance(m, a) > 2.0 * RANGE + 2.0 * r, "{size:?}: the sticks are apart");
+            assert_eq!(l.zone(a), Zone::Stick(Stick::Aim));
+            for (i, b) in Button::ALL.into_iter().enumerate() {
+                let c = l.button(b);
+                assert!(c[0] - r >= 0.0 && c[0] + r <= size[0] && c[1] - r >= HUD_BAND, "{size:?} {b:?}");
+                assert!(c[0] > size[0] / 2.0, "{size:?} {b:?} under the right thumb");
+                assert!(distance(c, a) > RANGE + r, "{size:?} {b:?} clear of the stick");
+                assert!(distance(c, m) > RANGE + r, "{size:?} {b:?} clear of the move stick");
+                assert_eq!(l.zone(c), Zone::Button(b));
+                for o in Button::ALL.into_iter().skip(i + 1) {
+                    assert!(distance(c, l.button(o)) > 2.0 * r, "{size:?}: {b:?} and {o:?} overlap");
                 }
             }
         }
