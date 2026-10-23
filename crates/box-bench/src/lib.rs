@@ -138,13 +138,23 @@ pub fn analyse(record: &Record) -> Analysis {
     }
 }
 
-/// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor.
+/// The agents that need no model, played natively on the same seeds as the LLMs: the table's floor. A trained policy
+/// plays the same way: `policy:<path to policy.bin>` (greedy, `box_env::policy`).
 pub const BASELINES: [&str; 2] = ["brawler", "random"];
+
+/// Whether `model` is played natively (a baseline or a trained policy) rather than by an LLM through box-mcp.
+pub fn native(model: &str) -> bool {
+    BASELINES.contains(&model) || model.starts_with("policy:")
+}
 
 /// Plays baseline `name` (one of [`BASELINES`]) on `seed` until the run ends, as a record like a session's (with no
 /// calls). `random` draws its actions from `seed` and `trial`; `brawler` (`box_env::brawler`: walk at the nearest
 /// enemy, punch in reach) plays the same every trial.
 pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>) -> Option<Record> {
+    let policy = match name.strip_prefix("policy:") {
+        Some(path) => Some(box_env::policy::Policy::load(std::path::Path::new(path)).ok()?),
+        None => None,
+    };
     let mut env = Env::new(EnvConfig { seed, rim, ..EnvConfig::default() });
     let mut s = (seed.wrapping_mul(31) ^ trial.wrapping_mul(0x9E37_79B9)).max(1);
     let mut random = move || {
@@ -155,6 +165,7 @@ pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>) -> Option<R
     };
     while !env.done() {
         let a = match name {
+            _ if policy.is_some() => policy.as_ref().unwrap().act(env.last()),
             "brawler" => box_env::brawler(env.last()),
             "random" => random(),
             _ => return None,

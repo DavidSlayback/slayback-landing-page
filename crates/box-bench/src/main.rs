@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use box_bench::{BASELINES, RunResult, analyse, baseline, summarise};
+use box_bench::{RunResult, analyse, baseline, native, summarise};
 use box_mcp::{INSTRUCTIONS, Record};
 use serde_json::{Value, json};
 
@@ -41,7 +41,7 @@ struct Args {
 
 fn main() {
     let args = parse();
-    let native = BASELINES.contains(&args.model.as_str());
+    let native = native(&args.model);
     if !native && !args.allow_sweep && (args.seeds.len() as u32 * args.trials > 1 || args.max_calls > SMOKE_CALLS) {
         fail(&format!(
             "more than one run or more than {SMOKE_CALLS} calls needs --allow-sweep (David approves sweeps: they use his plan)"
@@ -54,7 +54,16 @@ fn main() {
 
     let stamp = stamp();
     // Absolute: the agent runs from inside its run directory, and the server writes its record by this path.
-    let sweep = std::path::absolute(args.out.join(format!("{stamp}-{}", args.model.replace(['/', ':', ' '], "_"))))
+    let label = args.model.strip_prefix("policy:").map_or(args.model.clone(), |p| {
+        format!(
+            "policy-{}",
+            std::path::Path::new(p)
+                .parent()
+                .and_then(|d| d.file_name())
+                .map_or("file".into(), |n| n.to_string_lossy().into_owned())
+        )
+    });
+    let sweep = std::path::absolute(args.out.join(format!("{stamp}-{}", label.replace(['/', ':', ' ', '\\'], "_"))))
         .unwrap_or_else(|e| fail(&format!("resolving --out: {e}")));
     std::fs::create_dir_all(&sweep).unwrap_or_else(|e| fail(&format!("{}: {e}", sweep.display())));
     let prompt = prompt(args.max_calls);
@@ -114,7 +123,7 @@ fn main() {
 /// A baseline's run: played here, its record kept beside it like a session's.
 fn play_baseline(name: &str, dir: &Path, seed: u32, trial: u32, rim: Option<f32>) -> RunResult {
     let started = Instant::now();
-    let record = baseline(name, seed, trial, rim).expect("a known baseline");
+    let record = baseline(name, seed, trial, rim).unwrap_or_else(|| fail(&format!("no baseline or policy {name:?}")));
     std::fs::write(dir.join("record.json"), serde_json::to_string_pretty(&record).unwrap() + "\n").unwrap();
     RunResult {
         seed,

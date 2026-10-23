@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 
 mod json;
 pub use json::obs_json;
+pub mod policy;
 
 /// For each enemy defeated.
 pub const KILL: f32 = 1.0;
