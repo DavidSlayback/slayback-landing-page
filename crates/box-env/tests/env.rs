@@ -39,6 +39,21 @@ fn an_episode_starts_in_play_in_box_one_at_full_health() {
 }
 
 #[test]
+fn the_mini_box_has_its_own_rim_and_its_traces_replay_too() {
+    let config = EnvConfig { seed: 4, rim: Some(box_env::MINI_RIM), ..EnvConfig::default() };
+    let mut env = Env::new(config);
+    assert_eq!(env.last().rim, box_env::MINI_RIM);
+    let mut act = policy(9);
+    for _ in 0..300 {
+        if env.step(act()).done {
+            break;
+        }
+    }
+    assert_eq!(replay(&env.trace()), env.outcome(), "the rim is part of the trace's config");
+    assert_eq!(env.reset(5).rim, box_env::MINI_RIM, "a reset keeps it");
+}
+
+#[test]
 fn a_trace_replays_to_the_same_outcome_bit_for_bit() {
     // 40 s of play: enemies come through the doors, fight, die and pile up.
     let config = EnvConfig { seed: 7, ..EnvConfig::default() };

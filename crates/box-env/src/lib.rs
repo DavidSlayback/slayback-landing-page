@@ -17,6 +17,9 @@
 //! - minus [`DEATH`] when the run ends in death;
 //! - minus [`STEP`] every step, so dawdling costs a little.
 //!
+//! An episode's summed reward is its **progress score**: the RL agent's objective, and every agent's secondary
+//! number in the benchmark (`box-bench`), whose headline is escapes.
+//!
 //! Known ways to game it, for the write-up: farming kills without heaping them where they can be climbed (the
 //! climb and escape terms are meant to outweigh it).
 
@@ -25,12 +28,13 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 use game_core::agent::Obs;
 pub use game_core::agent::{ACTIONS, Action, FLAT};
+use game_core::run::{BoxSpec, Run, box_spec};
 use game3d::Frame;
 use game3d::enemy::Waves;
 use game3d::fighter::{Defeated, Team};
 use game3d::flow::Phase;
 use game3d::input::{Actions, ReadActions};
-use game3d::run::BoxEnded;
+use game3d::run::{BoxEnded, RunState};
 use game3d::score::RunScore;
 use game3d::store::Store;
 use serde::{Deserialize, Serialize};
@@ -52,7 +56,7 @@ pub const DEATH: f32 = 5.0;
 pub const STEP: f32 = 0.001;
 
 /// How episodes run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EnvConfig {
     /// Picks the run's dice (which kinds come through the doors, which carry bombs).
     pub seed: u32,
@@ -60,12 +64,20 @@ pub struct EnvConfig {
     pub frame_skip: u32,
     /// Steps before an episode is cut off.
     pub max_steps: u32,
+    /// The first box's rim, metres, if not its own: the mini box ([`MINI_RIM`]) the benchmark and the RL agent's
+    /// first lessons use. Later boxes are the game's.
+    #[serde(default)]
+    pub rim: Option<f32>,
 }
+
+/// The mini box's rim, metres: the tour's (`game3d::demo::TOUR_RIM`), low enough that a few kills heaped at a wall
+/// get out, high enough that it takes a plan.
+pub const MINI_RIM: f32 = game3d::demo::TOUR_RIM;
 
 impl Default for EnvConfig {
     fn default() -> Self {
         // 4 frames: 15 decisions a second. 20,000 steps: about 22 minutes of play.
-        Self { seed: 0, frame_skip: 4, max_steps: 20_000 }
+        Self { seed: 0, frame_skip: 4, max_steps: 20_000, rim: None }
     }
 }
 
@@ -132,7 +144,7 @@ pub struct Step {
 }
 
 /// An episode, as recorded: replaying it ([`replay`]) reproduces its [`Outcome`].
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Trace {
     pub config: EnvConfig,
     pub actions: Vec<u8>,
@@ -184,7 +196,7 @@ impl Env {
         // Its own records directory, so episodes never read or overwrite a real best score.
         let store = std::env::temp_dir().join(format!("box-env-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&store).expect("a records directory");
-        let app = build(config.seed, Store::in_dir(&store));
+        let app = build(&config, Store::in_dir(&store));
         let mut env = Env {
             app,
             config,
@@ -204,7 +216,7 @@ impl Env {
     /// Starts a new episode with `seed` (the rest of the config kept) and returns its first observation.
     pub fn reset(&mut self, seed: u32) -> Obs {
         self.config.seed = seed;
-        self.app = build(seed, Store::in_dir(&self.store));
+        self.app = build(&self.config, Store::in_dir(&self.store));
         self.start();
         self.last.clone()
     }
@@ -328,10 +340,15 @@ pub fn brawler(obs: &Obs) -> Action {
 }
 
 /// The headless game with the agent's controls and books added, starting straight into play.
-fn build(seed: u32, store: Store) -> App {
+fn build(config: &EnvConfig, store: Store) -> App {
     game3d::headless::app(store, |app| {
         // Spread the seed's bits so neighbouring seeds don't start with neighbouring dice.
-        let spread = seed.wrapping_mul(0x85EB_CA6B).rotate_left(13) ^ 0xC2B2_AE35;
+        let spread = config.seed.wrapping_mul(0x85EB_CA6B).rotate_left(13) ^ 0xC2B2_AE35;
+        // A first box of its own height: the run starts there, so the walls and the escape test both follow it.
+        if let Some(rim) = config.rim {
+            let spec = box_spec(1);
+            app.insert_resource(RunState(Run { spec: BoxSpec { rim, ..spec }, time_left: spec.timer, elapsed: 0.0 }));
+        }
         app.insert_resource(Waves { seed: spread, ..default() })
             .init_resource::<Command>()
             .init_resource::<Tally>()

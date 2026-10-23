@@ -1,5 +1,6 @@
-//! `box-mcp [--seed N] [--frame-skip N] [--max-steps N] [--max-calls N] [--trace FILE]`: the box's MCP server on
-//! stdio. `--max-calls` caps the session's tool calls (a benchmark's turn budget). With
+//! `box-mcp [--seed N] [--frame-skip N] [--max-steps N] [--rim M] [--max-calls N] [--trace FILE]`: the box's MCP
+//! server on stdio. `--rim` sets the first box's rim (the benchmark's mini box). `--max-calls` caps the session's
+//! tool calls (a benchmark's turn budget). With
 //! `--trace`, the session's record (trace, outcome and calls) is rewritten after every message, so a session cut off
 //! mid-run still leaves it.
 
@@ -20,6 +21,7 @@ fn main() {
             "--seed" => config.seed = number(&value()),
             "--frame-skip" => config.frame_skip = number(&value()),
             "--max-steps" => config.max_steps = number(&value()),
+            "--rim" => config.rim = Some(number(&value())),
             "--max-calls" => max_calls = Some(number(&value())),
             "--trace" => trace = Some(value().into()),
             _ => fail(&format!("unknown argument {flag}")),
