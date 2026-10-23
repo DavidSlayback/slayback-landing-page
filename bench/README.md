@@ -50,7 +50,7 @@ Run it: `bash scripts/native.sh run -p box-bench -q -- --model sonnet --seeds 1,
 - **Network:** a 2×256 tanh actor and critic over the game's 175-float observation.
 - **Files:** `ml/models/torch-mini-1/` holds `policy.bin` (the actor, read by `box_env::policy`), the run's config, and its learning curve, every 25th update.
 - **Learning curve:** its training episodes' escape rate rose to 32% at 2M steps, 51% at 4M, and about 70% from 6M on.
-- **Greedy play is worse:** taking the top action every step made it die at about 30 s every time, with piles at 88% of the rim. It hugs the walls: it learned the wall rule from the climb reward alone.
+- **Evaluation protocol:** the policy is evaluated as it was trained, as a stochastic policy (PPO's sampling is its exploration and part of what it learned), not greedily. Its runs hug the walls: it picked up the wall rule from the climb reward alone.
 
 **What it shows:**
 - **The mini box separates the agents.** One LLM escapes at all: Opus, in 3 of 15 runs, with the most kills and the highest piles of the three.
