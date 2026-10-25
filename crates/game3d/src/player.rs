@@ -142,10 +142,12 @@ pub fn control(
 
 /// How far below the feet the ground still counts as underfoot, metres.
 const PROBE: f32 = 0.05;
-/// How far across a step up reaches at least, metres: about one physics step at full run speed. Pressed into a crease
+/// How far across a step up reaches at least, metres: just under one physics step at full run speed (6 m/s at 64 Hz
+/// is 0.094 m), so a running step is untouched and only a slower one is stretched. At 0.1 every running step reached
+/// a little further too, and the tour's climb missed its footing on Linux at 144 fps. Pressed into a crease
 /// of steep faces, the slid velocity drops to a crawl, and a reach of a crawl's step lands on the face below the ledge
 /// rather than on its top, so the body stuck there for good (a 25-burst heap stopped the climb at 0.5 m).
-const STEP_REACH: f32 = 0.1;
+const STEP_REACH: f32 = 0.09;
 
 /// The move-and-slide controller, once per physics step: gravity while airborne, the floor velocity slid along
 /// whatever it meets (stepping up a ledge it would otherwise stop at), then the fall or the landing, and on the ground
