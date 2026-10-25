@@ -117,12 +117,18 @@ function start(X) {
     b.addEventListener('contextmenu', e => e.preventDefault());
   }
 
+  // The last 240 frames' work in ms, [drawing in Rust, blitting], for tests/e2e/tools/puzzle-frame.mjs.
+  const work = [];
   let last = performance.now();
   function frame(now) {
+    const t0 = performance.now();
     const ptr = X.game_frame(g, Math.min(0.1, (now - last) / 1000));
+    const t1 = performance.now();
     last = now;
     // Memory may have grown since the last frame, so take a fresh view every time.
     ctx.putImageData(new ImageData(new Uint8ClampedArray(X.memory.buffer, ptr, w * h * 4), w, h), 0, 0);
+    work.push([t1 - t0, performance.now() - t1]);
+    if (work.length > 240) work.shift();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -132,5 +138,6 @@ function start(X) {
     moves: () => X.game_moves(g),
     optimal: () => X.game_optimal(g),
     solved: () => X.game_solved(g) === 1,
+    work: () => work.slice(),
   };
 }

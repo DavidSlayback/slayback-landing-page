@@ -1,10 +1,10 @@
 //! One level being played on the page: the rules from `puzzle-core`, short tweens so moves never snap, `sim` sparks
 //! that bounce off the level's own walls and blocks, and the neon drawing (P18).
 
-use puzzle_core::{Facing, Key, Level, Play, Refusal, State, TIERS, generate};
+use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, TIERS, generate};
 use sim::World;
 
-use crate::draw::{Canvas, Rgb, mix, scale};
+use crate::draw::{Canvas, Rect, Rgb, mix, scale};
 
 /// Pixels per cell.
 pub const TILE: usize = 32;
@@ -96,6 +96,8 @@ pub struct Game {
     rng: u32,
     time: f32,
     refused: f32,
+    /// What the still scene was last baked from: blocks at rest, colours, reduced motion.
+    baked: Option<(Bits, [Rgb; 3], bool)>,
 }
 
 impl Game {
@@ -127,6 +129,7 @@ impl Game {
             rng: (seed as u32).wrapping_mul(2_654_435_761) | 1,
             time: 0.0,
             refused: 0.0,
+            baked: None,
         };
         game.update_mask();
         game
@@ -287,9 +290,65 @@ impl Game {
     }
 
     fn draw(&mut self) {
-        let [fg, muted, accent] = self.colors;
-        let l = self.play.level.clone();
+        let [fg, _, accent] = self.colors;
         let s = *self.play.state();
+        let moving = self.tween.block.filter(|_| !self.tween.done());
+        let mut still = s.blocks;
+        if let Some((_, Some(i))) = moving {
+            still.set(i, false);
+        }
+        let key = (still, self.colors, self.reduce_motion);
+        if self.baked != Some(key) {
+            self.bake(&still);
+            self.baked = Some(key);
+        }
+        let (ex, ey) = (self.play.level.exit.0 as f32, self.play.level.exit.1 as f32);
+        let t = self.tween.t;
+        let (px, py) = self.tween.player.at(t);
+        // Around the player (and the cell above, for a carried block), a block in flight, and the pulsing doorway.
+        let mut rects = vec![around(px, py - 1.0, 1.0, 2.0)];
+        if let Some((path, _)) = moving {
+            let (bx, by) = path.at(t);
+            rects.push(around(bx, by, 1.0, 1.0));
+        }
+        let pulse = (!self.reduce_motion).then(|| 0.75 + 0.25 * (self.time * 3.0).sin());
+        if pulse.is_some() {
+            rects.push(around(ex, ey, 1.0, 1.0));
+        }
+        let c = &mut self.canvas;
+        c.begin();
+        for r in merged(rects) {
+            c.layer(r);
+            if let Some(p) = pulse {
+                door_light(c, ex, ey, accent, p);
+            }
+            match moving {
+                Some((path, _)) => {
+                    let (bx, by) = path.at(t);
+                    block(c, bx, by, accent);
+                }
+                None if s.carrying => block(c, px, py - 1.0, accent),
+                None => {}
+            }
+            player(c, px, py, s.facing, fg, self.refused > 0.0);
+            c.composite(5, 1.5);
+        }
+        for i in 0..self.sparks.active {
+            let life = self.sparks.life[i];
+            if life <= 0.0 {
+                continue;
+            }
+            let heat = (1.0 - self.sparks.age[i] / life).clamp(0.0, 1.0);
+            let hot = mix(accent, [1.0, 1.0, 1.0], heat * heat);
+            c.spark(self.sparks.x[i], self.sparks.y[i], 1.1, scale(hot, (0.6 + self.sparks.energy[i]) * heat * 1.6));
+        }
+    }
+
+    /// Draws and bakes what stands still: walls, the doorway's frame (and its light, when it doesn't pulse), and the
+    /// blocks in `still`.
+    fn bake(&mut self, still: &Bits) {
+        let [fg, muted, accent] = self.colors;
+        let l = &self.play.level;
         let (w, h) = (l.w as usize, l.h as usize);
         let c = &mut self.canvas;
         c.clear([0.004, 0.005, 0.007]);
@@ -319,40 +378,54 @@ impl Game {
                 }
             }
         }
-        // The exit: an open doorway (posts and a lintel, no sill) full of light, pulsing unless motion is reduced.
-        let pulse = if self.reduce_motion { 1.0 } else { 0.75 + 0.25 * (self.time * 3.0).sin() };
+        // The exit: an open doorway (posts and a lintel, no sill) full of light, which pulses unless motion is reduced.
         let door = mix(accent, fg, 0.3);
         let (ex, ey) = (l.exit.0 as i32 * TILE as i32, l.exit.1 as i32 * TILE as i32);
         c.fill(ex + 5, ey + 2, ex + 27, ey + 5, scale(door, 1.1));
         c.fill(ex + 5, ey + 5, ex + 8, ey + 32, scale(door, 1.1));
         c.fill(ex + 24, ey + 5, ex + 27, ey + 32, scale(door, 1.1));
-        c.fill(ex + 8, ey + 5, ex + 24, ey + 32, scale(accent, 0.28 * pulse));
-        // Blocks at rest, except one still falling into place.
-        let falling = self.tween.block.filter(|_| !self.tween.done()).and_then(|b| b.1);
-        for i in (0..w * h).filter(|&i| s.blocks.get(i) && Some(i) != falling) {
+        if self.reduce_motion {
+            door_light(c, l.exit.0 as f32, l.exit.1 as f32, accent, 1.0);
+        }
+        for i in (0..w * h).filter(|&i| still.get(i)) {
             block(c, (i % w) as f32, (i / w) as f32, accent);
         }
-        let t = self.tween.t;
-        let (px, py) = self.tween.player.at(t);
-        match self.tween.block.filter(|_| !self.tween.done()) {
-            Some((path, _)) => {
-                let (bx, by) = path.at(t);
-                block(c, bx, by, accent);
+        c.bake(5, 1.5);
+    }
+}
+
+/// The light inside the doorway at cell (`x`, `y`), at `pulse` strength.
+fn door_light(c: &mut Canvas, x: f32, y: f32, accent: Rgb, pulse: f32) {
+    let (x0, y0) = ((x * T) as i32, (y * T) as i32);
+    c.fill(x0 + 8, y0 + 5, x0 + 24, y0 + 32, scale(accent, 0.28 * pulse));
+}
+
+/// The pixels of `w` × `h` cells from cell (`x`, `y`), with room around them for glow.
+fn around(x: f32, y: f32, w: f32, h: f32) -> Rect {
+    const ROOM: f32 = 14.0;
+    [
+        (x * T - ROOM).floor() as i32,
+        (y * T - ROOM).floor() as i32,
+        ((x + w) * T + ROOM).ceil() as i32,
+        ((y + h) * T + ROOM).ceil() as i32,
+    ]
+}
+
+/// `rects` with any that overlap joined, so no pixel is drawn twice.
+fn merged(mut rects: Vec<Rect>) -> Vec<Rect> {
+    let overlap = |a: &Rect, b: &Rect| a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    'again: loop {
+        for i in 0..rects.len() {
+            for j in i + 1..rects.len() {
+                if overlap(&rects[i], &rects[j]) {
+                    let b = rects.remove(j);
+                    let a = &mut rects[i];
+                    *a = [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])];
+                    continue 'again;
+                }
             }
-            None if s.carrying => block(c, px, py - 1.0, accent),
-            None => {}
         }
-        player(c, px, py, s.facing, fg, self.refused > 0.0);
-        for i in 0..self.sparks.active {
-            let life = self.sparks.life[i];
-            if life <= 0.0 {
-                continue;
-            }
-            let heat = (1.0 - self.sparks.age[i] / life).clamp(0.0, 1.0);
-            let hot = mix(accent, [1.0, 1.0, 1.0], heat * heat);
-            c.disc(self.sparks.x[i], self.sparks.y[i], 1.1, scale(hot, (0.6 + self.sparks.energy[i]) * heat * 1.6));
-        }
-        c.finish(5, 1.5);
+        return rects;
     }
 }
 
@@ -462,6 +535,25 @@ mod tests {
             far.len(),
             live.len()
         );
+    }
+
+    #[test]
+    fn only_a_block_coming_to_rest_redraws_the_still_scene() {
+        // A full redraw every frame cost a phone ~45 ms; walking and waiting must only redraw what moves.
+        let level = Level::parse("#B......#\n#>.....E#\n#########").unwrap();
+        let mut g = Game::from_level(level, 0, 1, 0);
+        let frames = |g: &mut Game, n| (0..n).for_each(|_| g.frame(1.0 / 60.0));
+        frames(&mut g, 30);
+        assert_eq!(g.canvas.bakes, 1, "the first frame bakes, waiting doesn't");
+        g.key(Key::R);
+        frames(&mut g, 30);
+        assert_eq!(g.canvas.bakes, 1, "walking doesn't");
+        g.key(Key::D);
+        frames(&mut g, 30);
+        assert_eq!(g.canvas.bakes, 2, "the block put down bakes once, when it lands");
+        g.undo();
+        frames(&mut g, 5);
+        assert_eq!(g.canvas.bakes, 3, "undo brings the block back: once more");
     }
 
     #[test]
