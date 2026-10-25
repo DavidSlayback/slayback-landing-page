@@ -22,6 +22,15 @@ cp "$target/wasm32-unknown-unknown/release/hero_wasm.wasm" dist/hero.wasm
 if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals dist/hero.wasm -o dist/hero.wasm; fi
 echo "dist/: hero.wasm $(( $(wc -c < dist/hero.wasm) / 1024 )) KB"
 
+# The puzzle (/puzzle, crates/puzzle-wasm): like the hero, a C-ABI module with no imports. Built every time, so a
+# break shows up in every build, with a budget of 300 KB gzipped (spec "Browser").
+cargo build -p puzzle-wasm --release --target wasm32-unknown-unknown --quiet
+cp "$target/wasm32-unknown-unknown/release/puzzle_wasm.wasm" dist/puzzle/puzzle.wasm
+if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int dist/puzzle/puzzle.wasm -o dist/puzzle/puzzle.wasm; fi
+puzzle_gz=$(gzip -9 -c dist/puzzle/puzzle.wasm | wc -c)
+echo "dist/puzzle/: puzzle.wasm $(( $(wc -c < dist/puzzle/puzzle.wasm) / 1024 )) KB ($(( puzzle_gz / 1024 )) KB gzipped)"
+if [ "$puzzle_gz" -gt 307200 ]; then echo "puzzle.wasm is over its 300 KB gzipped budget" >&2; exit 1; fi
+
 # Release switch. site/ marks switch-only content with paired comments, either alone on the lines around a block
 # or inline within one line: <!-- GAME_RELEASE --> ... <!-- /GAME_RELEASE --> (/* GAME_RELEASE */ in CSS and JS).
 # Off deletes the marked content, so the output is the pre-switch site byte for byte; on deletes only the markers.
@@ -35,6 +44,8 @@ for f in $(grep -rlI 'GAME_RELEASE' dist || true); do
   fi
 done
 [ "$release" = 1 ] || rm -rf dist/play/watch   # the clip page
+# The puzzle ships in previews only, until it gets a release switch of its own (P15: it releases apart from the game).
+[ "$release" = 1 ] || rm -rf dist/puzzle
 echo "dist/: game release switch $([ "$release" = 1 ] && echo ON || echo off)"
 
 # The game (/play): Bevy → wasm-bindgen glue. Skip with SKIP_GAME=1 for hero-only builds, which also drop the

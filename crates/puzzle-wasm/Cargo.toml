@@ -1,0 +1,13 @@
+[package]
+name = "puzzle-wasm"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "C-ABI WASM exports of Out of the Box for /puzzle: the rules, a software neon renderer and sim sparks, drawn into a pixel buffer the page blits."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+puzzle-core = { path = "../puzzle-core" }
+sim = { path = "../sim" }
