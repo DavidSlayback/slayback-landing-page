@@ -27,7 +27,7 @@ The grid is at most 20 wide and 12 tall; y grows downward. Each cell holds empty
 | `D` | Not carrying: lift the block in front onto your head. Carrying: put it in the cell in front at head height, where it falls until it rests | Lift: there is no block in front at your level, something sits on it, or the cell above you is filled. Put: the cell in front at head height is filled |
 
 - **Gravity:** after every move, the player (with any carried block) falls until supported. A put-down block falls until it rests. Nothing else moves.
-- **Exit:** standing on the exit tile solves the level. Keys after that are ignored.
+- **Exit:** the level is solved when a move ends with you on the exit tile; falling through it on the way down doesn't count. Keys after that are ignored.
 - **Refused moves** change nothing and do not count. In a move string, the first refusal stops the string; the reply names the key, its position in the string and the reason.
 - **Moves that count:** those on the board at the end. `undo` takes the last one back, `restart` clears them all. Neither costs a move (P10).
 - **Text form** (P4), one line per row:
@@ -41,7 +41,7 @@ The grid is at most 20 wide and 12 tall; y grows downward. Each cell holds empty
   # wall  B block  E exit  . empty  > or < you, facing that way
   ```
 
-  A carried block is drawn as `B` in the cell above you. The same characters parse back into a level, so tests and fixtures are plain text.
+  A carried block is drawn as `B` in the cell above you. A block on the exit, resting or carried, is drawn as `b`. The same characters parse back into a level, so tests and fixtures are plain text. Parsing refuses anything floating, since the rules never leave anything there.
 
 These rules are written as tests before the code, one per row of the table, refusals included (TDD).
 
@@ -121,19 +121,19 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
 
 ## Build order
 
-Each step ships on its own and unblocks the next. Tickets go to GitHub Issues with these edges.
+Each step ships on its own and unblocks the next. The spec issue is #101; each step's ticket is labelled `track:puzzle`.
 
-1. **Rules:** `puzzle-core` rules, text form, tests.
-2. **Solver**, with measured search times. *Blocked by 1.*
-3. **Generator, tiers, suite v1**, with the tier-4 time gate. *Blocked by 2.*
-4. **`puzzle-mcp`** and a smoke session. *Blocked by 3.*
-5. **Generalise `box-bench`**, check that Escape the Box reproduces, and plug in the puzzle with the native players. *Blocked by 4.*
-6. **Bench v1 sweep** and `bench/puzzle/README.md`. *Blocked by 5; the PPO row joins after 7.*
-7. **`puzzle-env`, PPO training, the policy's Rust forward pass.** *Blocked by 3.*
-8. **`puzzle-wasm` and `/puzzle`:** one level playable with keys, the neon look, sparks. *Blocked by 3.*
-9. **Campaign, daily level, touch, gamepad, reduced motion.** *Blocked by 8.*
-10. **Agent replays on `/puzzle`.** *Blocked by 6 and 8.*
-11. **Lab page row, nav link, release** once David has played the rc build. *Blocked by 9 and 10.*
+1. (OB1, #102) **Rules:** `puzzle-core` rules, text form, tests.
+2. (OB2, #103) **Solver**, with measured search times. *Blocked by 1.*
+3. (OB3, #104) **Generator, tiers, suite v1**, with the tier-4 time gate. *Blocked by 2.*
+4. (OB4, #105) **`puzzle-mcp`** and a smoke session. *Blocked by 3.*
+5. (OB5, #106) **Generalise `box-bench`**, check that Escape the Box reproduces, and plug in the puzzle with the native players. *Blocked by 4.*
+6. (OB6, #107) **Bench v1 sweep** and `bench/puzzle/README.md`. *Blocked by 5; the PPO row joins after 7.*
+7. (OB7, #108) **`puzzle-env`, PPO training, the policy's Rust forward pass.** *Blocked by 3.*
+8. (OB8, #109) **`puzzle-wasm` and `/puzzle`:** one level playable with keys, the neon look, sparks. *Blocked by 3.*
+9. (OB9, #110) **Campaign, daily level, touch, gamepad, reduced motion.** *Blocked by 8.*
+10. (OB10, #111) **Agent replays on `/puzzle`.** *Blocked by 6 and 8.*
+11. (OB11, #112) **Lab page row, nav link, release** once David has played the rc build. *Blocked by 9 and 10.*
 
 ## Out of scope for v1
 

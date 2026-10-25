@@ -22,3 +22,13 @@ The game's domain words, as the code uses them. Decisions live in `docs/planning
 - **Kind** and **Style**: an enemy's kind (fodder, thug, ninja) and everything it is, in one table (`game_core::enemy::Style`): name, capsule radius and height, health, reach, wind-up, walk speed, blow and armour. Only its figure's pieces (`debris::solid::figure`) and colours (the palette) live elsewhere.
 - **InBox**: belongs to the current box and goes when it ends (`game3d::run::InBox`): every enemy, debris piece and lit bomb, from its bundle.
 - **Armour**: a kind's resistance to being staggered. A thug's armour shrugs off punches but not kicks, throws or blasts.
+
+## Out of the Box (the puzzle)
+
+The words of `crates/puzzle-core`; decisions are in `docs/planning/puzzle-decisions.md`.
+
+- **Level**: the fixed part of a puzzle (walls, the exit, the grid's size) plus where play starts. Its **text form** is one character per cell: `#` wall, `B` block, `E` exit, `.` empty, `>`/`<` the player facing that way, `b` a block on the exit.
+- **State**: what changes during play: the player's cell and **facing**, whether they are **carrying**, and the set of block cells. The carried block is not in that set.
+- **Key**: one of `L R U D`. `L`/`R` walk the way you face, or turn you to face it; `U` climbs; `D` lifts the block in front or puts the carried one down. A turn is a move.
+- **Refusal**: why a key changed nothing (`Blocked`, `CarryBlocked`, `NothingToClimb`, `NoHeadroom`, `NoBlock`, `Covered`, `NoRoom`, `NotAKey`). A refused key is not a move.
+- **Play**: a level being played, holding every state since the start. Its **moves** are the ones on the board, so **undo** and **restart** cost nothing. `apply` plays a **move string** until it runs out, solves the level or reaches a refusal; a **Stop** says where and why it ended early.

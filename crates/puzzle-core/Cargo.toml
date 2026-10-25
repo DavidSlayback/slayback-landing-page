@@ -1,0 +1,6 @@
+[package]
+name = "puzzle-core"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Rules of Out of the Box, the turn-based block-carrying puzzle: levels, moves, gravity and the text form. No dependencies, so the browser, MCP server, RL env and bench share one deterministic core."
