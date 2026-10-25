@@ -54,6 +54,11 @@ These rules are written as tests before the code, one per row of the table, refu
   - it fits its tier's grid size, which grows toward 20×12 by tier 4.
 - **Determinism:** the same seed gives the same level on every platform: native, wasm and Python. A test checks a fixed table of seed-to-level hashes.
 - **Risk to measure first:** how long the solver and generator take on tier 4. If search on 20×12 is too slow, shrink tier 4's grid or bound its expansions, and record that in the decision log.
+- **Measured (OB2, 2026-10-25):**
+  - **Setup:** `examples/solve.rs`, 50 random settled levels per size and block density, release build on David's laptop. These are random pits, not generator levels.
+  - **Solvable levels are cheap:** the slowest took 13 ms (34k expansions), and the median at every size is under 0.01 ms. None needed more than 40 moves, so tier-4 cost (81–150 moves) is still unmeasured.
+  - **Unsolvable levels have a heavy tail:** the search must exhaust every reachable state. At 20×12 with blocks on 15% of cells, the median was 38 expansions, but one level took **67 s and 46 M expansions** (about 0.7 M expansions/s, several GB of memory). At 12×8 to 16×10 the worst cases were 0.1–0.24 M expansions, under 0.1 s.
+  - **Consequence for OB3:** the generator needs an expansion cap and must discard any level that hits it ("too costly to verify"). Expected: a cap near 1 M expansions (about 1.5 s) keeps generation bounded. The cap, and whether tier 4 still fills at 20×12 under it, is OB3's gate.
 
 ## Agents through MCP (`puzzle-mcp`)
 

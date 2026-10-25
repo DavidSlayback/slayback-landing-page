@@ -6,6 +6,9 @@
 
 use std::fmt;
 
+mod solve;
+pub use solve::{Search, solve};
+
 /// Widest and tallest grid a level may have; 20 × 12 = 240 cells fit a [`Bits`].
 pub const MAX_W: usize = 20;
 pub const MAX_H: usize = 12;
