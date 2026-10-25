@@ -13,6 +13,8 @@ pub struct Search {
     pub solution: Option<Vec<Key>>,
     /// States taken off the frontier and expanded.
     pub expanded: usize,
+    /// The search stopped at its cap: no solution was found, but none was ruled out either.
+    pub gave_up: bool,
 }
 
 const KEYS: [Key; 4] = [Key::L, Key::R, Key::U, Key::D];
@@ -26,7 +28,14 @@ fn estimate(level: &Level, s: &State) -> u32 {
     dx.max(rise)
 }
 
+/// A shortest solution, however long the search takes. Proving a big level unsolvable can take minutes and gigabytes
+/// (`docs/planning/puzzle-spec.md`, "Measured"); [`solve_within`] bounds it.
 pub fn solve(level: &Level) -> Search {
+    solve_within(level, usize::MAX)
+}
+
+/// As [`solve`], but expanding at most `cap` states. A solution it finds is still a shortest one.
+pub fn solve_within(level: &Level, cap: usize) -> Search {
     // Every state reached so far: the state, the node it came from and the key that got here, plus its distance.
     struct Node {
         state: State,
@@ -53,7 +62,10 @@ pub fn solve(level: &Level) -> Search {
                 at = nodes[at].parent;
             }
             keys.reverse();
-            return Search { solution: Some(keys), expanded };
+            return Search { solution: Some(keys), expanded, gave_up: false };
+        }
+        if expanded == cap {
+            return Search { solution: None, expanded, gave_up: true };
         }
         expanded += 1;
         for key in KEYS {
@@ -74,5 +86,5 @@ pub fn solve(level: &Level) -> Search {
             }
         }
     }
-    Search { solution: None, expanded }
+    Search { solution: None, expanded, gave_up: false }
 }

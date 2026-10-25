@@ -6,8 +6,10 @@
 
 use std::fmt;
 
+mod generate;
 mod solve;
-pub use solve::{Search, solve};
+pub use generate::{CAP, Generated, TIERS, Tier, generate};
+pub use solve::{Search, solve, solve_within};
 
 /// Widest and tallest grid a level may have; 20 × 12 = 240 cells fit a [`Bits`].
 pub const MAX_W: usize = 20;
@@ -179,6 +181,11 @@ impl Level {
             }
         }
         out
+    }
+
+    /// FNV-1a 64 over the text form of the start: what the bench suite pins each seed's level to.
+    pub fn fingerprint(&self) -> u64 {
+        self.to_string().bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
     }
 
     /// Whether the player stands on the exit.

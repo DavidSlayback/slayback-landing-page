@@ -48,6 +48,24 @@ fn finds_no_way_up_a_wall_too_high_to_climb() {
     assert_eq!(solve(&l).solution, None);
 }
 
+#[test]
+fn a_capped_search_gives_up_rather_than_answering_wrong() {
+    let l = level(
+        "
+        #.....E#
+        #....###
+        #>.B.###
+        ########",
+    );
+    let full = solve(&l);
+    assert!(!full.gave_up && full.solution.as_ref().map(Vec::len) == Some(7));
+    let short = solve_within(&l, 3);
+    assert_eq!((short.solution, short.gave_up, short.expanded), (None, true, 3));
+    assert_eq!(solve_within(&l, full.expanded), full, "a cap it doesn't reach changes nothing");
+    let walled = level("#....E#\n#...###\n#>..###\n#######");
+    assert!(!solve_within(&walled, 1_000).gave_up, "an exhausted search is a proof, not giving up");
+}
+
 /// The length of a shortest solution by plain breadth-first search, or `None`. It shares nothing with the solver but
 /// `step`, so it is an independent check of the solver's estimate: an estimate that ever overshot could make A* return
 /// a longer path than this.

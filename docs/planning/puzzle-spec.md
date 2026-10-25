@@ -48,17 +48,37 @@ These rules are written as tests before the code, one per row of the table, refu
 ## Solver and generator
 
 - **Solver:** A* over states. The heuristic is `max(|dx|, rise)` to the exit, where `rise` is how far the exit is above you. It is admissible because each move changes x by at most 1 and climbs at most 1. It returns the shortest solution and the number of states it expanded. It is the oracle row in the bench and the source of each level's tier and budget.
-- **Generator:** from a seed, it builds a pit (floor heights per column, interior ledges, loose blocks) and places the exit on a high ledge. The solver measures the level, and it is kept only if:
-  - its shortest solution falls in the requested tier (P16: tier 1 ≤15 moves, 2: 16–40, 3: 41–80, 4: 81–150);
-  - from tier 2 up, it needs at least one block lifted (no walk-up levels);
-  - it fits its tier's grid size, which grows toward 20×12 by tier 4.
-- **Determinism:** the same seed gives the same level on every platform: native, wasm and Python. A test checks a fixed table of seed-to-level hashes.
+- **Generator** (`puzzle_core::generate`, built in OB3):
+  - **Why it climbs:** random pits almost never need more than about 40 moves (OB2's measurement), so drawing and filtering can't reach tier 4. Instead it climbs.
+  - **How it climbs:** from a seed it builds a pit (a rolling floor, a few blocks, the exit and the player in different columns), then changes one thing at a time: a wall cell, a block added to or taken from a column, where the exit or the player drops.
+  - **What survives:** a change is kept when the level stays solvable within the cap and scores no worse. From tier 2 up, the score is first whether a block is needed, then the length of the shortest solution.
+  - **When it stops:** once the length is in the band and, from tier 2 up, the level can't be solved with every block turned to wall.
+  - **Bounds:** at most 3,000 changes per climb and 8 climbs per seed.
+- **Tiers** (`TIERS`): tier 1 8–15 moves on 8×6, tier 2 16–40 on 12×8, tier 3 41–80 on 16×10, tier 4 81–150 on 20×12. Tier 1's floor of 8 moves is an agent choice: P16 said only "≤15", and a 3-move walk tests nothing.
+- **Cap** (`CAP`): 200,000 expansions per candidate, about 0.3 s at worst. A candidate that hits it is thrown away as too costly to verify. A solution found under the cap is still a shortest one.
+- **Determinism:** integers only, one splitmix-seeded xorshift per (seed, tier), so the same seed gives the same level everywhere. `bench/puzzle/suite-v1.json` is the seed-to-level table; `tests/generate.rs` regenerates it and fails if any level's fingerprint (FNV-1a of its text form) or solution length changes. Wasm and Python parity is checked when those front ends exist (OB7, OB8).
+- **Seed ranges:** below 1,000,000 for the bench (suite v1 uses 1–10 per tier); 1,000,000 up to 2^32 for RL training; 2^32 up for a run's fresh seeds.
 - **Risk to measure first:** how long the solver and generator take on tier 4. If search on 20×12 is too slow, shrink tier 4's grid or bound its expansions, and record that in the decision log.
 - **Measured (OB2, 2026-10-25):**
   - **Setup:** `examples/solve.rs`, 50 random settled levels per size and block density, release build on David's laptop. These are random pits, not generator levels.
   - **Solvable levels are cheap:** the slowest took 13 ms (34k expansions), and the median at every size is under 0.01 ms. None needed more than 40 moves, so tier-4 cost (81–150 moves) is still unmeasured.
   - **Unsolvable levels have a heavy tail:** the search must exhaust every reachable state. At 20×12 with blocks on 15% of cells, the median was 38 expansions, but one level took **67 s and 46 M expansions** (about 0.7 M expansions/s, several GB of memory). At 12×8 to 16×10 the worst cases were 0.1–0.24 M expansions, under 0.1 s.
-  - **Consequence for OB3:** the generator needs an expansion cap and must discard any level that hits it ("too costly to verify"). Expected: a cap near 1 M expansions (about 1.5 s) keeps generation bounded. The cap, and whether tier 4 still fills at 20×12 under it, is OB3's gate.
+  - **Consequence for OB3:** the generator needs an expansion cap and must discard any level that hits it ("too costly to verify"). The cap, and whether tier 4 still fills at 20×12 under it, is OB3's gate.
+- **Measured (OB3, 2026-10-25), the gate passed:**
+  - **Setup:** `examples/generate.rs`, release build, cap 200k.
+  - **Results:**
+
+    | Tier | Grid | Seeds filled | Median | Worst | Shortest solutions |
+    |---|---|---|---|---|---|
+    | 1 | 8×6 | 10/10 | <1 ms | 2 ms | 8–12 |
+    | 2 | 12×8 | 10/10 | 2 ms | 11 ms | 17–32 |
+    | 3 | 16×10 | 10/10 | 0.17 s | 0.44 s | 41–63 |
+    | 4 | 20×12 | **30/30** | 0.76 s | 11.4 s | 81–116 |
+
+  - **Tier 4 fills at 20×12; no shrink needed.**
+  - **Solutions cluster at the low end of each band,** because the climb stops on entering it. Tier 4 never went past 116 moves, so 117–150 is empty in practice.
+  - **They are block puzzles, not mazes:** tier-4 solutions use 24–26 lifts and put-downs and 11–14 climbs.
+  - **Known issue for the human campaign (OB9):** wall toggling leaves floating wall cells and piles in blocks (up to 39 in a tier-4 level), so levels look cluttered rather than like a pit. The bench doesn't care. The campaign should either pick the cleanest levels or add a tidiness term to the score.
 
 ## Agents through MCP (`puzzle-mcp`)
 

@@ -58,3 +58,12 @@ Proposed at the end of the grilling. David: "Yes, write it".
 - **Proof:** a session counts only once its trace replays against `puzzle-core`.
 - **No backend:** the daily seed is a hash of the date computed in the browser. Agent replays ship as static JSON from the bench records.
 - **Tracking:** this log, `puzzle-spec.md`, and GitHub Issues as with Escape the Box (Q10).
+
+## Built in OB3 (agent choice, 2026-10-25)
+
+- **Tier 1's band is 8–15 moves,** not 1–15. A 3-move walk tests nothing.
+- **Grids per tier:** 8×6, 12×8, 16×10 and 20×12.
+- **Levels are climbed, not filtered:** random pits never needed more than 40 moves, so filtering couldn't fill tier 4.
+- **Expansion cap of 200,000 per candidate.** At that cap tier 4 filled 30 of 30 seeds at 20×12, so its grid was not shrunk (the spec's "Measured").
+- **Seed ranges:** below 10^6 for the bench, 10^6 to 2^32 for RL training, 2^32 and up for fresh seeds.
+- **Suite v1** is seeds 1–10 of each tier, in `bench/puzzle/suite-v1.json` with each level's text, fingerprint and solution.
