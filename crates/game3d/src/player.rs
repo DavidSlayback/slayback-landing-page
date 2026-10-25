@@ -142,6 +142,10 @@ pub fn control(
 
 /// How far below the feet the ground still counts as underfoot, metres.
 const PROBE: f32 = 0.05;
+/// How far across a step up reaches at least, metres: about one physics step at full run speed. Pressed into a crease
+/// of steep faces, the slid velocity drops to a crawl, and a reach of a crawl's step lands on the face below the ledge
+/// rather than on its top, so the body stuck there for good (a 25-burst heap stopped the climb at 0.5 m).
+const STEP_REACH: f32 = 0.1;
 
 /// The move-and-slide controller, once per physics step: gravity while airborne, the floor velocity slid along
 /// whatever it meets (stepping up a ledge it would otherwise stop at), then the fall or the landing, and on the ground
@@ -260,14 +264,15 @@ impl Walker<'_, '_, '_> {
         (out.position, out.projected_velocity.with_y(0.0))
     }
 
-    /// Stepping up a ledge: rise up to `MAX_STEP` (less under something), slide across from there, then settle back
-    /// down onto footing. `None` if there is nothing to stand on at the end.
+    /// Stepping up a ledge: rise up to `MAX_STEP` (less under something), slide across from there (at least
+    /// `STEP_REACH`), then settle back down onto footing. `None` if there is nothing to stand on at the end.
     fn step_up(&self, at: Vec3, velocity: Vec3, dt: f32) -> Option<(Vec3, Vec3)> {
         let rise = self.cast(at, Vec3::Y * MAX_STEP).map_or(MAX_STEP, |h| h.distance);
         if rise < 0.02 {
             return None;
         }
-        let (over, slid) = self.slide(at + Vec3::Y * rise, velocity, dt);
+        let reach = dt.max(STEP_REACH / velocity.length());
+        let (over, slid) = self.slide(at + Vec3::Y * rise, velocity, reach);
         let hit = self.cast(over, Vec3::NEG_Y * (rise + PROBE))?;
         let landed = over - Vec3::Y * hit.distance;
         (landed.y > at.y + 0.01 && self.stands_on(landed, hit.point1, hit.normal1)).then_some((landed, slid))
