@@ -141,6 +141,10 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
   - **Drawing:** a 32 px cell, so a tier-4 board is 640×384, scaled up by CSS. Outlines are drawn as light, a two-pass box-blurred copy is added back as glow, and an exponential tonemap keeps white-hot cores from clipping flat.
   - **Sparks:** one `sim::World` with its spawning and lifetimes switched off; `put` launches each spark and the page sets its life. The world's obstacle mask is the level's walls and resting blocks, rebuilt when a block moves, so sparks bounce off the level. Sparks whose life ran out are recycled by `sim` with no life and never drawn.
   - **Shapes:** the player is a figure (head and body) and the exit an open, lit doorway. They looked alike as two outlined rectangles in the first screenshot.
+  - **Touch** (built with OB8 at David's prompt; it is the touch part of OB9): a pad under the board on coarse pointers, or with `?touch=1`.
+    - **Buttons:** Left, Right, Climb, Lift, Undo and Reset. Left and Right repeat while held: after 0.38 s, then every 0.14 s.
+    - **Layout:** upright on a phone, the four moves share one row with Undo and Reset below; sideways, the board shrinks to the height that's left.
+    - **Tests:** `puzzle.spec.js` checks a phone solve by taps, the hold, and that every button is on screen both ways.
   - **Where it ships:** `/puzzle` is in preview builds only (`GAME_RELEASE=1`); production builds drop it, and `tests/e2e/puzzle.spec.js` checks both.
 
 ## Testing and evidence

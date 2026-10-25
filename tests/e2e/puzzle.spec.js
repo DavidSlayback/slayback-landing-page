@@ -53,6 +53,56 @@ test.describe('puzzle', () => {
     await expect(page.locator('#moves')).toHaveText('0');
   });
 
+  test.describe('on a phone', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const ACT = { L: '0', R: '1', U: '2', D: '3' };
+
+    test('the touch pad shows and a level is solved by taps', async ({ page }) => {
+      const errors = collectErrors(page);
+      const { solution, moves } = level(1, 1);
+      await open(page, 1, 1);
+      await expect(page.locator('#pad')).toBeVisible();
+      await expect(page.locator('.touch-help')).toBeVisible();
+      for (const b of await page.locator('#pad button').all()) {
+        const box = await b.boundingBox();
+        expect(box.x >= 0 && box.x + box.width <= 390, `${await b.getAttribute('aria-label')} is fully on screen`).toBe(true);
+      }
+      for (const k of solution) await page.locator(`#pad [data-act="${ACT[k]}"]`).tap();
+      await expect.poll(() => state(page)).toEqual({ moves, solved: true });
+      await page.locator('#pad [data-act="undo"]').tap();
+      expect((await state(page)).moves).toBe(moves - 1);
+      await page.locator('#pad [data-act="restart"]').tap();
+      expect((await state(page)).moves).toBe(0);
+      expect(errors).toEqual([]);
+    });
+
+    test('holding a walk button keeps walking', async ({ page }) => {
+      // Tier 1 level 1 starts facing right on a block; holding Left turns, walks twice (dropping to the floor), then
+      // meets a block. The refusal shows the repeat was still going after the last legal move.
+      await open(page, 1, 1);
+      const left = page.locator('#pad [data-act="0"]');
+      await left.dispatchEvent('pointerdown', { pointerId: 7, pointerType: 'touch' });
+      await page.waitForTimeout(900);
+      await left.dispatchEvent('pointerup', { pointerId: 7, pointerType: 'touch' });
+      expect((await state(page)).moves).toBe(3);
+      await expect(page.locator('#where')).toHaveText('Something is in the way.');
+      await page.locator('#pad [data-act="1"]').tap();
+      await page.waitForTimeout(600);
+      expect((await state(page)).moves, 'a tap is one move, and the released hold stays stopped').toBe(4);
+    });
+
+    test('held sideways, the board and the pad fit without scrolling', async ({ page }) => {
+      await page.setViewportSize({ width: 844, height: 390 });
+      await open(page, 4, 1);
+      for (const b of await page.locator('#pad button').all()) {
+        const box = await b.boundingBox();
+        expect(box.x >= 0 && box.x + box.width <= 844 && box.y + box.height <= 390,
+          `${await b.getAttribute('aria-label')} is fully on screen`).toBe(true);
+      }
+      expect(await page.evaluate(() => document.scrollingElement.scrollHeight)).toBeLessThanOrEqual(391);
+    });
+  });
+
   test('the wasm builds the same levels as the native generator', async ({ page }) => {
     for (const [tier, seed] of [[1, 1], [1, 2], [2, 1], [3, 1]]) {
       await open(page, tier, seed);

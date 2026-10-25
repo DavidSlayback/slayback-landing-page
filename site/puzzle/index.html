@@ -33,6 +33,37 @@
   .keys { width: min(94vw, 1100px); margin: 0; color: var(--muted); font: 500 14px/1.6 var(--font); letter-spacing: .03em; }
   .keys kbd { font: inherit; color: var(--fg); border: 1px solid color-mix(in srgb, var(--muted) 50%, transparent); border-radius: 3px; padding: 0 5px; }
   .error { color: #ff7a6a; }
+  /* Touch (P19): a pad under the board, walking on the left thumb, climbing and lifting on the right. */
+  body { touch-action: manipulation; }
+  #pad, .touch-help { display: none; }
+  .touch #pad { display: flex; }
+  .touch .touch-help { display: block; }
+  .touch .keys:not(.touch-help), .touch .keys-only { display: none; }
+  #pad { width: min(94vw, 720px); justify-content: space-between; align-items: flex-end; gap: 10px; user-select: none; -webkit-user-select: none; }
+  #pad .group { display: flex; gap: 10px; }
+  #pad button { display: grid; place-items: center; gap: 2px; min-width: 76px; min-height: 76px; padding: 8px 6px; border-radius: 14px; cursor: pointer;
+    font: 600 12px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--fg); touch-action: none;
+    background: color-mix(in srgb, var(--accent) 6%, #000); border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 18%, transparent); -webkit-tap-highlight-color: transparent; }
+  #pad button:active { background: color-mix(in srgb, var(--accent) 22%, #000); }
+  #pad button svg { width: 34px; height: 34px; stroke: var(--accent); stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  #pad .small button { min-width: 58px; min-height: 52px; border-color: color-mix(in srgb, var(--muted) 60%, transparent); box-shadow: none; }
+  #pad .small button svg { width: 22px; height: 22px; stroke: var(--muted); }
+  /* A phone held upright: the four moves in one row under the thumbs, undo and reset on a row of their own below. */
+  @media (max-width: 560px) {
+    #pad { flex-wrap: wrap; row-gap: 12px; }
+    #pad .small { order: 3; width: 100%; justify-content: center; }
+    #pad button { min-width: 0; width: 21vw; max-width: 84px; min-height: 80px; }
+    #pad .small button { width: 26vw; max-width: 110px; min-height: 48px; grid-auto-flow: column; gap: 8px; }
+  }
+  /* A phone held sideways: the board takes the height the header, HUD and pad leave. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    body { gap: 6px; padding: 8px 16px; }
+    h1 { font-size: 18px; }
+    canvas { width: min(94vw, calc((100svh - 150px) * var(--ar))); }
+    .touch .touch-help { display: none; }
+    #pad button { min-height: 62px; }
+  }
 </style>
 </head>
 <body>
@@ -54,6 +85,22 @@
   <span id="where"></span>
   <span>Moves <b id="moves">0</b> · shortest <b id="optimal">?</b></span>
 </div>
+<div id="pad" aria-label="Controls">
+  <div class="group">
+    <button data-act="0" aria-label="Walk left"><svg viewBox="0 0 40 40"><path d="M25 8 13 20l12 12"/></svg>Left</button>
+    <button data-act="1" aria-label="Walk right"><svg viewBox="0 0 40 40"><path d="m15 8 12 12-12 12"/></svg>Right</button>
+  </div>
+  <div class="group small">
+    <button data-act="undo" aria-label="Undo"><svg viewBox="0 0 40 40"><path d="M14 12 7 19l7 7"/><path d="M8 19h15a9 9 0 0 1 0 18h-5"/></svg>Undo</button>
+    <button data-act="restart" aria-label="Restart"><svg viewBox="0 0 40 40"><path d="M31 20a11 11 0 1 1-4-8.5"/><path d="M28 5v7h-7"/></svg>Reset</button>
+  </div>
+  <div class="group">
+    <button data-act="2" aria-label="Climb"><svg viewBox="0 0 40 40"><path d="M8 30h8v-8h8v-8h8"/><path d="m27 8 5 6-6 3"/></svg>Climb</button>
+    <button data-act="3" aria-label="Lift or set down"><svg viewBox="0 0 40 40"><rect x="13" y="6" width="14" height="14" rx="1"/><path d="M20 24v10m-5-5 5 5 5-5"/></svg>Lift</button>
+  </div>
+</div>
+<p class="keys touch-help">Climb out to the doorway. <b>Left</b> and <b>Right</b> walk (or turn to face that way; hold to keep walking),
+  <b>Climb</b> steps up one block, <b>Lift</b> picks up the block in front, or sets the one you carry down.</p>
 <p class="keys">Climb out to the doorway. <kbd>←</kbd> <kbd>→</kbd> walk (or turn to face that way), <kbd>↑</kbd> climb one step,
   <kbd>↓</kbd> lift the block in front onto your head, or set the one you carry down. <kbd>Z</kbd> undo, <kbd>R</kbd> restart.
   WASD works too.</p>
