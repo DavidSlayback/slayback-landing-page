@@ -1,9 +1,9 @@
-//! The touch controls on screen (Q78, `game_core::touch`): the stick, resting faintly at the bottom left until a thumb
-//! lands on the left half and then centred under it, and the diamond of buttons at the bottom right. Drawn while
-//! playing, on a touch screen or once the visitor has touched.
+//! The touch controls on screen (Q82, `game_core::touch`): two sticks fixed in the bottom corners, always drawn, the
+//! left to move and the right to aim and punch, and Kick, Grab and Dash arced above the right one. Drawn while playing,
+//! on a touch screen or once the visitor has touched.
 
 use bevy::prelude::*;
-use game_core::touch::{Button, RANGE};
+use game_core::touch::{Button, RANGE, Stick};
 
 use crate::flow::Phase;
 use crate::hud::{EDGE, INK};
@@ -17,10 +17,10 @@ pub fn plugin(app: &mut App) {
 struct Controls;
 
 #[derive(Component)]
-struct StickBase;
+struct StickBase(Stick);
 
 #[derive(Component)]
-struct StickKnob;
+struct StickKnob(Stick);
 
 #[derive(Component)]
 struct PadButton(Button);
@@ -56,14 +56,24 @@ fn spawn(mut commands: Commands) {
             GlobalZIndex(5),
         ))
         .id();
-    commands.spawn((
-        StickBase,
-        circle(RANGE),
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.25)),
-        BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.4)),
-        ChildOf(root),
-    ));
-    commands.spawn((StickKnob, circle(KNOB), BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.45)), ChildOf(root)));
+    for (s, label) in [(Stick::Move, "MOVE"), (Stick::Aim, "PUNCH")] {
+        commands
+            .spawn((
+                StickBase(s),
+                circle(RANGE),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.3)),
+                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.5)),
+                ChildOf(root),
+            ))
+            .with_child((
+                Node { position_type: PositionType::Absolute, bottom: Val::Px(-20.0), ..default() },
+                Text::new(label),
+                TextFont::from_font_size(11.0),
+                TextColor(INK.with_alpha(0.7)),
+                EDGE,
+            ));
+        commands.spawn((StickKnob(s), circle(KNOB), BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.4)), ChildOf(root)));
+    }
     for b in Button::ALL {
         commands
             .spawn((PadButton(b), circle(30.0), BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.5)), ChildOf(root)))
@@ -72,12 +82,12 @@ fn spawn(mut commands: Commands) {
 }
 
 /// Each part of the controls, apart (no entity is two of them).
-type Base<'w, 's> = Query<'w, 's, &'static mut Node, (With<StickBase>, Without<Controls>)>;
-type Knob<'w, 's> = Query<
+type Bases<'w, 's> = Query<'w, 's, (&'static StickBase, &'static mut Node), Without<Controls>>;
+type Knobs<'w, 's> = Query<
     'w,
     's,
-    (&'static mut Node, &'static mut BackgroundColor),
-    (With<StickKnob>, Without<Controls>, Without<StickBase>),
+    (&'static StickKnob, &'static mut Node, &'static mut BackgroundColor),
+    (Without<Controls>, Without<StickBase>),
 >;
 type Buttons<'w, 's> = Query<
     'w,
@@ -90,8 +100,8 @@ fn update(
     touch: Res<Touch>,
     phase: Option<Res<State<Phase>>>,
     mut root: Query<&mut Node, With<Controls>>,
-    mut base: Base,
-    mut knob: Knob,
+    mut bases: Bases,
+    mut knobs: Knobs,
     mut buttons: Buttons,
 ) {
     let Ok(mut root) = root.single_mut() else { return };
@@ -110,15 +120,13 @@ fn update(
             (node.left, node.top, node.width, node.height) = (left, top, size, size);
         }
     };
-    // At rest the stick sits faintly at the bottom left, a hint of where it is; under a thumb it is clear.
-    let home = touch.pad.layout.stick_home();
-    let (held, (centre, at)) = touch.pad.stick().map_or((false, (home, home)), |s| (true, s));
-    if let Ok(mut node) = base.single_mut() {
-        place(&mut node, centre, RANGE);
+    for (StickBase(s), mut node) in &mut bases {
+        place(&mut node, touch.pad.layout.stick(*s), RANGE);
     }
-    if let Ok((mut node, mut fill)) = knob.single_mut() {
+    for (StickKnob(s), mut node, mut fill) in &mut knobs {
+        let (_, at, held) = touch.pad.stick(*s);
         place(&mut node, at, KNOB);
-        fill.set_if_neq(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, if held { 0.55 } else { 0.25 })));
+        fill.set_if_neq(BackgroundColor(Color::srgba(1.0, 1.0, 1.0, if held { 0.65 } else { 0.4 })));
     }
     let r = touch.pad.layout.radius();
     for (PadButton(b), mut node, mut fill) in &mut buttons {

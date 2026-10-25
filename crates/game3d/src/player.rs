@@ -106,6 +106,13 @@ pub fn control(
         None
     };
     let me = transform.translation;
+    // The touch aim stick turns the body its way at once, between swings (a swing keeps the way it started).
+    if let Some(yaw) = actions.aim.and_then(plane::heading)
+        && !attack.busy()
+        && !carry.is_some_and(Carry::whirling)
+    {
+        facing.0.snap(yaw);
+    }
     // Carrying, an attack is the throw (`carry` starts it); otherwise it's a swing.
     if let (Some(button), None) = (button, carry)
         && !attack.busy()
@@ -130,7 +137,7 @@ pub fn control(
     let v = on_floor(dash.0.step(to_plane(velocity.0), actions.dir, actions.verbs.dash, facing.0.forward(), dt));
     velocity.x = v.x;
     velocity.z = v.z;
-    facing.0.step(if dash.0.dashing() { dash.0.direction() } else { actions.dir }, dt);
+    facing.0.step(if dash.0.dashing() { dash.0.direction() } else { actions.aim.unwrap_or(actions.dir) }, dt);
 }
 
 /// How far below the feet the ground still counts as underfoot, metres.
