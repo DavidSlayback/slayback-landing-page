@@ -1,6 +1,6 @@
-//! The touch controls on screen (Q82, `game_core::touch`): two sticks fixed in the bottom corners, always drawn, the
-//! left to move and the right to aim and punch, and Kick, Grab and Dash arced above the right one. Drawn while playing,
-//! on a touch screen or once the visitor has touched.
+//! The touch controls on screen (Q82, `game_core::touch`): two sticks at home in the bottom corners, always drawn and
+//! centred under a thumb that lands on their side, the left to move and the right to aim and punch, and Kick, Grab and
+//! Dash arced above the right one. Drawn while playing, on a touch screen or once the visitor has touched.
 
 use bevy::prelude::*;
 use game_core::touch::{Button, RANGE, Stick};
@@ -121,7 +121,7 @@ fn update(
         }
     };
     for (StickBase(s), mut node) in &mut bases {
-        place(&mut node, touch.pad.layout.stick(*s), RANGE);
+        place(&mut node, touch.pad.stick(*s).0, RANGE);
     }
     for (StickKnob(s), mut node, mut fill) in &mut knobs {
         let (_, at, held) = touch.pad.stick(*s);
