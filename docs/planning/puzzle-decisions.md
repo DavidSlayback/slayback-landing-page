@@ -57,6 +57,14 @@ David: "Can we make it easier to get to the puzzle page from the main page? Also
 | P25 | Art direction | **Neon arcade, richer**: a backdrop with depth (a faint grid, drifting embers), walls with bevels and brick courses, blocks as glowing crates, CRT scanlines and bloom | Keeps the hero's neon (P14) and adds a world around it. |
 | P26 | Animation | **All four**: character life (walk cycle, climb pose, idle breath and blink, a lean on turning); weight (squash and stretch, a small shake when a block lands, dust); a living backdrop (embers, the doorway shimmering); a level intro (blocks drop in) and a win (through the door, the crates break apart) | Reduced motion turns all of it off. |
 
+## Round 6: mechanics (2026-10-26)
+
+David found that tier 1 level 1's shortest count (10) includes its turns, then: "I think we could use more mechanics. Maybe some physics based ones." The candidates, their rules and their cost are in `puzzle-mechanics.md`; the choices there are still open.
+
+| # | Decision | Answer | Notes |
+|---|---|---|---|
+| P27 | Turning | **Still costs a move** (David: "Turns is the same") | Keeps P8; every shortest count stays comparable with suite v1. |
+
 ## Engineering defaults (agent choice, confirmed by David)
 
 Proposed at the end of the grilling. David: "Yes, write it".
