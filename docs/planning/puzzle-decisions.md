@@ -47,6 +47,16 @@ Every row below was picked by David in the grilling of 2026-10-25, unless its so
 | P22 | Daily tier | **Rotates by weekday**: Monday tier 1 to Thursday tier 4; Friday to Sunday repeat tiers 2 to 4 | |
 | P23 | Bench code | **Generalise box-bench** so its runner isn't tied to one game | Both benches then share the billing guard, the CLAUDE.md isolation and the rule that a result counts only after it replays. Box-bench v1 must still reproduce afterwards. |
 
+## Round 5: reach and look (2026-10-26)
+
+David: "Can we make it easier to get to the puzzle page from the main page? Also, I'd like a more interesting art style and maybe some animation."
+
+| # | Decision | Answer | Notes |
+|---|---|---|---|
+| P24 | Where the homepage link shows | **Production now**: a "Puzzle" nav item and a "Try the puzzle" call to action, and `/puzzle` itself, on slayback.pages.dev | **Overrides P15**, which waited for David's rc play and bench v1. The game's own link stays behind its switch. |
+| P25 | Art direction | **Neon arcade, richer**: a backdrop with depth (a faint grid, drifting embers), walls with bevels and brick courses, blocks as glowing crates, CRT scanlines and bloom | Keeps the hero's neon (P14) and adds a world around it. |
+| P26 | Animation | **All four**: character life (walk cycle, climb pose, idle breath and blink, a lean on turning); weight (squash and stretch, a small shake when a block lands, dust); a living backdrop (embers, the doorway shimmering); a level intro (blocks drop in) and a win (through the door, the crates break apart) | Reduced motion turns all of it off. |
+
 ## Engineering defaults (agent choice, confirmed by David)
 
 Proposed at the end of the grilling. David: "Yes, write it".

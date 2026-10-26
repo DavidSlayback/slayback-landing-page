@@ -72,7 +72,7 @@ function start(X) {
       const next = `?tier=${tier}&seed=${seed + 1}`;
       setTimeout(() => say(`<strong>Out!</strong><span>${moves} moves${moves === best ? ', the shortest way' : ` (shortest: ${best})`}</span>
         <span><a href="${next}" style="color:var(--accent)">Next level</a><span class="keys-only"> · <kbd>N</kbd> next, <kbd>R</kbd> again</span></span>`, 'solved'),
-        reduceMotion ? 0 : 900);
+        reduceMotion ? 0 : 1500);   // after the climber goes through the door and the crates break
     } else if (!solved && solvedShown) {
       solvedShown = false;
       say('', 'playing');
@@ -127,6 +127,9 @@ function start(X) {
     last = now;
     // Memory may have grown since the last frame, so take a fresh view every time.
     ctx.putImageData(new ImageData(new Uint8ClampedArray(X.memory.buffer, ptr, w * h * 4), w, h), 0, 0);
+    // The screen shake comes in canvas pixels; the canvas is scaled to fit, so scale the offset with it.
+    const k = canvas.clientWidth / w, sx = X.game_shake(g, 0) * k, sy = X.game_shake(g, 1) * k;
+    canvas.style.transform = sx || sy ? `translate(${sx.toFixed(2)}px, ${sy.toFixed(2)}px)` : '';
     work.push([t1 - t0, performance.now() - t1]);
     if (work.length > 240) work.shift();
     requestAnimationFrame(frame);

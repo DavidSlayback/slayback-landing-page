@@ -15,7 +15,7 @@ test.describe('release switch off', () => {
 
   test('the homepage has no Play nav item, call to action or game link', async ({ page }) => {
     await page.goto(HOME);
-    await expect(page.locator('.topnav a')).toHaveText(['GitHub']);
+    await expect(page.locator('.topnav a')).toHaveText(['Puzzle', 'GitHub']);
     await expect(page.locator('a[href*="play"]')).toHaveCount(0);
     expect((await page.request.get('/play/watch/')).status(), 'no clip page').toBe(404);
   });
@@ -43,7 +43,7 @@ test.describe('release switch on', () => {
     await blockGame(page);
     await page.goto(HOME);
     await expect.poll(() => hasGl(page)).toBe(true);
-    const cta = page.locator('.hero .cta');
+    const cta = page.locator('.hero .cta[href="play/"]');
     await expect(cta).toHaveAttribute('data-collide', '');   // an obstacle: the sparks flow around it
     // Like the name, WebGL draws it (its DOM copy is transparent), so its box on the canvas must be lit.
     await page.waitForTimeout(300);   // obstacle rebuild after fonts settle

@@ -7,6 +7,7 @@
 // The exports take raw pointers from JS by design (see `game`); this crate is the FFI boundary.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+pub mod art;
 pub mod draw;
 pub mod game;
 
@@ -99,6 +100,12 @@ pub extern "C" fn game_color(p: *mut Game, which: u32, r: f32, g: f32, b: f32) {
     if let Some(c) = game(p).colors.get_mut(which as usize) {
         *c = [r, g, b];
     }
+}
+
+/// The screen shake this frame in canvas pixels (0 across, 1 down); the page moves the canvas by it.
+#[unsafe(no_mangle)]
+pub extern "C" fn game_shake(p: *mut Game, axis: u32) -> f32 {
+    game(p).shake(axis)
 }
 
 #[unsafe(no_mangle)]

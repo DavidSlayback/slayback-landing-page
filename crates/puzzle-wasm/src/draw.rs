@@ -95,6 +95,41 @@ impl Canvas {
         self.fill(x1 - t, y0 + t, x1, y1 - t, c);
     }
 
+    /// A line from (x0, y0) to (x1, y1), `width` pixels across, with soft edges.
+    pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: Rgb) {
+        let (dx, dy) = (x1 - x0, y1 - y0);
+        let len2 = (dx * dx + dy * dy).max(1e-6);
+        let reach = width / 2.0 + 1.0;
+        let (bx0, bx1) = ((x0.min(x1) - reach).floor() as i32, (x0.max(x1) + reach).ceil() as i32);
+        let (by0, by1) = ((y0.min(y1) - reach).floor() as i32, (y0.max(y1) + reach).ceil() as i32);
+        for y in by0..=by1 {
+            for x in bx0..=bx1 {
+                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                let t = (((px - x0) * dx + (py - y0) * dy) / len2).clamp(0.0, 1.0);
+                let d = ((px - x0 - dx * t).powi(2) + (py - y0 - dy * t).powi(2)).sqrt();
+                let a = (width / 2.0 + 0.5 - d).clamp(0.0, 1.0);
+                if a > 0.0 {
+                    self.add(x, y, scale(c, a));
+                }
+            }
+        }
+    }
+
+    /// A small square of light added over the still scene straight into the frame's pixels, as [`spark`](Canvas::spark)
+    /// does: for many small things (win fragments) that don't need their own glow.
+    pub fn speck(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: Rgb) {
+        for y in y0.max(0)..y1.min(self.h as i32) {
+            for x in x0.max(0)..x1.min(self.w as i32) {
+                let i = y as usize * self.w + x as usize;
+                let b = self.base_light[i];
+                let lit = self.toned([b[0] + c[0], b[1] + c[1], b[2] + c[2]]);
+                for (o, v) in self.rgba[i * 4..i * 4 + 3].iter_mut().zip(lit) {
+                    *o = (*o).max(v);
+                }
+            }
+        }
+    }
+
     /// A filled disc of radius `r` with a soft edge.
     pub fn disc(&mut self, cx: f32, cy: f32, r: f32, c: Rgb) {
         let (x0, x1) = ((cx - r - 1.0).floor() as i32, (cx + r + 1.0).ceil() as i32);

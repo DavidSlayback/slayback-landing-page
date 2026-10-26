@@ -25,8 +25,12 @@
   .stage { position: relative; line-height: 0; }
   canvas { display: block; width: min(94vw, 1100px, calc(70vh * var(--ar))); height: auto; border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
     box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 10%, transparent); }
-  .overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 10px; line-height: 1.3;
+  /* The arcade screen (P25): faint scanlines and a vignette over the board, drawn by CSS at the display's own resolution. */
+  .stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, .22) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, .5) 100%); }  .overlay { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 10px; line-height: 1.3;
     background: color-mix(in srgb, #000 55%, transparent); font: 600 clamp(16px, 2.2vw, 22px)/1.3 var(--font); letter-spacing: .04em; }
+  #message { display: grid; gap: 10px; justify-items: center; padding: 0 16px; }
   .overlay strong { font-size: 1.8em; color: var(--accent); letter-spacing: .1em; text-transform: uppercase; }
   .hud { width: min(94vw, 1100px); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font: 600 15px/1.2 var(--font); letter-spacing: .06em; color: var(--muted); }
   .hud b { color: var(--fg); font-weight: 600; }
