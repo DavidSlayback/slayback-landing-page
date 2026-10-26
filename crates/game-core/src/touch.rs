@@ -1,5 +1,7 @@
-//! Touch controls (decision Q82, replacing Q78's floating stick, diamond and gestures): twin sticks, fixed and always
-//! drawn in the bottom corners. The left one moves. The right one aims and attacks: pushed, the fighter turns that way
+//! Touch controls (decision Q82, replacing Q78's floating stick, diamond and gestures): twin sticks, always drawn at
+//! home in the bottom corners. A thumb landing on one's side centres it under the thumb, so it starts still wherever
+//! the thumb lands, and a thumb sliding past its edge drags it along (David, after playing the fixed ones: "I'm
+//! finding it difficult to get them centered"); let go, it goes home. The left one moves. The right one aims and attacks: pushed, the fighter turns that way
 //! and punches, again and again while it's held, so it can back away while punching forward. Kick, Grab and Dash are
 //! three buttons arced just above the right stick. Tapping the HUD pauses. Engine-free: the game feeds it touches and
 //! draws it ([`TouchPad::stick`], [`Layout`], [`TouchPad::held`]).
@@ -61,7 +63,8 @@ pub enum Zone {
     None,
 }
 
-/// The knob's travel from a stick's centre, pixels: the knob is drawn no further, and it is the stick's radius.
+/// The knob's travel from a stick's centre, pixels: the knob is drawn no further, it is the stick's radius, and a thumb
+/// further out drags the centre after it.
 pub const RANGE: f32 = 56.0;
 /// How far the knob must be pushed before the move stick walks, pixels.
 pub const DEAD: f32 = 14.0;
@@ -90,7 +93,7 @@ impl Layout {
         RANGE + 28.0
     }
 
-    /// A stick's centre.
+    /// A stick's home: where it's drawn while no thumb holds it, and the buttons' anchor.
     pub fn stick(&self, s: Stick) -> [f32; 2] {
         let [w, h] = self.size;
         let at = self.inset();
@@ -100,7 +103,7 @@ impl Layout {
         }
     }
 
-    /// A button's centre, on an arc just outside the aim stick.
+    /// A button's centre, on an arc just outside the aim stick's home.
     pub fn button(&self, b: Button) -> [f32; 2] {
         let [cx, cy] = self.stick(Stick::Aim);
         let ring = RANGE + self.radius() + 10.0;
@@ -138,6 +141,8 @@ struct Finger {
     id: u64,
     zone: Zone,
     at: [f32; 2],
+    /// For a stick, its centre: where the thumb landed, dragged along when the thumb goes past [`RANGE`].
+    origin: [f32; 2],
     /// It does nothing more: it pressed a button, paused, found its stick already held, or left a screen.
     spent: bool,
 }
@@ -191,12 +196,17 @@ impl TouchPad {
             Zone::None => true,
         };
         self.fingers.retain(|f| f.id != id);
-        self.fingers.push(Finger { id, zone, at: p, spent });
+        self.fingers.push(Finger { id, zone, at: p, origin: p, spent });
     }
 
     pub fn moved(&mut self, id: u64, p: [f32; 2]) {
         if let Some(f) = self.fingers.iter_mut().find(|f| f.id == id) {
             f.at = p;
+            let far = distance(p, f.origin);
+            if far > RANGE {
+                let k = RANGE / far;
+                f.origin = [p[0] - (p[0] - f.origin[0]) * k, p[1] - (p[1] - f.origin[1]) * k];
+            }
         }
     }
 
@@ -241,20 +251,18 @@ impl TouchPad {
 
     /// How far stick `s` is pushed, y up the screen, while a thumb holds it.
     fn push(&self, s: Stick) -> Option<[f32; 2]> {
-        let [cx, cy] = self.layout.stick(s);
-        self.held_by(s).map(|f| [f.at[0] - cx, cy - f.at[1]])
+        self.held_by(s).map(|f| [f.at[0] - f.origin[0], f.origin[1] - f.at[1]])
     }
 
-    /// Stick `s` to draw: its centre, the knob's place (within [`RANGE`] of it), and whether a thumb holds it.
+    /// Stick `s` to draw: its centre (under the thumb, or at home), the knob's place (within [`RANGE`] of it), and
+    /// whether a thumb holds it.
     pub fn stick(&self, s: Stick) -> ([f32; 2], [f32; 2], bool) {
-        let o = self.layout.stick(s);
         match self.held_by(s) {
-            Some(f) => {
-                let d = [f.at[0] - o[0], f.at[1] - o[1]];
-                let k = (RANGE / d[0].hypot(d[1]).max(1e-3)).min(1.0);
-                (o, [o[0] + d[0] * k, o[1] + d[1] * k], true)
+            Some(f) => (f.origin, f.at, true),
+            None => {
+                let home = self.layout.stick(s);
+                (home, home, false)
             }
-            None => (o, o, false),
         }
     }
 
@@ -280,30 +288,40 @@ mod tests {
     }
 
     #[test]
-    fn the_move_stick_points_from_its_fixed_centre_and_up_the_screen() {
+    fn a_stick_centres_where_the_thumb_lands_follows_a_thumb_past_its_edge_and_goes_home() {
         let mut p = pad();
-        let c = p.layout.stick(Stick::Move);
+        let home = p.layout.stick(Stick::Move);
+        let off = plus(home, [40.0, -30.0]);
         assert_eq!(p.layout.zone([300.0, 100.0]), Zone::Stick(Stick::Move), "the whole left half takes it");
-        p.down(1, plus(c, [DEAD - 2.0, 0.0]));
-        assert_eq!(p.frame().dir, [0.0, 0.0], "a thumb near the middle is inside the dead zone");
-        p.moved(1, plus(c, [0.0, -30.0]));
+        p.down(1, off);
+        assert_eq!(p.frame().dir, [0.0, 0.0], "landing off its home spot doesn't walk: it starts still");
+        assert_eq!(p.stick(Stick::Move), (off, off, true), "drawn under the thumb");
+        p.moved(1, plus(off, [DEAD - 2.0, 0.0]));
+        assert_eq!(p.frame().dir, [0.0, 0.0], "a little slide is inside the dead zone");
+        p.moved(1, plus(off, [0.0, -30.0]));
         assert_eq!(p.frame().dir, [0.0, 1.0], "pushed up the screen it walks up it");
-        p.moved(1, plus(c, [200.0, 0.0]));
-        assert_eq!(p.frame().dir, [1.0, 0.0], "held, it keeps walking");
-        assert_eq!(p.stick(Stick::Move), (c, plus(c, [RANGE, 0.0]), true), "the knob stops at the stick's edge");
+        // Slid far to the right: the centre is dragged along, a stick's reach behind the thumb.
+        let far = plus(off, [200.0, -30.0]);
+        p.moved(1, far);
+        assert_eq!(p.frame().dir, [1.0, 0.0], "past its edge it walks the way the thumb went last");
+        let (centre, knob, _) = p.stick(Stick::Move);
+        assert!((distance(centre, knob) - RANGE).abs() < 1e-3 && knob == far, "the knob stays under the thumb");
+        // So turning back needs only a stick's width, not the whole way back past where it landed.
+        p.moved(1, plus(far, [-2.0 * RANGE, 0.0]));
+        assert_eq!(p.frame().dir, [-1.0, 0.0], "reversing is quick");
         p.up(1);
         let f = p.frame();
         assert_eq!((f.dir, f.aim, f.verbs), ([0.0, 0.0], None, Verbs::default()), "letting go does nothing else");
-        assert_eq!(p.stick(Stick::Move), (c, c, false), "and the knob is back in the middle, still drawn");
+        assert_eq!(p.stick(Stick::Move), (home, home, false), "and it's back home, still drawn");
     }
 
     #[test]
     fn the_aim_stick_punches_its_way_every_frame_it_is_pushed_while_the_other_thumb_walks() {
         let mut p = pad();
-        let (m, a) = (p.layout.stick(Stick::Move), p.layout.stick(Stick::Aim));
+        let (m, a) = (p.layout.stick(Stick::Move), plus(p.layout.stick(Stick::Aim), [-30.0, 20.0]));
         p.down(1, m);
         p.moved(1, plus(m, [-40.0, 0.0]));
-        p.down(2, a);
+        p.down(2, a); // off its home: the aim stick centres under the thumb too
         p.moved(2, plus(a, [AIM_DEAD - 4.0, 0.0]));
         let f = p.frame();
         assert!(f.aim.is_none() && !f.verbs.punch, "resting on it doesn't punch");
@@ -353,7 +371,8 @@ mod tests {
     fn a_second_thumb_on_a_held_stick_and_cleared_fingers_do_nothing() {
         let mut p = pad();
         let a = p.layout.stick(Stick::Aim);
-        p.down(1, plus(a, [-40.0, 0.0]));
+        p.down(1, a);
+        p.moved(1, plus(a, [-40.0, 0.0]));
         p.down(2, plus(a, [0.0, -40.0]));
         assert_eq!(p.frame().aim, Some([-1.0, 0.0]), "the first thumb keeps it");
         p.clear();

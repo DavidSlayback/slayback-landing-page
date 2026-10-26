@@ -700,7 +700,8 @@ fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     let mut app = standing();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
     // The heap is in a corner, against the walls: out of reach of the rim, so climbing it never ends the box (that
-    // would clear the pieces this watches). How high a climb gets differs a little between platforms' floats.
+    // would clear the pieces this watches). The bursts tumble before they freeze, so the heap's shape, and how high a
+    // climb gets, differs between platforms' floats.
     app.world_mut().resource_mut::<Arena>().rim = 10.0;
     let centre = Vec2::new(-6.6, -4.1);
     heap(&mut app, 25, centre);
@@ -2113,8 +2114,11 @@ fn on_a_touch_screen_the_left_stick_walks_the_right_aims_and_punches_and_the_hud
     // Walk left while the right stick aims right: the body faces the aim, not the walk, and punches what's there.
     let behind = fodder_at(&mut app, [1.1, 0.0]);
     step(&mut app, 0.05);
-    finger(&mut app, 1, TouchPhase::Started, [m[0] - 50.0, m[1]]);
-    finger(&mut app, 2, TouchPhase::Started, [a[0] + 50.0, a[1]]);
+    finger(&mut app, 1, TouchPhase::Started, m);
+    finger(&mut app, 2, TouchPhase::Started, a);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 1, TouchPhase::Moved, [m[0] - 50.0, m[1]]);
+    finger(&mut app, 2, TouchPhase::Moved, [a[0] + 50.0, a[1]]);
     step(&mut app, 0.4);
     let (_, _, yaw) = player(&mut app);
     assert!(yaw.abs() < 0.1, "facing the aim (+x) while the left stick says go left: yaw {yaw}");
@@ -2153,7 +2157,9 @@ fn the_grab_button_grabs_and_the_aim_stick_throws_its_way() {
     finger_tap(&mut app, 1, screen.button(Button::Grab));
     assert!(app.world().get::<Carried>(foe).is_some(), "the grab button grabbed the fodder in front");
     let a = screen.stick(Stick::Aim);
-    finger(&mut app, 2, TouchPhase::Started, [a[0], a[1] - 50.0]);
+    finger(&mut app, 2, TouchPhase::Started, a);
+    step(&mut app, 1.0 / FPS);
+    finger(&mut app, 2, TouchPhase::Moved, [a[0], a[1] - 50.0]);
     step(&mut app, 1.0 / FPS);
     finger(&mut app, 2, TouchPhase::Ended, [a[0], a[1] - 50.0]);
     step(&mut app, 1.5);
