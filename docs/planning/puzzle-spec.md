@@ -150,7 +150,15 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
     - **Buttons:** Left, Right, Climb, Lift, Undo and Reset. Left and Right repeat while held: after 0.38 s, then every 0.14 s.
     - **Layout:** upright on a phone, the four moves share one row with Undo and Reset below; sideways, the board shrinks to the height that's left.
     - **Tests:** `puzzle.spec.js` checks a phone solve by taps, the hold, and that every button is on screen both ways.
-  - **Where it ships:** `/puzzle` is in preview builds only (`GAME_RELEASE=1`); production builds drop it, and `tests/e2e/puzzle.spec.js` checks both.
+  - **Where it ships:** every build, production included (P24, which overrides P15), with a "Puzzle" nav item and a "Try the puzzle" call to action on the homepage. `puzzle.spec.js` clicks through from the homepage.
+  - **Look (P25):** `art.rs` draws a backdrop lifted toward the floor with a fading grid, brick walls with lit and bevelled open faces, crates (frame, cross braces, rivets), the doorway, and a neon climber (head, body, arms and legs). Scanlines and a vignette are CSS over the canvas, at no CPU cost.
+  - **Motion (P26), all off under reduced motion:**
+    - **The climber:** a walk cycle, a climb pose, an idle breath and blink, and a lean into turns.
+    - **Weight:** falls stretch, and landings squash and throw dust (dust is a `sim` spark tagged with a negative hue). A crate landing also throws sparks and shakes the screen; the page moves the canvas by `game_shake`, as a CSS transform.
+    - **The backdrop:** embers drift up, drawn point by point over the baked light, and the doorway shimmers.
+    - **Intro:** a level opens with its crates dropping in, bottom first, then the climber; any key skips it.
+    - **Win:** the climber shrinks into the doorway, and every crate breaks into four tumbling shards.
+    - **Cost:** walking and waiting still never re-bake. Measured natively on a loaded machine and scaled by an unchanged baseline: about 0.2 ms a frame, about 1.8 ms during the one-second intro, and about 3.6 ms for a re-bake. Browser figures are still to measure on a quiet machine.
 
 ## Testing and evidence
 

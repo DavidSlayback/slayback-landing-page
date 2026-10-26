@@ -1,12 +1,11 @@
-// Out of the Box at /puzzle (ticket OB8). It ships in previews only (GAME_RELEASE=1) until its own release switch, so
-// a production build must not have it. Solutions and fingerprints come from bench/puzzle/suite-v1.json, written by the
-// native generator: the page's wasm must build exactly the same levels.
+// Out of the Box at /puzzle (ticket OB8), in every build, production included (P24), with a nav item and a call to
+// action on the homepage. Solutions and fingerprints come from bench/puzzle/suite-v1.json, written by the native
+// generator: the page's wasm must build exactly the same levels.
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { collectErrors, litFraction } from './helpers.js';
 
-const ON = process.env.GAME_RELEASE === '1';
 const SUITE = JSON.parse(readFileSync(fileURLToPath(new URL('../../bench/puzzle/suite-v1.json', import.meta.url)), 'utf8'));
 const level = (tier, seed) => SUITE.levels.find(l => l.tier === tier && l.seed === seed);
 const PRESS = { L: 'ArrowLeft', R: 'ArrowRight', U: 'ArrowUp', D: 'ArrowDown' };
@@ -17,16 +16,16 @@ async function open(page, tier, seed) {
 }
 const state = page => page.evaluate(() => ({ moves: __puzzle.moves(), solved: __puzzle.solved() }));
 
-test.describe('puzzle in a production build', () => {
-  test.skip(ON, 'GAME_RELEASE=1: a preview build has the puzzle');
-
-  test('is not there yet', async ({ page }) => {
-    expect((await page.request.get('/puzzle/')).status()).toBe(404);
-  });
-});
-
 test.describe('puzzle', () => {
-  test.skip(!ON, 'set GAME_RELEASE=1 to test a preview build');
+  test('the homepage links it from the nav and the hero', async ({ page }) => {
+    await page.route(/hero\.wasm$/, r => r.abort());   // links are what matter here, not the spark field
+    await page.goto('/');
+    await expect(page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Puzzle' })).toHaveAttribute('href', 'puzzle/');
+    await page.locator('.hero .cta[href="puzzle/"]').click();
+    await expect(page).toHaveURL(/\/puzzle\/$/);
+    await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
+  });
+
 
   test('a tier-1 level is drawn and solved by key presses, with no errors', async ({ page }) => {
     const errors = collectErrors(page);
