@@ -1,6 +1,6 @@
 # Out of the Box: new mechanics (study)
 
-David, 2026-10-26: "I think we could use more mechanics. Maybe some physics based ones." Then: "Turns is the same. Look at all the low cost mechanics. Also consider balloons and crumbling." This study works out the rules, edge cases and cost of each candidate, so the open choices can be grilled. Nothing here is decided except P27 (turns still cost a move).
+David, 2026-10-26: "I think we could use more mechanics. Maybe some physics based ones." Then: "Turns is the same. Look at all the low cost mechanics. Also consider balloons and crumbling." This study works out the rules, edge cases and cost of each candidate. Grilled the same day (P27-P39 in `puzzle-decisions.md`): turns still cost a move, and crumbling floor, springs and ice crates are decided as below. Balloons, the lift and tall crates are not.
 
 ## What every mechanic must keep
 
@@ -19,6 +19,19 @@ David, 2026-10-26: "I think we could use more mechanics. Maybe some physics base
 | 3 / 4 | 1.20× / 1.14× | 1.06× / 1.03× |
 
 **2. Today nothing ever needs to settle.** A crate can only be lifted when nothing is on it, so crates never lose their support, and only a set-down crate falls. Balloons, crumbling floor under crates, and the lift all break that: after a move, things can be left unsupported (or, for balloons, uncapped). They need a shared **settle** pass: repeat "unsupported crates fall one cell, uncapped balloons rise one cell" until nothing moves. The order within a pass must be fixed (crates bottom up, balloons top down) so the result is deterministic. Built once, it serves all three.
+
+## Decided (2026-10-26)
+
+David chose the physical option almost every time, so the three worlds are more dynamic than the study proposed:
+
+- **Crumbling floor (P28, P29):** breaks when whatever stands directly on it leaves, crates included.
+- **Springs (P30-P33):** throw you as high as you fell (at least 1), walking on included, then one cell forward. Bounces chain. Crates bounce too, forward the way you faced when you set them down.
+- **Ice crates (P34-P37):** slide when set down and when anything lands on them (the lander drops into the gap), keep sliding off ledges, and pass their motion to ice they hit. Whatever sits on ice pushed from the side rides along.
+- **Worlds and suite (P38, P39):** Crumble, Ice, Springs, then a mixed world, each with 5 levels per tier (80 in suite v2). v1 stays frozen.
+
+**What that changes in the cost below:** ice and springs now need the settle pass too (a knocked-out ice crate leaves its lander falling; bounced crates land elsewhere). So build order is settle first, then crumbling, ice and springs. Chains and riding also mean one move can carry you any distance, so those worlds solve with no estimate. That search cost is unmeasured, and it is the first thing to measure once the rules exist.
+
+The sections below are the study as written, before the grilling.
 
 ## The candidates
 
