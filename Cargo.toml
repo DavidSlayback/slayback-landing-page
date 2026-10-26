@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/game3d", "crates/box-env", "crates/box-mcp", "crates/box-bench", "crates/puzzle-core"]
+members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/game3d", "crates/box-env", "crates/box-mcp", "crates/box-bench", "crates/puzzle-core", "crates/puzzle-wasm"]
 # The game (Bevy) only targets wasm32 in CI and pull native windowing deps elsewhere; plain `cargo test` skips it.
-default-members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/puzzle-core"]
+default-members = ["crates/sim", "crates/hero-wasm", "crates/game-core", "crates/puzzle-core", "crates/puzzle-wasm"]
 
 [workspace.package]
 edition = "2024"

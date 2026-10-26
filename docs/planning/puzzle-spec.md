@@ -136,6 +136,22 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
   - **Watch the agents:** on suite levels, replay how Opus, Sonnet, Haiku, PPO and the solver played. The build copies the bench records into `dist/puzzle/replays/` as action lists, and the page replays them with the same rules. A caption gives the outcome, moves against the shortest solution, and calls.
 - **Placement:** `/puzzle`, linked from the site nav and the lab page (M7). It releases independently of Escape the Box's gate (P15): production once David has played the rc build and bench v1 results exist.
 
+- **Built (OB8):**
+  - **Size:** `puzzle.wasm` is 108 KB, 48 KB gzipped, with no imports.
+  - **Drawing:** a 32 px cell, so a tier-4 board is 640×384, scaled up by CSS. Outlines are drawn as light, a two-pass box-blurred copy is added back as glow, and an exponential tonemap keeps white-hot cores from clipping flat.
+  - **Sparks:** one `sim::World` with its spawning and lifetimes switched off; `put` launches each spark and the page sets its life. The world's obstacle mask is the level's walls and resting blocks, rebuilt when a block moves, so sparks bounce off the level. Sparks whose life ran out are recycled by `sim` with no life and never drawn.
+  - **Shapes:** the player is a figure (head and body) and the exit an open, lit doorway. They looked alike as two outlined rectangles in the first screenshot.
+  - **Frame cost** (David: "Seems kinda laggy"):
+    - **Measured:** `tests/e2e/tools/puzzle-frame.mjs` showed 20 fps on a tier-4 board at 4× CPU throttle, a stand-in for a phone. 45 ms a frame went to drawing in Rust: the glow blur (~55%) and three `exp()` calls per pixel in the tonemap (~45%); the blit was under 1 ms.
+    - **Fixed:** the tonemap is a lookup table; the glow is worked at half size; and the still scene (walls, doorway, blocks at rest) is baked once, with each frame redrawing only small rectangles around what moves and putting sparks on pixel by pixel.
+    - **After:** at 4× throttle, 1.6 ms a frame and the display's full rate. Natively, 0.17 ms against 5.9 ms before.
+    - **What's left:** a re-bake (a block comes to rest, undo, restart) costs ~3 ms natively, so a phone may drop one frame then. `examples/frame.rs` times both, and a test pins that walking and waiting never re-bake.
+  - **Touch** (built with OB8 at David's prompt; it is the touch part of OB9): a pad under the board on coarse pointers, or with `?touch=1`.
+    - **Buttons:** Left, Right, Climb, Lift, Undo and Reset. Left and Right repeat while held: after 0.38 s, then every 0.14 s.
+    - **Layout:** upright on a phone, the four moves share one row with Undo and Reset below; sideways, the board shrinks to the height that's left.
+    - **Tests:** `puzzle.spec.js` checks a phone solve by taps, the hold, and that every button is on screen both ways.
+  - **Where it ships:** `/puzzle` is in preview builds only (`GAME_RELEASE=1`); production builds drop it, and `tests/e2e/puzzle.spec.js` checks both.
+
 ## Testing and evidence
 
 - `puzzle-core`: a test per rule and per refusal; solver optimality on hand-written levels whose shortest solution is known; the seed-to-level hash table; a check that the gravity invariant (nothing floats) holds after every move in random play.
