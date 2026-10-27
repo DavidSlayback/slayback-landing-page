@@ -165,3 +165,29 @@ fn ice_levels_keep_their_promises_and_need_their_ice() {
     }
     check_ice(1, &TIERS[2]);
 }
+
+/// A Springs level keeps its tier's promises, has springs, and needs them: with every spring made wall the shortest
+/// solution changes or disappears (M4).
+fn check_springs(seed: u64, tier: &Tier) {
+    let g =
+        generate(seed, World::Springs, tier).unwrap_or_else(|| panic!("springs tier {} seed {seed}: no level", tier.n));
+    let (l, len) = (&g.level, g.solution.len());
+    let at = format!("springs tier {} seed {seed}, {len} moves, in\n{l}", tier.n);
+    assert!((tier.moves.0..=tier.moves.1).contains(&len), "outside the band: {at}");
+    assert_eq!(solve(l).solution.map(|s| s.len()), Some(len), "not a shortest solution: {at}");
+    assert!(Play::new(l.clone()).apply(&keys(&g.solution)).solved, "doesn't reach the exit: {at}");
+    let text = l.to_string();
+    assert!(text.contains('^'), "no springs: {at}");
+    let walled = Level::parse(&text.replace('^', "#")).unwrap();
+    assert_ne!(solve(&walled).solution.map(|s| s.len()), Some(len), "springs change nothing: {at}");
+}
+
+#[test]
+fn springs_levels_keep_their_promises_and_need_their_springs() {
+    for tier in &TIERS[..2] {
+        for seed in 1..=5 {
+            check_springs(seed, tier);
+        }
+    }
+    check_springs(1, &TIERS[2]);
+}

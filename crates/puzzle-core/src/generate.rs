@@ -16,6 +16,8 @@ pub enum World {
     Crumble,
     /// Ice blocks (`I`, M3).
     Ice,
+    /// Springs (`^`, M4).
+    Springs,
 }
 
 /// A difficulty tier: the band its shortest solutions fall in, and the grid it is built on.
@@ -82,7 +84,7 @@ struct Pit {
     exit: usize,
     player: usize,
     facing: Facing,
-    /// Wall cells drawn as cracked floor instead.
+    /// Wall cells drawn as cracked floor (Crumble) or springs (Springs) instead.
     cracked: Vec<bool>,
     /// How many of each column's blocks are ice: the top ones.
     ice: Vec<u8>,
@@ -111,7 +113,7 @@ impl Pit {
         let player = (exit + 1 + rng.below(w - 3)) % (w - 2) + 1;
         let facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
         let mut cracked = vec![false; w * h];
-        if world == World::Crumble {
+        if world == World::Crumble || world == World::Springs {
             for _ in 0..w / 3 {
                 let x = 1 + rng.below(w - 2);
                 if let Some(y) = (0..h).find(|&y| walls[y * w + x]) {
@@ -150,7 +152,7 @@ impl Pit {
                 self.player = col;
                 self.facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
             }
-            _ if self.world == World::Crumble => {
+            _ if self.world == World::Crumble || self.world == World::Springs => {
                 let i = rng.below(h) * w + col;
                 self.cracked[i] = !self.cracked[i];
             }
@@ -170,8 +172,9 @@ impl Pit {
     /// under it. `None` when a column is too full to take what was dropped into it.
     fn level(&self) -> Option<Level> {
         let (w, h) = (self.w, self.h);
+        let special = if self.world == World::Springs { b'^' } else { b'~' };
         let cell = |(&wall, &cracked)| match (wall, cracked) {
-            (true, true) => b'~',
+            (true, true) => special,
             (true, false) => b'#',
             _ => b'.',
         };
@@ -218,7 +221,7 @@ fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
 }
 
 /// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall (Crumble) or
-/// every ice block made a plain one (Ice), the level must be unsolvable or solved in a different number of moves. So a
+/// every ice block made a plain one (Ice) or every spring made wall (Springs), the level must be unsolvable or solved in a different number of moves. So a
 /// Crumble level is one where a breaking tile either
 /// opens the way or costs you the way you'd otherwise take.
 fn matters(level: &Level, world: World, moves: usize) -> bool {
@@ -232,6 +235,12 @@ fn matters(level: &Level, world: World, moves: usize) -> bool {
             level.start.cracked != fixed.start.cracked
                 && !search.gave_up
                 && search.solution.map(|s| s.len()) != Some(moves)
+        }
+        World::Springs => {
+            let mut fixed = level.clone();
+            fixed.springs = Default::default();
+            let search = solve_within(&fixed, CAP);
+            !level.springs.is_empty() && !search.gave_up && search.solution.map(|s| s.len()) != Some(moves)
         }
         World::Ice => {
             let mut plain = level.clone();

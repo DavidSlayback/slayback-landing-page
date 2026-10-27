@@ -33,19 +33,6 @@ impl Bits {
     fn count(&self) -> usize {
         self.0.iter().map(|w| w.count_ones() as usize).sum()
     }
-    /// The set cells, in order.
-    fn ones(self) -> impl Iterator<Item = usize> {
-        (0..4).flat_map(move |k| {
-            let mut word = self.0[k];
-            std::iter::from_fn(move || {
-                (word != 0).then(|| {
-                    let bit = word.trailing_zeros() as usize;
-                    word &= word - 1;
-                    64 * k + bit
-                })
-            })
-        })
-    }
     /// The cells set in both.
     pub fn zip_and(self, o: Bits) -> Bits {
         self.zip(o, |a, b| a & b)
@@ -122,6 +109,8 @@ pub struct Level {
     pub w: u8,
     pub h: u8,
     pub walls: Bits,
+    /// Which walls are springs (M4): floor that throws what arrives on it.
+    pub springs: Bits,
     pub exit: (u8, u8),
     pub start: State,
 }
@@ -151,7 +140,7 @@ pub enum ParseError {
 }
 
 impl Level {
-    /// Reads the text form: `#` wall, `~` cracked floor, `B` block, `I` ice block, `E` exit, `.` empty, `>`/`<` the
+    /// Reads the text form: `#` wall, `^` spring, `~` cracked floor, `B` block, `I` ice block, `E` exit, `.` empty, `>`/`<` the
     /// player facing that way, `b`/`i` a block/ice block on the exit. A block directly above the player is the one they
     /// carry.
     pub fn parse(text: &str) -> Result<Level, ParseError> {
@@ -163,6 +152,7 @@ impl Level {
         if w > MAX_W || h > MAX_H {
             return Err(ParseError::TooBig { w, h });
         }
+        let mut springs = Bits::default();
         let (mut walls, mut blocks, mut cracked, mut ice) =
             (Bits::default(), Bits::default(), Bits::default(), Bits::default());
         let (mut players, mut exits) = (vec![], vec![]);
@@ -175,6 +165,10 @@ impl Level {
                 match ch {
                     '.' => {}
                     '#' => walls.set(i, true),
+                    '^' => {
+                        walls.set(i, true);
+                        springs.set(i, true);
+                    }
                     '~' => cracked.set(i, true),
                     'B' => blocks.set(i, true),
                     'E' => exits.push((x, y)),
@@ -206,7 +200,7 @@ impl Level {
             ice.set((py - 1) * w + px, false);
         }
         let start = State { x: px as u8, y: py as u8, facing, carrying, blocks, cracked, ice, carrying_ice };
-        let level = Level { w: w as u8, h: h as u8, walls, exit: (ex as u8, ey as u8), start };
+        let level = Level { w: w as u8, h: h as u8, walls, springs, exit: (ex as u8, ey as u8), start };
         let (x, y) = (px as i32, py as i32);
         if !level.solid(&start, x, y + 1) {
             return Err(ParseError::Floating { x: px, y: py });
@@ -238,6 +232,7 @@ impl Level {
                 out.push(match () {
                     _ if player && state.facing == Facing::Right => '>',
                     _ if player => '<',
+                    _ if self.springs.get(i) => '^',
                     _ if self.walls.get(i) => '#',
                     _ if state.cracked.get(i) => '~',
                     _ if block && exit && ice => 'i',
@@ -435,10 +430,11 @@ pub fn step_traced(
             n.blocks.set(at, true);
             n.ice.set(at, s.carrying_ice);
             (n.carrying, n.carrying_ice) = (false, false);
-            movers.push(Mover { at, dir: dx(s.facing), slides: s.carrying_ice, riders: false });
+            movers.push(Mover::new(at, dx(s.facing), s.carrying_ice, false));
         }
     }
-    settle(level, &mut n, movers, &mut on_tick);
+    let walked = (n.x, n.y) != (s.x, s.y);
+    settle(level, &mut n, movers, walked, &mut on_tick);
     crumble(level, s, &mut n);
     Ok(n)
 }
@@ -463,35 +459,50 @@ fn dx(facing: Facing) -> i32 {
     if facing == Facing::Left { -1 } else { 1 }
 }
 
-/// Something moving sideways while a move plays out: ice sliding, or a block just set down, which slides only if it is
-/// ice but carries your facing to knock any ice it lands on (P35). `riders`: ice passed motion by other ice carries
-/// what sits on it (P37).
+/// A block moving under its own power while a move plays out: ice sliding, a block bouncing, or a block just set down,
+/// which carries your facing to knock any ice it lands on (P35) and to bounce off any spring it lands on (P33).
+/// `riders`: ice passed motion by other ice carries what sits on it (P37).
 #[derive(Clone, Copy, Debug)]
 struct Mover {
     at: usize,
     dir: i32,
     slides: bool,
     riders: bool,
+    /// Rows fallen since it last rested or bounced: how high a spring throws it (P30).
+    fall: usize,
+    /// Rows left to rise in a bounce, before it hops a cell forward.
+    rise: usize,
+    /// It came to this cell this round (set down, slid, fell or hopped), so a spring under it throws it.
+    arrived: bool,
+}
+
+impl Mover {
+    fn new(at: usize, dir: i32, slides: bool, riders: bool) -> Mover {
+        Mover { at, dir, slides, riders, fall: 0, rise: 0, arrived: true }
+    }
 }
 
 /// Lets everything come to rest after a move (`docs/planning/puzzle-mechanics.md`, "settle"), in rounds. Each round:
 ///
+/// - **Rising:** a bounce goes up a row; at the top, or under a ceiling, it hops a cell forward if that cell is clear.
+///   If not, it comes back down onto its spring and stays (P30-P33).
 /// - **Falling:** everything unsupported falls a row, stacks together, you with what you carry. You and your carried
 ///   block are solid to blocks landing on you.
-/// - **Landing:** something that fell last round and has stopped on resting ice knocks it sliding the way it was going
-///   (a block you set down: your facing; you: your facing; sliding ice: its way), and drops into the gap (P35).
-///   Something falling with no way of its own (dropping because ice slid out from under it) just lands.
 /// - **Sliding:** supported sliding ice moves a cell. Hitting resting ice, it stops and that ice slides on, carrying
 ///   what sits on it (P36, P37); hitting anything else, it stops (P34).
+/// - **Arriving:** something that fell and stopped on resting ice knocks it sliding the way it was going and drops into
+///   the gap (P35). Something that arrived on a spring (you walking, climbing, falling or hopping; a block you set
+///   down, or ice) bounces as high as it fell, at least 1 (P30-P33). A block with no way of its own (dropping because
+///   ice slid out from under it) just lands, on ice or on a spring.
 ///
-/// Everything you set moving moves away from your column, so you never ride ice. Every slide moves one way and every
-/// fall moves down, so the rounds end.
-fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, on_tick: &mut impl FnMut(&State, Bits)) {
+/// Everything you set moving moves away from your column, so you never ride ice. Every slide and every hop moves one
+/// way, every fall moves down and every rise is paid for by a fall, so the rounds end.
+fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on_tick: &mut impl FnMut(&State, Bits)) {
     let (w, h) = (level.w as usize, level.h as usize);
     let floor = Bits::range(w * (h - 1), w * h);
     let or = |a: Bits, b: Bits| a.zip(b, |a, b| a | b);
     let minus = |a: Bits, b: Bits| a.zip(b, |a, b| a & !b);
-    // Every cell that blocks movement: walls, cracked tiles, blocks, you and what you carry.
+    // Every cell that blocks movement: walls and springs, cracked tiles, blocks, you and what you carry.
     let solid = |s: &State| {
         let mut solid = or(or(level.walls, s.cracked), s.blocks);
         let me = s.y as usize * w + s.x as usize;
@@ -501,13 +512,70 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, on_tick: &mut im
         }
         solid
     };
+    let free = |s: &State, x: i32, y: i32| {
+        (0..w as i32).contains(&x) && (0..h as i32).contains(&y) && !solid(s).get(y as usize * w + x as usize)
+    };
+    let rests = |s: &State, i: usize| i + w >= w * h || solid(s).get(i + w);
+    let shift = |s: &mut State, from: usize, to: usize| {
+        let ice = s.ice.get(from);
+        s.blocks.set(from, false);
+        s.ice.set(from, false);
+        s.blocks.set(to, true);
+        s.ice.set(to, ice);
+    };
     on_tick(s, Bits::default());
-    let (mut landed, mut fell) = (Bits::default(), false);
-    let rounds = 4 * w * h * (1 + s.ice.count() + usize::from(s.carrying_ice));
+    // You: rows fallen, rows left to rise, whether you arrived this round, the spring a blocked bounce came back to.
+    let (mut me_fall, mut me_rise, mut me_arrived, mut spent) = (0, 0, walked, None);
+    let mut me_spring = 0;
+    let rounds = 8 * w * h * (2 + s.ice.count() + usize::from(s.carrying_ice));
     for _ in 0..rounds {
         let mut moved = false;
-        let me = s.y as usize * w + s.x as usize;
+        // Rising.
+        let mut rose = false;
+        if me_rise > 0 {
+            let (x, y) = (s.x as i32, s.y as i32);
+            if free(s, x, y - 1) && (!s.carrying || free(s, x, y - 2)) {
+                s.y -= 1;
+                me_rise -= 1;
+            } else {
+                me_rise = 0;
+            }
+            if me_rise == 0 {
+                let fx = x + dx(s.facing);
+                let y = s.y as i32;
+                if free(s, fx, y) && (!s.carrying || free(s, fx, y - 1)) {
+                    s.x = fx as u8;
+                    me_arrived = true;
+                } else {
+                    spent = Some(me_spring);
+                }
+            }
+            (rose, moved) = (true, true);
+        }
+        let mut lifted = Bits::default();
+        for m in movers.iter_mut().filter(|m| m.rise > 0) {
+            let (x, y) = ((m.at % w) as i32, (m.at / w) as i32);
+            if free(s, x, y - 1) {
+                shift(s, m.at, m.at - w);
+                m.at -= w;
+                m.rise -= 1;
+            } else {
+                m.rise = 0;
+            }
+            if m.rise == 0 {
+                let (x, y) = ((m.at % w) as i32 + m.dir, (m.at / w) as i32);
+                if free(s, x, y) {
+                    shift(s, m.at, y as usize * w + x as usize);
+                    (m.at, m.arrived) = (y as usize * w + x as usize, true);
+                } else {
+                    (m.dir, m.slides) = (0, false);
+                }
+            }
+            lifted.set(m.at, true);
+            moved = true;
+        }
         // Falling. Fast path: nothing can fall when every block and you stand directly on something.
+        let me = s.y as usize * w + s.x as usize;
         let under = or(solid(s).up(w), floor);
         let (mut dropping, mut falls) = (minus(s.blocks, under), !under.get(me));
         if !dropping.is_empty() || falls {
@@ -530,63 +598,41 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, on_tick: &mut im
                 }
                 (held, me_held) = (next, next_me);
             }
-            (dropping, falls) = (minus(s.blocks, held), !me_held);
+            (dropping, falls) = (minus(minus(s.blocks, held), lifted), !me_held && !rose);
         }
-        // Landing: what fell last round and now stays put, on resting ice.
-        let sliding = |movers: &[Mover], i: usize| movers.iter().any(|m| m.slides && m.at == i);
-        let mut knocks = vec![];
-        for i in landed.zip(dropping, |a, b| a & !b).ones() {
-            let dir = movers.iter().find(|m| m.at == i).map(|m| m.dir);
-            if let Some(dir) = dir.filter(|_| i + w < w * h && s.ice.get(i + w) && !sliding(&movers, i + w)) {
-                knocks.push(Mover { at: i + w, dir, slides: true, riders: false });
-            }
-        }
-        if fell && !falls && me + w < w * h && s.ice.get(me + w) && !sliding(&movers, me + w) {
-            knocks.push(Mover { at: me + w, dir: dx(s.facing), slides: true, riders: false });
-        }
-        // A block set down that has stopped has done its knocking.
-        movers.retain(|m| m.slides || dropping.get(m.at));
-        movers.extend(knocks);
+        let fell = dropping.down(w);
         if !dropping.is_empty() {
             let ice = s.ice.zip(dropping, |a, b| a & b);
-            s.blocks = or(minus(s.blocks, dropping), dropping.down(w));
+            s.blocks = or(minus(s.blocks, dropping), fell);
             s.ice = or(minus(s.ice, ice), ice.down(w));
             for m in movers.iter_mut().filter(|m| dropping.get(m.at)) {
-                m.at += w;
+                (m.at, m.fall, m.arrived) = (m.at + w, m.fall + 1, true);
             }
             moved = true;
         }
         if falls {
-            s.y += 1;
-            moved = true;
+            (s.y, me_fall, me_arrived, moved) = (s.y + 1, me_fall + 1, true, true);
         }
-        (landed, fell) = (dropping.down(w), falls);
         // Sliding.
+        let sliding = |movers: &[Mover], i: usize| movers.iter().any(|m| m.slides && m.at == i);
         let mut k = 0;
         while k < movers.len() {
             let m = movers[k];
             k += 1;
-            let here = solid(s);
-            if !m.slides || (m.at + w < w * h && !here.get(m.at + w)) {
+            if !m.slides || m.rise > 0 || lifted.get(m.at) || !rests(s, m.at) {
                 continue;
             }
-            let x = (m.at % w) as i32 + m.dir;
-            let to = (m.at as i32 + m.dir) as usize;
-            if !(0..w as i32).contains(&x) || here.get(to) {
+            let (x, y) = ((m.at % w) as i32 + m.dir, m.at / w);
+            let to = (y * w) as i32 + x;
+            if !free(s, x, y as i32) {
                 movers.remove(k - 1);
                 k -= 1;
-                if (0..w as i32).contains(&x) && s.ice.get(to) && !sliding(&movers, to) {
-                    movers.push(Mover { at: to, dir: m.dir, slides: true, riders: true });
+                if (0..w as i32).contains(&x) && s.ice.get(to as usize) && !sliding(&movers, to as usize) {
+                    movers.push(Mover { arrived: false, ..Mover::new(to as usize, m.dir, true, true) });
                 }
                 continue;
             }
-            let shift = |s: &mut State, from: usize, to: usize| {
-                let ice = s.ice.get(from);
-                s.blocks.set(from, false);
-                s.ice.set(from, false);
-                s.blocks.set(to, true);
-                s.ice.set(to, ice);
-            };
+            let to = to as usize;
             shift(s, m.at, to);
             if m.riders {
                 let mut c = m.at;
@@ -595,13 +641,42 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, on_tick: &mut im
                     shift(s, c, c + to - m.at);
                 }
             }
-            movers[k - 1].at = to;
+            (movers[k - 1].at, movers[k - 1].arrived) = (to, true);
             moved = true;
         }
+        // Arriving.
+        let me = s.y as usize * w + s.x as usize;
+        let resting_ice = |movers: &[Mover], i: usize| s.ice.get(i) && !sliding(movers, i) && !fell.get(i);
+        let mut knocks = vec![];
+        for m in movers.iter().filter(|m| fell.get(m.at) && m.dir != 0 && rests(s, m.at)) {
+            if m.at + w < w * h && resting_ice(&movers, m.at + w) {
+                knocks.push(Mover { arrived: false, ..Mover::new(m.at + w, m.dir, true, false) });
+            }
+        }
+        if falls && rests(s, me) && me + w < w * h && resting_ice(&movers, me + w) {
+            knocks.push(Mover { arrived: false, ..Mover::new(me + w, dx(s.facing), true, false) });
+        }
+        movers.extend(knocks);
+        if me_rise == 0 && rests(s, me) {
+            if me_arrived && me + w < w * h && level.springs.get(me + w) && spent != Some(me + w) {
+                (me_rise, me_spring, moved) = (me_fall.max(1), me + w, true);
+            }
+            me_fall = 0;
+        }
+        me_arrived = false;
+        for m in movers.iter_mut().filter(|m| m.rise == 0 && rests(s, m.at)) {
+            if m.arrived && m.dir != 0 && m.at + w < w * h && level.springs.get(m.at + w) {
+                (m.rise, moved) = (m.fall.max(1), true);
+            }
+            m.fall = 0;
+        }
+        movers.iter_mut().for_each(|m| m.arrived = false);
+        // A block set down, or one whose bounce is over, has done its knocking once it rests.
+        movers.retain(|m| m.slides || m.rise > 0 || !rests(s, m.at));
         if !moved {
             return;
         }
-        on_tick(s, landed);
+        on_tick(s, fell);
     }
     debug_assert!(false, "settling didn't end");
 }

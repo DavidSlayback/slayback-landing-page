@@ -84,6 +84,7 @@ Agent defaults that follow from P28-P39 (agent choice):
 - **In the mixed world the rules simply combine:** ice that lands on a spring bounces the way it was sliding and keeps sliding after.
 - **M2's "mechanic matters" check:** a Crumble level must change its shortest solution when every cracked tile is made wall (unsolvable, shorter or longer), not only become unsolvable, so levels where breaking costs you a path count too.
 - **M3, ice (agent choices):** a landing needs a fall of at least a cell (walking or climbing onto ice doesn't knock it); a lander with no way of its own just lands; a rider that would hit something stays behind and falls. You can never ride ice (everything you set moving moves away from your column), so the solver keeps its estimate in the Ice world, unlike the Search default below. Stacks fall together in one round.
+- **M4, springs (agent choices):** climbing or hopping onto a spring counts as arriving, as walking and falling do (P31 named walking); a bounce rises a row per round so it animates and can be cut by a ceiling; ice that lands on a spring bounces its own way and keeps sliding. The estimate is dropped only on levels that have springs, so the other worlds keep their fast search.
 - **M1 builds settle only; crate kinds come with ice (M3 #120).** A kind enum with one member would be dead code until then.
 - **Search:** with chains, one move can carry you any distance, so the Springs and mixed worlds solve with no estimate (plain shortest-path search). Ice doesn't need that after all (M3 above).
 
