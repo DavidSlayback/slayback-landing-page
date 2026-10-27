@@ -56,6 +56,36 @@ pub fn wall(c: &mut Canvas, cx: usize, cy: usize, open: [bool; 4], muted: Rgb) {
     }
 }
 
+/// A cracked floor tile (M2): a pale slab with a warm lit edge and a jagged crack, so it reads as floor that won't
+/// last. The crack shifts from cell to cell so a row of them doesn't repeat. `open` is [up, down, left, right].
+pub fn cracked(c: &mut Canvas, cx: usize, cy: usize, open: [bool; 4], muted: Rgb, accent: Rgb) {
+    let (x0, y0) = ((cx * TILE) as i32, (cy * TILE) as i32);
+    let (x1, y1) = (x0 + TILE as i32, y0 + TILE as i32);
+    c.fill(x0, y0, x1, y1, scale(muted, 0.09));
+    let edge = scale(mix(muted, accent, 0.45), 0.65);
+    let [up, down, left, right] = open;
+    if up {
+        c.fill(x0, y0, x1, y0 + 2, edge);
+    }
+    if down {
+        c.fill(x0, y1 - 2, x1, y1, scale(edge, 0.5));
+    }
+    if left {
+        c.fill(x0, y0, x0 + 2, y1, scale(edge, 0.5));
+    }
+    if right {
+        c.fill(x1 - 2, y0, x1, y1, scale(edge, 0.5));
+    }
+    let (fx, fy, k) = (x0 as f32, y0 as f32, ((cx * 7 + cy * 13) % 5) as f32);
+    let crack = [(9.0 + k, 2.0), (14.0 + k * 0.5, 10.0), (11.0 + k, 17.0), (18.0, 24.0), (15.0 + k * 0.6, 31.0)];
+    for pair in crack.windows(2) {
+        let ((ax, ay), (bx, by)) = (pair[0], pair[1]);
+        c.line(fx + ax, fy + ay, fx + bx, fy + by, 1.4, scale(accent, 0.45));
+    }
+    let (bx, by) = crack[1];
+    c.line(fx + bx, fy + by, fx + 23.0, fy + 13.0 + k, 1.1, scale(accent, 0.3));
+}
+
 /// A crate at cell (`x`, `y`): a glowing frame, cross braces and corner rivets. `squash` > 0 squashes it flat
 /// around its bottom edge (a landing), < 0 stretches it tall.
 pub fn crate_(c: &mut Canvas, x: f32, y: f32, squash: f32, accent: Rgb) {

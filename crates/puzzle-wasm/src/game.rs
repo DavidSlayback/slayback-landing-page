@@ -137,6 +137,8 @@ struct Shard {
     size: f32,
     age: f32,
     life: f32,
+    /// A piece of cracked floor rather than of a crate.
+    tile: bool,
 }
 
 struct Ember {
@@ -172,14 +174,15 @@ pub struct Game {
     win: Option<f32>,
     shards: Vec<Shard>,
     embers: Vec<Ember>,
-    /// What the still scene was last baked from: blocks at rest, colours, reduced motion.
-    baked: Option<(Bits, [Rgb; 3], bool)>,
+    /// What the still scene was last baked from: blocks at rest, cracked tiles standing, colours, reduced motion.
+    baked: Option<(Bits, Bits, [Rgb; 3], bool)>,
 }
 
 impl Game {
-    /// The page's game: the level for `seed` in `tier`, opening with its intro.
-    pub fn new(tier: u8, seed: u64) -> Option<Game> {
-        let g = generate(seed, TIERS.get(tier.checked_sub(1)? as usize)?)?;
+    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble) and `tier`, opening with its intro.
+    pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
+        let world = [puzzle_core::World::Classic, puzzle_core::World::Crumble].get(world as usize).copied()?;
+        let g = generate(seed, world, TIERS.get(tier.checked_sub(1)? as usize)?)?;
         let mut game = Game::from_level(g.level, g.solution.len(), tier, seed);
         game.intro_on = true;
         game.start_intro();
@@ -277,7 +280,8 @@ impl Game {
                 self.turned = (self.time, if after.facing == Facing::Left { -1.0 } else { 1.0 });
             }
             self.animate(&before, &after);
-            if before.blocks != after.blocks {
+            self.crumble(&before, &after);
+            if before.blocks != after.blocks || before.cracked != after.cracked {
                 self.update_mask();
             }
         }
@@ -346,7 +350,36 @@ impl Game {
         self.tween = if self.reduce_motion { Tween::still(to) } else { Tween { t: 0.0, player, block, events } };
     }
 
-    /// The spark world's obstacles: walls and the blocks at rest.
+    /// Each cracked tile the move broke falls apart: four shards dropping through the hole, a puff of dust, a small
+    /// shake.
+    fn crumble(&mut self, before: &State, after: &State) {
+        let w = self.play.level.w as usize;
+        let broken: Vec<usize> =
+            (0..w * self.play.level.h as usize).filter(|&i| before.cracked.get(i) && !after.cracked.get(i)).collect();
+        if broken.is_empty() || self.reduce_motion {
+            return;
+        }
+        for i in broken {
+            let (x, y) = ((i % w) as f32, (i / w) as f32);
+            self.burst(Burst::Dust, (x + 0.5, y));
+            for (qx, qy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                let (a, b) = (self.rand(), self.rand());
+                self.shards.push(Shard {
+                    x: (x + 0.5) * T + qx * 8.0,
+                    y: (y + 0.5) * T + qy * 8.0,
+                    vx: qx * (20.0 + 50.0 * a),
+                    vy: -60.0 * b + qy * 20.0,
+                    size: 10.0 + 4.0 * b,
+                    age: 0.0,
+                    life: 0.6 + 0.3 * a,
+                    tile: true,
+                });
+            }
+        }
+        self.shake = self.shake.max(1.5);
+    }
+
+    /// The spark world's obstacles: walls, cracked tiles and the blocks at rest.
     fn update_mask(&mut self) {
         let l = &self.play.level;
         let s = self.play.state();
@@ -357,7 +390,7 @@ impl Game {
         for my in 0..mh {
             for mx in 0..mw {
                 let i = (my / per) * cw + mx / per;
-                if l.walls.get(i) || s.blocks.get(i) {
+                if l.walls.get(i) || s.blocks.get(i) || s.cracked.get(i) {
                     self.sparks.mask[my * mw + mx] = 200;
                 }
             }
@@ -432,6 +465,7 @@ impl Game {
                     size: 9.0 + 4.0 * b,
                     age: 0.0,
                     life: 0.9 + 0.5 * b,
+                    tile: false,
                 });
             }
         }
@@ -531,9 +565,9 @@ impl Game {
         if let Some((_, Some(i))) = moving {
             still.set(i, false);
         }
-        let key = (still, self.colors, self.reduce_motion);
+        let key = (still, s.cracked, self.colors, self.reduce_motion);
         if self.baked != Some(key) {
-            self.bake(&still);
+            self.bake(&still, &s.cracked);
             self.baked = Some(key);
         }
         let (ex, ey) = (self.play.level.exit.0 as usize, self.play.level.exit.1 as usize);
@@ -597,16 +631,18 @@ impl Game {
                 art::ember(c, e.x, e.y, e.depth, twinkle, accent);
             }
         }
+        let rubble = mix(muted, accent, 0.45);
         for sh in &self.shards {
+            let tint = if sh.tile { rubble } else { accent };
             let fade = 1.0 - sh.age / sh.life;
             let half = (sh.size * (0.6 + 0.4 * fade)) / 2.0;
             let (x0, y0, x1, y1) =
                 ((sh.x - half) as i32, (sh.y - half) as i32, (sh.x + half) as i32, (sh.y + half) as i32);
-            c.speck(x0, y0, x1, y1, scale(accent, 0.12 * fade));
+            c.speck(x0, y0, x1, y1, scale(tint, 0.12 * fade));
             for (a, b, cc, d) in
                 [(x0, y0, x1, y0 + 2), (x0, y1 - 2, x1, y1), (x0, y0, x0 + 2, y1), (x1 - 2, y0, x1, y1)]
             {
-                c.speck(a, b, cc, d, scale(accent, 1.1 * fade));
+                c.speck(a, b, cc, d, scale(tint, 1.1 * fade));
             }
         }
         let dust = mix(muted, fg, 0.35);
@@ -626,22 +662,25 @@ impl Game {
         }
     }
 
-    /// Draws and bakes what stands still: the backdrop, walls, the doorway's frame (and its light, when it doesn't
-    /// shimmer), and the crates in `still`.
-    fn bake(&mut self, still: &Bits) {
+    /// Draws and bakes what stands still: the backdrop, walls, the cracked tiles in `cracked`, the doorway's frame (and
+    /// its light, when it doesn't shimmer), and the crates in `still`.
+    fn bake(&mut self, still: &Bits, cracked: &Bits) {
         let [fg, muted, accent] = self.colors;
         let l = &self.play.level;
         let (w, h) = (l.w as usize, l.h as usize);
         let c = &mut self.canvas;
         c.clear([0.0; 3]);
         let wall = |x: i32, y: i32| {
-            x < 0 || y < 0 || x >= w as i32 || y >= h as i32 || l.walls.get(y as usize * w + x as usize)
+            let i = y as usize * w + x as usize;
+            x < 0 || y < 0 || x >= w as i32 || y >= h as i32 || l.walls.get(i) || cracked.get(i)
         };
         for y in 0..h {
             for x in 0..w {
                 let (xi, yi) = (x as i32, y as i32);
-                if wall(xi, yi) {
-                    let open = [!wall(xi, yi - 1), !wall(xi, yi + 1), !wall(xi - 1, yi), !wall(xi + 1, yi)];
+                let open = [!wall(xi, yi - 1), !wall(xi, yi + 1), !wall(xi - 1, yi), !wall(xi + 1, yi)];
+                if cracked.get(y * w + x) {
+                    art::cracked(c, x, y, open, muted, accent);
+                } else if wall(xi, yi) {
                     art::wall(c, x, y, open, muted);
                 } else {
                     art::backdrop(c, x, y, h, accent);
@@ -720,7 +759,7 @@ mod tests {
 
     #[test]
     fn a_level_plays_to_its_exit_and_throws_sparks_there() {
-        let mut g = Game::new(1, 1).unwrap();
+        let mut g = Game::new(0, 1, 1).unwrap();
         let solution = puzzle_core::solve(&g.play.level).solution.unwrap();
         assert_eq!(solution.len(), g.optimal);
         for k in solution {
@@ -799,8 +838,23 @@ mod tests {
     }
 
     #[test]
+    fn a_cracked_tile_you_step_off_falls_apart_and_the_scene_redraws_once() {
+        let level = Level::parse("#.....#\n#>...E#\n#~#####").unwrap();
+        let mut g = Game::from_level(level, 0, 1, 0);
+        frames(&mut g, 5);
+        assert!(lit(&g, 1, 2) > 0.3, "the cracked tile is drawn");
+        g.key(Key::R);
+        assert_eq!(g.shards.iter().filter(|s| s.tile).count(), 4, "it breaks in four");
+        assert!(g.shake > 0.0);
+        frames(&mut g, 60);
+        assert_eq!(g.canvas.bakes, 2, "the scene re-bakes once, without the tile");
+        assert!(g.shards.is_empty(), "the rubble is gone");
+        assert!(lit(&g, 1, 2) < 0.25, "the hole is dark: {}", lit(&g, 1, 2));
+    }
+
+    #[test]
     fn a_level_opens_with_its_crates_dropping_in_and_a_key_skips_it() {
-        let mut g = Game::new(1, 1).unwrap();
+        let mut g = Game::new(0, 1, 1).unwrap();
         assert!(g.intro.is_some());
         frames(&mut g, 3);
         assert_eq!(g.baked.unwrap().0, Bits::default(), "no crate stands still while they drop in");
@@ -816,7 +870,7 @@ mod tests {
 
     #[test]
     fn a_win_takes_the_climber_through_the_door_and_breaks_the_crates() {
-        let mut g = Game::new(1, 1).unwrap();
+        let mut g = Game::new(0, 1, 1).unwrap();
         for k in puzzle_core::solve(&g.play.level).solution.unwrap() {
             g.key(k);
             frames(&mut g, 12);
@@ -833,7 +887,7 @@ mod tests {
 
     #[test]
     fn reduced_motion_snaps_and_throws_no_sparks_shake_or_shards() {
-        let mut g = Game::new(1, 1).unwrap();
+        let mut g = Game::new(0, 1, 1).unwrap();
         g.reduce_motion = true;
         for k in puzzle_core::solve(&g.play.level).solution.unwrap() {
             g.key(k);

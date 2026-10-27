@@ -1,0 +1,11 @@
+{
+  "suite": "crumble fixture, until suite v2",
+  "tiers": [[8, 15], [16, 40], [41, 80], [81, 150]],
+  "cap": 200000,
+  "levels": [
+    {"tier": 1, "seed": 1, "fingerprint": "0xd36f871fd59e8e53", "moves": 12, "level": "#.~##>.#\n#BE.##.#\n#~B....#\n#.~B.~.#\n#..#..B#\n#~~#####", "solution": "RLULRRDLDUUU"},
+    {"tier": 1, "seed": 2, "fingerprint": "0xe7b2806d699b345c", "moves": 8, "level": "#~~<.~B#\n##~B..B#\n#BBBB~##\n#B#BB.~#\n#BB##.E#\n#~######", "solution": "RRRLLRRR"},
+    {"tier": 2, "seed": 1, "fingerprint": "0xbf6616b4bd930ccc", "moves": 40, "level": "#B...#...###\n#B....#..B##\n##E...##.#.#\n###.......B#\n#....~.~B#~#\n#>.B~####.##\n#B.B###..###\n#####~~#####", "solution": "RLDLRDUDRUULDLLLLRDRUULDRRRULLRRDLLLLDUU"},
+    {"tier": 2, "seed": 2, "fingerprint": "0x735365dd927b6553", "moves": 16, "level": "#B...~.....#\n#~..B......#\n#...#......#\n##...B..B>##\n#....~.B####\n#.#E.#.B#..#\n#..B##~#.~##\n##~######~##", "solution": "LDLLDLRDRLDUDLLL"}
+  ]
+}

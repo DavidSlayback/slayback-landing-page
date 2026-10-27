@@ -82,6 +82,7 @@ Agent defaults that follow from P28-P39 (agent choice):
 - **A bounce stops at a ceiling.** If its forward cell is blocked, the bouncer comes down onto the spring and stays (no re-trigger), so nothing bounces forever.
 - **A crate with no direction** (one that drops because ice slid out from under it) bounces straight up and so stays on its spring.
 - **In the mixed world the rules simply combine:** ice that lands on a spring bounces the way it was sliding and keeps sliding after.
+- **M2's "mechanic matters" check:** a Crumble level must change its shortest solution when every cracked tile is made wall (unsolvable, shorter or longer), not only become unsolvable, so levels where breaking costs you a path count too.
 - **M1 builds settle only; crate kinds come with ice (M3 #120).** A kind enum with one member would be dead code until then.
 - **Search:** with chains and riding, one move can carry you any distance, so the Ice, Springs and mixed worlds solve with no estimate (plain shortest-path search). Its cost is not yet measured.
 
