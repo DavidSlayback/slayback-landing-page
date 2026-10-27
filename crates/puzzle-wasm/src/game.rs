@@ -671,8 +671,8 @@ impl Game {
         let c = &mut self.canvas;
         c.clear([0.0; 3]);
         let wall = |x: i32, y: i32| {
-            let i = y as usize * w + x as usize;
-            x < 0 || y < 0 || x >= w as i32 || y >= h as i32 || l.walls.get(i) || cracked.get(i)
+            let outside = x < 0 || y < 0 || x >= w as i32 || y >= h as i32;
+            outside || l.walls.get(y as usize * w + x as usize) || cracked.get(y as usize * w + x as usize)
         };
         for y in 0..h {
             for x in 0..w {
