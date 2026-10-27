@@ -182,11 +182,11 @@ pub struct Game {
 }
 
 impl Game {
-    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble) and `tier`, opening with its intro.
+    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs) and `tier`, opening
+    /// with its intro.
     pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
-        let world = [puzzle_core::World::Classic, puzzle_core::World::Crumble, puzzle_core::World::Ice]
-            .get(world as usize)
-            .copied()?;
+        use puzzle_core::World::*;
+        let world = [Classic, Crumble, Ice, Springs].get(world as usize).copied()?;
         let g = generate(seed, world, TIERS.get(tier.checked_sub(1)? as usize)?)?;
         let mut game = Game::from_level(g.level, g.solution.len(), tier, seed);
         game.intro_on = true;
@@ -290,7 +290,7 @@ impl Game {
             let (w, h) = (self.play.level.w as usize, self.play.level.h as usize);
             let trace = Trace::new(before, rounds, w, h);
             self.trace = None;
-            if trace.slides(w) && !self.reduce_motion {
+            if trace.needed(w) && !self.reduce_motion {
                 self.follow(trace);
             } else {
                 self.animate(&before, &after);
@@ -334,6 +334,10 @@ impl Game {
         let end = |k: usize| trace::FIRST + trace::ROUND * k as f32;
         let at = |c: usize| ((c % w) as f32 + 0.5, (c / w) as f32 + 1.0);
         for k in 0..trace.moves.len() {
+            if trace.launches(k) {
+                let s = &trace.ticks[k];
+                events.push((end(k - 1), Burst::Landing, (s.x as f32 + 0.5, s.y as f32 + 1.0)));
+            }
             for c in trace.lands(k, w) {
                 events.push((end(k), Burst::Landing, at(c)));
             }
@@ -584,7 +588,9 @@ impl Game {
         let (t, path) = (self.tween.t, self.tween.player);
         if let Some(tr) = &self.trace {
             let (k, u) = tr.at(tr.t);
-            if tr.ticks[k].x != tr.ticks[k + 1].x && u < 1.0 {
+            if tr.rising(k) {
+                p.squash = -0.3; // stretched on the way up a bounce
+            } else if tr.ticks[k].x != tr.ticks[k + 1].x && u < 1.0 {
                 p.stride = (TAU * u).sin();
             }
         } else if t < path.across {
@@ -755,6 +761,8 @@ impl Game {
                 let open = [!wall(xi, yi - 1), !wall(xi, yi + 1), !wall(xi - 1, yi), !wall(xi + 1, yi)];
                 if cracked.get(y * w + x) {
                     art::cracked(c, x, y, open, muted, accent);
+                } else if l.springs.get(y * w + x) {
+                    art::spring(c, x, y, open, muted, accent);
                 } else if wall(xi, yi) {
                     art::wall(c, x, y, open, muted);
                 } else {
@@ -928,6 +936,20 @@ mod tests {
         assert!(g.trace.is_none(), "the trace ends");
         assert!(lit(&g, 7, 1) > 0.5, "and the block rests against the wall");
         assert!(g.canvas.bakes <= 3, "{} bakes for one slide", g.canvas.bakes);
+    }
+
+    #[test]
+    fn a_bounce_is_drawn_rising_and_hopping_with_sparks_off_the_spring() {
+        let level = Level::parse("#>.....#\n##.#...#\n#..#..E#\n##^#####").unwrap();
+        let mut g = Game::from_level(level, 0, 1, 0);
+        frames(&mut g, 5);
+        g.key(Key::R);
+        assert!(g.trace.is_some(), "a bounce is drawn from its trace");
+        frames(&mut g, 90);
+        assert!(g.trace.is_none());
+        assert_eq!((g.play.state().x, g.play.state().y), (3, 0), "thrown up two and over the wall");
+        assert!(lit(&g, 3, 0) > 0.5, "drawn where it landed");
+        assert!(live_sparks(&g) > 0 || g.shake > 0.0 || g.canvas.bakes >= 1);
     }
 
     #[test]

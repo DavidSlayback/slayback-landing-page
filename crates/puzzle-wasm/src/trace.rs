@@ -30,9 +30,23 @@ impl Trace {
         Trace { ticks, moves, t: 0.0 }
     }
 
-    /// Whether any block slides after the key's own action: then the move needs this trace to be drawn right.
-    pub fn slides(&self, w: usize) -> bool {
-        self.moves.iter().skip(1).flatten().any(|&(from, to, _)| from / w == to / w && from != to)
+    /// Whether anything moves after the key's own action in a way the hand-made tweens can't draw: a block sliding or
+    /// bouncing, or you bouncing. Then the move is drawn from this trace.
+    pub fn needed(&self, w: usize) -> bool {
+        let block = self.moves.iter().skip(1).flatten().any(|&(from, to, _)| from != to && to != from + w);
+        let me = self.ticks.windows(2).skip(1).any(|p| p[1].y < p[0].y || p[1].x != p[0].x);
+        block || me
+    }
+
+    /// Whether you go up in step `k` without having gone up in the step before: a bounce leaving its spring.
+    pub fn launches(&self, k: usize) -> bool {
+        let up = |k: usize| self.ticks[k + 1].y < self.ticks[k].y;
+        k > 0 && up(k) && !up(k - 1)
+    }
+
+    /// Whether you go up in step `k`.
+    pub fn rising(&self, k: usize) -> bool {
+        self.ticks[k + 1].y < self.ticks[k].y
     }
 
     pub fn end(&self) -> f32 {

@@ -86,6 +86,20 @@ pub fn cracked(c: &mut Canvas, cx: usize, cy: usize, open: [bool; 4], muted: Rgb
     c.line(fx + bx, fy + by, fx + 23.0, fy + 13.0 + k, 1.1, scale(accent, 0.3));
 }
 
+/// A spring (M4): a floor slab with a glowing pad on top and a coil under it, warm against the walls.
+/// `open` is [up, down, left, right].
+pub fn spring(c: &mut Canvas, cx: usize, cy: usize, open: [bool; 4], muted: Rgb, accent: Rgb) {
+    wall(c, cx, cy, [false, open[1], open[2], open[3]], muted);
+    let (x0, y0) = ((cx * TILE) as f32, (cy * TILE) as f32);
+    let hot = mix(accent, [1.0, 0.75, 0.35], 0.5);
+    c.fill(x0 as i32 + 3, y0 as i32, x0 as i32 + 29, y0 as i32 + 4, scale(hot, 1.1));
+    for k in 0..4 {
+        let (ya, yb) = (y0 + 7.0 + 5.0 * k as f32, y0 + 9.5 + 5.0 * k as f32);
+        c.line(x0 + 8.0, ya, x0 + 24.0, yb, 1.6, scale(hot, 0.7));
+        c.line(x0 + 24.0, yb, x0 + 8.0, yb + 2.5, 1.6, scale(hot, 0.55));
+    }
+}
+
 /// The cold tint of ice blocks (M3), mixed into the accent so it still belongs to the site's scheme.
 const ICE: Rgb = [0.55, 0.9, 1.0];
 

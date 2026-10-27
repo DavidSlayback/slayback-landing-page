@@ -15,6 +15,7 @@ fn main() {
     let world = match args.next().as_deref() {
         Some("crumble") => World::Crumble,
         Some("ice") => World::Ice,
+        Some("springs") => World::Springs,
         _ => World::Classic,
     };
     let per_tier: usize = args.next().and_then(|a| a.parse().ok()).unwrap_or(10);

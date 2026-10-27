@@ -54,6 +54,10 @@ const KEYS: [Key; 4] = [Key::L, Key::R, Key::U, Key::D];
 /// Turns and falls cost nothing here, so it never overestimates, and it changes by at most one per move, so the first
 /// time A* expands a state it has reached it by a shortest path.
 fn estimate(level: &Level, s: &State) -> u32 {
+    // A spring can throw you up and over several cells in one move (M4), so with springs there is no bound to give.
+    if !level.springs.is_empty() {
+        return 0;
+    }
     let dx = (s.x as i32 - level.exit.0 as i32).unsigned_abs();
     let rise = (s.y as i32 - level.exit.1 as i32).max(0) as u32;
     dx.max(rise)

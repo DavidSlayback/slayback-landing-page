@@ -109,9 +109,9 @@ test.describe('puzzle', () => {
     }
   });
 
-  // The other worlds (M2, M3): levels from tests/e2e/fixtures/<world>.json, written by the native generator
+  // The other worlds (M2-M4): levels from tests/e2e/fixtures/<world>.json, written by the native generator
   // (`--example suite -- <world> 2 2`) until suite v2.
-  for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice']]) {
+  for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice'], ['springs', 'Springs']]) {
     test.describe(world, () => {
       const FIXTURE = JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${world}.json`, import.meta.url)), 'utf8'));
       const go = async (page, tier, seed) => {
@@ -144,7 +144,7 @@ test.describe('puzzle', () => {
 
   test('the classic page shows no world help', async ({ page }) => {
     await open(page, 1, 1);
-    await expect(page.locator('[data-world]')).toHaveCount(2);
+    await expect(page.locator('[data-world]')).toHaveCount(3);
     for (const el of await page.locator('[data-world]').all()) await expect(el).toBeHidden();
   });
 });
