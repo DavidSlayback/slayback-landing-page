@@ -29,7 +29,7 @@ David chose the physical option almost every time, so the three worlds are more 
 - **Ice crates (P34-P37):** slide when set down and when anything lands on them (the lander drops into the gap), keep sliding off ledges, and pass their motion to ice they hit. Whatever sits on ice pushed from the side rides along.
 - **Worlds and suite (P38, P39):** Crumble, Ice, Springs, then a mixed world, each with 5 levels per tier (80 in suite v2). v1 stays frozen.
 
-**What that changes in the cost below:** ice and springs now need the settle pass too (a knocked-out ice crate leaves its lander falling; bounced crates land elsewhere). So build order is settle first (built in M1 #118), then crumbling (M2 #119), ice (M3 #120) and springs (M4 #121). Chains also mean one move can carry you any distance, so spring worlds solve with no estimate (ice doesn't: you can never ride it, M3). That search cost is unmeasured, and it is the first thing to measure once the rules exist.
+**What that changes in the cost below:** ice and springs now need the settle pass too (a knocked-out ice crate leaves its lander falling; bounced crates land elsewhere). So build order is settle first (built in M1 #118), then crumbling (M2 #119), ice (M3 #120) and springs (M4 #121), then the mixed world and suite v2 (M5 #122). All built. Chains also mean one move can carry you any distance, so spring worlds solve with no estimate (ice doesn't: you can never ride it, M3). That search cost is unmeasured, and it is the first thing to measure once the rules exist.
 
 The sections below are the study as written, before the grilling.
 

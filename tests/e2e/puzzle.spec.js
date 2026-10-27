@@ -109,42 +109,53 @@ test.describe('puzzle', () => {
     }
   });
 
-  // The other worlds (M2-M4): levels from tests/e2e/fixtures/<world>.json, written by the native generator
-  // (`--example suite -- <world> 2 2`) until suite v2.
-  for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice'], ['springs', 'Springs']]) {
+  // The other worlds (M2-M5): levels from bench/puzzle/suite-v2.json, written by the native generator.
+  const V2 = JSON.parse(readFileSync(fileURLToPath(new URL('../../bench/puzzle/suite-v2.json', import.meta.url)), 'utf8'));
+  for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice'], ['springs', 'Springs'], ['mixed', 'Mixed']]) {
     test.describe(world, () => {
-      const FIXTURE = JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${world}.json`, import.meta.url)), 'utf8'));
+      const levels = V2.levels.filter(l => l.world === world);
       const go = async (page, tier, seed) => {
         await page.goto(`/puzzle/?world=${world}&tier=${tier}&seed=${seed}`);
         await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
       };
 
       test('builds the native levels, says which world, and keeps it in the tier links', async ({ page }) => {
-        for (const l of FIXTURE.levels) {
+        for (const l of levels.filter(l => l.tier <= 2).slice(0, 4)) {
           await go(page, l.tier, l.seed);
           expect(await page.evaluate(() => __puzzle.fingerprint()), `tier ${l.tier} seed ${l.seed}`).toBe(l.fingerprint);
         }
-        await expect(page.locator('#where')).toHaveText(`${name} · Tier 2 · level 2`);
-        await expect(page.locator(`[data-world="${world}"]`)).toBeVisible();
+        await go(page, 2, levels.find(l => l.tier === 2).seed);
+        await expect(page.locator('#where')).toContainText(`${name} · Tier 2`);
+        await expect(page.locator(`[data-world~="${world}"]`).first()).toBeVisible();
         await expect(page.locator('nav [data-tier="3"]')).toHaveAttribute('href', `?world=${world}&tier=3&seed=1`);
+        await expect(page.locator(`nav [data-pick="${world}"]`)).toHaveAttribute('aria-current', 'true');
       });
 
       test('a level is solved by its native solution, with no errors', async ({ page }) => {
         const errors = collectErrors(page);
-        const { solution, moves } = FIXTURE.levels.find(l => l.tier === 1 && l.seed === 1);
-        await go(page, 1, 1);
+        const { seed, solution, moves } = levels.find(l => l.tier === 1);
+        await go(page, 1, seed);
         for (const k of solution) await page.keyboard.press(PRESS[k]);
         await expect.poll(() => state(page)).toEqual({ moves, solved: true });
         await expect(page.locator('#message')).toContainText('Out!');
-        await expect(page.locator('#message a')).toHaveAttribute('href', `?world=${world}&tier=1&seed=2`);
+        await expect(page.locator('#message a')).toHaveAttribute('href', `?world=${world}&tier=1&seed=${seed + 1}`);
         expect(errors).toEqual([]);
       });
     });
   }
 
+  test('the world picker keeps the tier and opens a world', async ({ page }) => {
+    await open(page, 2, 3);
+    await expect(page.locator('nav [data-pick="classic"]')).toHaveAttribute('aria-current', 'true');
+    await page.locator('nav [data-pick="ice"]').click();
+    await expect(page).toHaveURL(/\?world=ice&tier=2&seed=1$/);
+    await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
+    await expect(page.locator('#where')).toHaveText('Ice · Tier 2 · level 1');
+  });
+
   test('the classic page shows no world help', async ({ page }) => {
     await open(page, 1, 1);
-    await expect(page.locator('[data-world]')).toHaveCount(3);
+    await expect(page.locator('[data-world]')).toHaveCount(4);
     for (const el of await page.locator('[data-world]').all()) await expect(el).toBeHidden();
   });
 });
