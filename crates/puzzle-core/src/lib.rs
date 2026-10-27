@@ -30,6 +30,26 @@ impl Bits {
     fn is_empty(&self) -> bool {
         self.0 == [0; 4]
     }
+    fn count(&self) -> usize {
+        self.0.iter().map(|w| w.count_ones() as usize).sum()
+    }
+    /// The set cells, in order.
+    fn ones(self) -> impl Iterator<Item = usize> {
+        (0..4).flat_map(move |k| {
+            let mut word = self.0[k];
+            std::iter::from_fn(move || {
+                (word != 0).then(|| {
+                    let bit = word.trailing_zeros() as usize;
+                    word &= word - 1;
+                    64 * k + bit
+                })
+            })
+        })
+    }
+    /// The cells set in both.
+    pub fn zip_and(self, o: Bits) -> Bits {
+        self.zip(o, |a, b| a & b)
+    }
     pub(crate) fn zip(self, o: Bits, f: impl Fn(u64, u64) -> u64) -> Bits {
         Bits(std::array::from_fn(|k| f(self.0[k], o.0[k])))
     }
@@ -90,6 +110,10 @@ pub struct State {
     pub blocks: Bits,
     /// Cracked floor tiles still standing (M2): solid until whatever stands directly on one leaves it.
     pub cracked: Bits,
+    /// Which of `blocks` are ice (M3): set down or knocked, they slide.
+    pub ice: Bits,
+    /// Whether the block you carry is ice.
+    pub carrying_ice: bool,
 }
 
 /// The fixed part of a level, plus where play starts.
@@ -127,8 +151,9 @@ pub enum ParseError {
 }
 
 impl Level {
-    /// Reads the text form: `#` wall, `~` cracked floor, `B` block, `E` exit, `.` empty, `>`/`<` the player facing that
-    /// way, `b` a block resting on the exit. A `B` directly above the player is the block they carry.
+    /// Reads the text form: `#` wall, `~` cracked floor, `B` block, `I` ice block, `E` exit, `.` empty, `>`/`<` the
+    /// player facing that way, `b`/`i` a block/ice block on the exit. A block directly above the player is the one they
+    /// carry.
     pub fn parse(text: &str) -> Result<Level, ParseError> {
         let rows: Vec<Vec<char>> = text.lines().map(|l| l.chars().collect()).collect();
         let (h, w) = (rows.len(), rows.first().map_or(0, Vec::len));
@@ -138,7 +163,8 @@ impl Level {
         if w > MAX_W || h > MAX_H {
             return Err(ParseError::TooBig { w, h });
         }
-        let (mut walls, mut blocks, mut cracked) = (Bits::default(), Bits::default(), Bits::default());
+        let (mut walls, mut blocks, mut cracked, mut ice) =
+            (Bits::default(), Bits::default(), Bits::default(), Bits::default());
         let (mut players, mut exits) = (vec![], vec![]);
         for (y, row) in rows.iter().enumerate() {
             if row.len() != w {
@@ -156,6 +182,15 @@ impl Level {
                         blocks.set(i, true);
                         exits.push((x, y));
                     }
+                    'I' => {
+                        blocks.set(i, true);
+                        ice.set(i, true);
+                    }
+                    'i' => {
+                        blocks.set(i, true);
+                        ice.set(i, true);
+                        exits.push((x, y));
+                    }
                     '>' => players.push((x, y, Facing::Right)),
                     '<' => players.push((x, y, Facing::Left)),
                     _ => return Err(ParseError::Unknown { ch, x, y }),
@@ -165,10 +200,12 @@ impl Level {
         let &[(px, py, facing)] = players.as_slice() else { return Err(ParseError::Players(players.len())) };
         let &[(ex, ey)] = exits.as_slice() else { return Err(ParseError::Exits(exits.len())) };
         let carrying = py > 0 && blocks.get((py - 1) * w + px);
+        let carrying_ice = carrying && ice.get((py - 1) * w + px);
         if carrying {
             blocks.set((py - 1) * w + px, false);
+            ice.set((py - 1) * w + px, false);
         }
-        let start = State { x: px as u8, y: py as u8, facing, carrying, blocks, cracked };
+        let start = State { x: px as u8, y: py as u8, facing, carrying, blocks, cracked, ice, carrying_ice };
         let level = Level { w: w as u8, h: h as u8, walls, exit: (ex as u8, ey as u8), start };
         let (x, y) = (px as i32, py as i32);
         if !level.solid(&start, x, y + 1) {
@@ -197,12 +234,15 @@ impl Level {
                 let player = (x, y) == (state.x as usize, state.y as usize);
                 let carried = state.carrying && (x, y + 1) == (state.x as usize, state.y as usize);
                 let block = carried || state.blocks.get(i);
+                let ice = if carried { state.carrying_ice } else { state.ice.get(i) };
                 out.push(match () {
                     _ if player && state.facing == Facing::Right => '>',
                     _ if player => '<',
                     _ if self.walls.get(i) => '#',
                     _ if state.cracked.get(i) => '~',
+                    _ if block && exit && ice => 'i',
                     _ if block && exit => 'b',
+                    _ if block && ice => 'I',
                     _ if block => 'B',
                     _ if exit => 'E',
                     _ => '.',
@@ -322,7 +362,20 @@ impl Play {
 
 /// Plays one key. A refused key changes nothing and is not a move.
 pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
+    step_traced(level, s, key, |_, _| {})
+}
+
+/// [`step`], calling `on_tick` with the state after the key acts and after each round of things falling and sliding,
+/// so the browser can animate a move as it plays out. With each state come the cells of the blocks that fell a row in
+/// that round (where they landed); any other block that moved slid a cell.
+pub fn step_traced(
+    level: &Level,
+    s: &State,
+    key: Key,
+    mut on_tick: impl FnMut(&State, Bits),
+) -> Result<State, Refusal> {
     let mut n = *s;
+    let mut movers = vec![];
     let (x, y) = (s.x as i32, s.y as i32);
     let solid = |x, y| level.solid(s, x, y);
     match key {
@@ -369,6 +422,8 @@ pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
             }
             n.blocks.set((y * w + fx) as usize, false);
             n.carrying = true;
+            n.carrying_ice = s.ice.get((y * w + fx) as usize);
+            n.ice.set((y * w + fx) as usize, false);
         }
         Key::D => {
             // Set down in front of your head; settling drops it the rest of the way.
@@ -376,11 +431,14 @@ pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
             if solid(fx, y - 1) {
                 return Err(Refusal::NoRoom);
             }
-            n.blocks.set(((y - 1) * level.w as i32 + fx) as usize, true);
-            n.carrying = false;
+            let at = ((y - 1) * level.w as i32 + fx) as usize;
+            n.blocks.set(at, true);
+            n.ice.set(at, s.carrying_ice);
+            (n.carrying, n.carrying_ice) = (false, false);
+            movers.push(Mover { at, dir: dx(s.facing), slides: s.carrying_ice, riders: false });
         }
     }
-    settle(level, &mut n);
+    settle(level, &mut n, movers, &mut on_tick);
     crumble(level, s, &mut n);
     Ok(n)
 }
@@ -405,31 +463,147 @@ fn dx(facing: Facing) -> i32 {
     if facing == Facing::Left { -1 } else { 1 }
 }
 
-/// Lets everything come to rest after a move (`docs/planning/puzzle-mechanics.md`, "settle"): each round, every
-/// unsupported block falls a row, all at once, and so do you with what you carry. You and your carried block are
-/// solid to blocks landing on you. Blocks are identical and each column just packs down, so the resting state doesn't
-/// depend on the order.
-fn settle(level: &Level, s: &mut State) {
+/// Something moving sideways while a move plays out: ice sliding, or a block just set down, which slides only if it is
+/// ice but carries your facing to knock any ice it lands on (P35). `riders`: ice passed motion by other ice carries
+/// what sits on it (P37).
+#[derive(Clone, Copy, Debug)]
+struct Mover {
+    at: usize,
+    dir: i32,
+    slides: bool,
+    riders: bool,
+}
+
+/// Lets everything come to rest after a move (`docs/planning/puzzle-mechanics.md`, "settle"), in rounds. Each round:
+///
+/// - **Falling:** everything unsupported falls a row, stacks together, you with what you carry. You and your carried
+///   block are solid to blocks landing on you.
+/// - **Landing:** something that fell last round and has stopped on resting ice knocks it sliding the way it was going
+///   (a block you set down: your facing; you: your facing; sliding ice: its way), and drops into the gap (P35).
+///   Something falling with no way of its own (dropping because ice slid out from under it) just lands.
+/// - **Sliding:** supported sliding ice moves a cell. Hitting resting ice, it stops and that ice slides on, carrying
+///   what sits on it (P36, P37); hitting anything else, it stops (P34).
+///
+/// Everything you set moving moves away from your column, so you never ride ice. Every slide moves one way and every
+/// fall moves down, so the rounds end.
+fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, on_tick: &mut impl FnMut(&State, Bits)) {
     let (w, h) = (level.w as usize, level.h as usize);
     let floor = Bits::range(w * (h - 1), w * h);
-    loop {
-        let mut solid = level.walls.zip(s.blocks, |a, b| a | b).zip(s.cracked, |a, b| a | b);
+    let or = |a: Bits, b: Bits| a.zip(b, |a, b| a | b);
+    let minus = |a: Bits, b: Bits| a.zip(b, |a, b| a & !b);
+    // Every cell that blocks movement: walls, cracked tiles, blocks, you and what you carry.
+    let solid = |s: &State| {
+        let mut solid = or(or(level.walls, s.cracked), s.blocks);
         let me = s.y as usize * w + s.x as usize;
-        let falls = me + w < w * h && !solid.get(me + w);
         solid.set(me, true);
         if s.carrying {
             solid.set(me - w, true);
         }
-        let held = solid.up(w).zip(floor, |a, b| a | b);
-        let dropping = s.blocks.zip(held, |a, b| a & !b);
-        if dropping.is_empty() && !falls {
-            return;
+        solid
+    };
+    on_tick(s, Bits::default());
+    let (mut landed, mut fell) = (Bits::default(), false);
+    let rounds = 4 * w * h * (1 + s.ice.count() + usize::from(s.carrying_ice));
+    for _ in 0..rounds {
+        let mut moved = false;
+        let me = s.y as usize * w + s.x as usize;
+        // Falling. Fast path: nothing can fall when every block and you stand directly on something.
+        let under = or(solid(s).up(w), floor);
+        let (mut dropping, mut falls) = (minus(s.blocks, under), !under.get(me));
+        if !dropping.is_empty() || falls {
+            // Something hangs: find what rests on walls, cracked tiles or the bottom edge, through whatever stacks on
+            // them, and let everything else fall together.
+            let base = or(level.walls, s.cracked);
+            let (mut held, mut me_held) = (Bits::default(), false);
+            loop {
+                let mut sup = or(base, held);
+                if me_held {
+                    sup.set(me, true);
+                    if s.carrying {
+                        sup.set(me - w, true);
+                    }
+                }
+                let under = or(sup.up(w), floor);
+                let (next, next_me) = (s.blocks.zip(under, |a, b| a & b), under.get(me));
+                if next == held && next_me == me_held {
+                    break;
+                }
+                (held, me_held) = (next, next_me);
+            }
+            (dropping, falls) = (minus(s.blocks, held), !me_held);
         }
-        s.blocks = s.blocks.zip(dropping, |a, b| a & !b).zip(dropping.down(w), |a, b| a | b);
+        // Landing: what fell last round and now stays put, on resting ice.
+        let sliding = |movers: &[Mover], i: usize| movers.iter().any(|m| m.slides && m.at == i);
+        let mut knocks = vec![];
+        for i in landed.zip(dropping, |a, b| a & !b).ones() {
+            let dir = movers.iter().find(|m| m.at == i).map(|m| m.dir);
+            if let Some(dir) = dir.filter(|_| i + w < w * h && s.ice.get(i + w) && !sliding(&movers, i + w)) {
+                knocks.push(Mover { at: i + w, dir, slides: true, riders: false });
+            }
+        }
+        if fell && !falls && me + w < w * h && s.ice.get(me + w) && !sliding(&movers, me + w) {
+            knocks.push(Mover { at: me + w, dir: dx(s.facing), slides: true, riders: false });
+        }
+        // A block set down that has stopped has done its knocking.
+        movers.retain(|m| m.slides || dropping.get(m.at));
+        movers.extend(knocks);
+        if !dropping.is_empty() {
+            let ice = s.ice.zip(dropping, |a, b| a & b);
+            s.blocks = or(minus(s.blocks, dropping), dropping.down(w));
+            s.ice = or(minus(s.ice, ice), ice.down(w));
+            for m in movers.iter_mut().filter(|m| dropping.get(m.at)) {
+                m.at += w;
+            }
+            moved = true;
+        }
         if falls {
             s.y += 1;
+            moved = true;
         }
+        (landed, fell) = (dropping.down(w), falls);
+        // Sliding.
+        let mut k = 0;
+        while k < movers.len() {
+            let m = movers[k];
+            k += 1;
+            let here = solid(s);
+            if !m.slides || (m.at + w < w * h && !here.get(m.at + w)) {
+                continue;
+            }
+            let x = (m.at % w) as i32 + m.dir;
+            let to = (m.at as i32 + m.dir) as usize;
+            if !(0..w as i32).contains(&x) || here.get(to) {
+                movers.remove(k - 1);
+                k -= 1;
+                if (0..w as i32).contains(&x) && s.ice.get(to) && !sliding(&movers, to) {
+                    movers.push(Mover { at: to, dir: m.dir, slides: true, riders: true });
+                }
+                continue;
+            }
+            let shift = |s: &mut State, from: usize, to: usize| {
+                let ice = s.ice.get(from);
+                s.blocks.set(from, false);
+                s.ice.set(from, false);
+                s.blocks.set(to, true);
+                s.ice.set(to, ice);
+            };
+            shift(s, m.at, to);
+            if m.riders {
+                let mut c = m.at;
+                while c >= w && s.blocks.get(c - w) && !solid(s).get(c - w + to - m.at) {
+                    c -= w;
+                    shift(s, c, c + to - m.at);
+                }
+            }
+            movers[k - 1].at = to;
+            moved = true;
+        }
+        if !moved {
+            return;
+        }
+        on_tick(s, landed);
     }
+    debug_assert!(false, "settling didn't end");
 }
 
 impl fmt::Display for Level {

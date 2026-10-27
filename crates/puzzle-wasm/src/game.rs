@@ -8,11 +8,12 @@
 
 use std::f32::consts::{PI, TAU};
 
-use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, TIERS, generate};
+use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, TIERS, generate, step_traced};
 use sim::World;
 
 use crate::art::{self, Pose, T, TILE};
 use crate::draw::{Canvas, Rect, Rgb, mix, scale};
+use crate::trace::{self, Trace};
 
 /// The spark world's obstacle mask has a cell every 4 pixels.
 const MASK_SCALE: f32 = 0.25;
@@ -174,6 +175,8 @@ pub struct Game {
     win: Option<f32>,
     shards: Vec<Shard>,
     embers: Vec<Ember>,
+    /// A move with sliding ice, drawn round by round from the rules' own trace instead of the tween.
+    trace: Option<Trace>,
     /// What the still scene was last baked from: blocks at rest, cracked tiles standing, colours, reduced motion.
     baked: Option<(Bits, Bits, [Rgb; 3], bool)>,
 }
@@ -181,7 +184,9 @@ pub struct Game {
 impl Game {
     /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble) and `tier`, opening with its intro.
     pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
-        let world = [puzzle_core::World::Classic, puzzle_core::World::Crumble].get(world as usize).copied()?;
+        let world = [puzzle_core::World::Classic, puzzle_core::World::Crumble, puzzle_core::World::Ice]
+            .get(world as usize)
+            .copied()?;
         let g = generate(seed, world, TIERS.get(tier.checked_sub(1)? as usize)?)?;
         let mut game = Game::from_level(g.level, g.solution.len(), tier, seed);
         game.intro_on = true;
@@ -219,6 +224,7 @@ impl Game {
             win: None,
             shards: vec![],
             embers: vec![],
+            trace: None,
             baked: None,
         };
         game.embers = (0..EMBERS)
@@ -269,6 +275,8 @@ impl Game {
     pub fn key(&mut self, key: Key) -> Option<Refusal> {
         self.intro = None;
         let before = *self.play.state();
+        let mut rounds = vec![];
+        let _ = step_traced(&self.play.level, &before, key, |s, fell| rounds.push((*s, fell)));
         let applied = self.play.apply(&format!("{key:?}"));
         if let Some(stop) = applied.stop {
             self.refused = 0.18;
@@ -279,7 +287,14 @@ impl Game {
             if after.facing != before.facing && (after.x, after.y) == (before.x, before.y) {
                 self.turned = (self.time, if after.facing == Facing::Left { -1.0 } else { 1.0 });
             }
-            self.animate(&before, &after);
+            let (w, h) = (self.play.level.w as usize, self.play.level.h as usize);
+            let trace = Trace::new(before, rounds, w, h);
+            self.trace = None;
+            if trace.slides(w) && !self.reduce_motion {
+                self.follow(trace);
+            } else {
+                self.animate(&before, &after);
+            }
             self.crumble(&before, &after);
             if before.blocks != after.blocks || before.cracked != after.cracked {
                 self.update_mask();
@@ -306,8 +321,34 @@ impl Game {
         self.tween = Tween::still((s.x as f32, s.y as f32));
         self.intro = None;
         self.win = None;
+        self.trace = None;
         self.shards.clear();
         self.update_mask();
+    }
+
+    /// Draws the move from its trace: blocks glide round by round, landings throw sparks, sliding ice throws dust where
+    /// it stops.
+    fn follow(&mut self, trace: Trace) {
+        let w = self.play.level.w as usize;
+        let mut events = vec![];
+        let end = |k: usize| trace::FIRST + trace::ROUND * k as f32;
+        let at = |c: usize| ((c % w) as f32 + 0.5, (c / w) as f32 + 1.0);
+        for k in 0..trace.moves.len() {
+            for c in trace.lands(k, w) {
+                events.push((end(k), Burst::Landing, at(c)));
+            }
+            let stops = trace.moves[k]
+                .iter()
+                .filter(|m| m.0 / w == m.1 / w && m.0 != m.1)
+                .filter(|m| trace.moves.get(k + 1).is_none_or(|next| next.iter().any(|n| n.0 == m.1 && n.1 == m.1)));
+            events.extend(stops.map(|m| (end(k), Burst::Dust, at(m.1))).collect::<Vec<_>>());
+        }
+        let s = trace.ticks.last().unwrap();
+        if self.play.solved() {
+            events.push((trace.end(), Burst::Exit, (s.x as f32 + 0.5, s.y as f32 + 0.5)));
+        }
+        self.tween = Tween { t: 0.0, player: Path::still((s.x as f32, s.y as f32)), block: None, events };
+        self.trace = Some(trace);
     }
 
     /// Sets up the tween from `before` to `after`, starting wherever the player is drawn now.
@@ -492,6 +533,12 @@ impl Game {
             }
         }
         self.tween.t += dt;
+        if let Some(tr) = &mut self.trace {
+            tr.t += dt;
+            if tr.t >= tr.end() + SQUASH {
+                self.trace = None;
+            }
+        }
         let due: Vec<_> = self.tween.events.iter().copied().filter(|e| e.0 <= self.tween.t).collect();
         self.tween.events.retain(|e| e.0 > self.tween.t);
         for (_, kind, at) in due {
@@ -535,7 +582,12 @@ impl Game {
             return p;
         }
         let (t, path) = (self.tween.t, self.tween.player);
-        if t < path.across {
+        if let Some(tr) = &self.trace {
+            let (k, u) = tr.at(tr.t);
+            if tr.ticks[k].x != tr.ticks[k + 1].x && u < 1.0 {
+                p.stride = (TAU * u).sin();
+            }
+        } else if t < path.across {
             let u = t / path.across;
             if path.from.1 > path.mid.1 + 0.01 {
                 p.climb = (PI * u).sin();
@@ -565,6 +617,22 @@ impl Game {
         if let Some((_, Some(i))) = moving {
             still.set(i, false);
         }
+        // With a trace, what never moves during it stays baked; the rest is drawn where the trace has it now.
+        let mut gliding: Vec<(Pos, bool)> = vec![];
+        let mut traced_player = None;
+        if let Some(tr) = &self.trace {
+            let w = self.play.level.w as usize;
+            still = tr.ticks.iter().fold(still, |a, t| a.zip_and(t.blocks));
+            let (k, u) = tr.at(tr.t);
+            let cell = |c: usize| ((c % w) as f32, (c / w) as f32);
+            for &(from, to, ice) in &tr.moves[k] {
+                if from != to || !still.get(to) {
+                    gliding.push((lerp(cell(from), cell(to), u), ice));
+                }
+            }
+            let (a, b) = (&tr.ticks[k], &tr.ticks[k + 1]);
+            traced_player = Some(lerp((a.x as f32, a.y as f32), (b.x as f32, b.y as f32), u));
+        }
         let key = (still, s.cracked, self.colors, self.reduce_motion);
         if self.baked != Some(key) {
             self.bake(&still, &s.cracked);
@@ -578,7 +646,7 @@ impl Game {
         let player_at = match &self.intro {
             Some(intro) if intro.t < intro.player.0 => None,
             Some(intro) => Some(intro.player.1.at(intro.t - intro.player.0)),
-            None => Some(self.tween.player.at(t)),
+            None => Some(traced_player.unwrap_or_else(|| self.tween.player.at(t))),
         };
         let drops: Vec<(Pos, f32)> = match &self.intro {
             Some(intro) => intro
@@ -598,6 +666,7 @@ impl Game {
             rects.push(around(bx, by, 1.0, 1.0));
         }
         rects.extend(drops.iter().map(|((x, y), _)| around(*x, *y, 1.0, 1.0)));
+        rects.extend(gliding.iter().map(|((x, y), _)| around(*x, *y, 1.0, 1.0)));
         let shimmer = (!self.reduce_motion).then_some(self.time);
         if shimmer.is_some() {
             rects.push(around(ex as f32, ey as f32, 1.0, 1.0));
@@ -609,16 +678,22 @@ impl Game {
             if shimmer.is_some() {
                 art::door_light(c, ex, ey, shimmer, accent);
             }
+            let w = self.play.level.w as usize;
             for ((x, y), squash) in &drops {
-                art::crate_(c, *x, *y, *squash, accent);
+                art::crate_(c, *x, *y, *squash, accent, s.ice.get(y.round().max(0.0) as usize * w + *x as usize));
+            }
+            for ((x, y), ice) in &gliding {
+                art::crate_(c, *x, *y, 0.0, accent, *ice);
             }
             if let Some((px, py)) = player_at.filter(|_| !gone) {
                 match moving {
-                    Some((path, _)) => {
+                    _ if traced_player.is_some() => {} // the trace draws a carried block with the rest
+                    Some((path, cell)) => {
                         let (bx, by) = path.at(t);
-                        art::crate_(c, bx, by, path.squash(t), accent);
+                        let ice = cell.map_or(s.carrying_ice, |i| s.ice.get(i));
+                        art::crate_(c, bx, by, path.squash(t), accent, ice);
                     }
-                    None if s.carrying => art::crate_(c, px, py - 1.0, 0.0, accent),
+                    None if s.carrying => art::crate_(c, px, py - 1.0, 0.0, accent, s.carrying_ice),
                     None => {}
                 }
                 art::climber(c, px, py, &pose, fg);
@@ -692,8 +767,9 @@ impl Game {
         if self.reduce_motion {
             art::door_light(c, ex, ey, None, accent);
         }
+        let ice = self.play.state().ice;
         for i in (0..w * h).filter(|&i| still.get(i)) {
-            art::crate_(c, (i % w) as f32, (i / w) as f32, 0.0, accent);
+            art::crate_(c, (i % w) as f32, (i / w) as f32, 0.0, accent, ice.get(i));
         }
         c.bake(GLOW.0, GLOW.1);
     }
@@ -835,6 +911,23 @@ mod tests {
         g.undo();
         frames(&mut g, 5);
         assert_eq!(g.canvas.bakes, 3, "undo brings the block back: once more");
+    }
+
+    #[test]
+    fn set_down_ice_glides_cell_by_cell_to_where_the_rules_put_it() {
+        let level = Level::parse("#I.....E#\n#>......#\n#########").unwrap();
+        let mut g = Game::from_level(level, 0, 1, 0);
+        frames(&mut g, 5);
+        g.key(Key::D);
+        let tr = g.trace.as_ref().expect("a slide is drawn from its trace");
+        // Before, set down, a round that drops it and slides it a cell, then four more cells to the wall.
+        assert_eq!(tr.ticks.len(), 7);
+        frames(&mut g, 6);
+        assert!(lit(&g, 3, 1) > 0.5 || lit(&g, 4, 1) > 0.5, "mid-slide the block is drawn on its way");
+        frames(&mut g, 60);
+        assert!(g.trace.is_none(), "the trace ends");
+        assert!(lit(&g, 7, 1) > 0.5, "and the block rests against the wall");
+        assert!(g.canvas.bakes <= 3, "{} bakes for one slide", g.canvas.bakes);
     }
 
     #[test]

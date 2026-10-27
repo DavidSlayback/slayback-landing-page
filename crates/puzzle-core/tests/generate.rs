@@ -140,3 +140,28 @@ fn worlds_give_different_levels_for_the_same_seed() {
     let classic = generate(3, World::Classic, &TIERS[0]).unwrap().level;
     assert_ne!(generate(3, World::Crumble, &TIERS[0]).unwrap().level, classic);
 }
+
+/// An Ice level keeps its tier's promises, has ice, and needs it: with every ice block made plain the shortest
+/// solution changes or disappears (M3).
+fn check_ice(seed: u64, tier: &Tier) {
+    let g = generate(seed, World::Ice, tier).unwrap_or_else(|| panic!("ice tier {} seed {seed}: no level", tier.n));
+    let (l, len) = (&g.level, g.solution.len());
+    let at = format!("ice tier {} seed {seed}, {len} moves, in\n{l}", tier.n);
+    assert!((tier.moves.0..=tier.moves.1).contains(&len), "outside the band: {at}");
+    assert_eq!(solve(l).solution.map(|s| s.len()), Some(len), "not a shortest solution: {at}");
+    assert!(Play::new(l.clone()).apply(&keys(&g.solution)).solved, "doesn't reach the exit: {at}");
+    let text = l.to_string();
+    assert!(text.contains(['I', 'i']), "no ice: {at}");
+    let plain = Level::parse(&text.replace('I', "B").replace('i', "b")).unwrap();
+    assert_ne!(solve(&plain).solution.map(|s| s.len()), Some(len), "ice changes nothing: {at}");
+}
+
+#[test]
+fn ice_levels_keep_their_promises_and_need_their_ice() {
+    for tier in &TIERS[..2] {
+        for seed in 1..=5 {
+            check_ice(seed, tier);
+        }
+    }
+    check_ice(1, &TIERS[2]);
+}

@@ -3,8 +3,39 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::{Key, Level, State, step};
+
+/// The Fx hash (as in rustc): a rotate, xor and multiply per word. States are hashed millions of times per search and
+/// nothing adversarial reaches this map, so SipHash's protection only cost time (M3: the search ran 1.35× slower once
+/// states grew ice fields). The hasher can't change a result: the map is only looked up, never walked.
+#[derive(Default)]
+struct Fx(u64);
+
+impl Hasher for Fx {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.0 = (self.0.rotate_left(5) ^ n).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+    fn write_u8(&mut self, n: u8) {
+        self.write_u64(n as u64);
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.write_u64(n as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type States<V> = HashMap<State, V, BuildHasherDefault<Fx>>;
 
 /// What a search found, and how hard it worked.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,7 +76,8 @@ pub fn solve_within(level: &Level, cap: usize) -> Search {
     }
     let start = level.start;
     let mut nodes = vec![Node { state: start, parent: usize::MAX, key: Key::L, g: 0 }];
-    let mut best: HashMap<State, usize> = HashMap::from([(start, 0)]);
+    let mut best: States<usize> = States::default();
+    best.insert(start, 0);
     // Ties on f go to the deeper node, then the older one, so a search is the same on every platform.
     let mut open = BinaryHeap::from([Reverse((estimate(level, &start), Reverse(0u32), 0usize))]);
     let mut expanded = 0;

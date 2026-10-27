@@ -12,7 +12,11 @@ use puzzle_core::{CAP, TIERS, World, generate};
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let world = if args.next().as_deref() == Some("crumble") { World::Crumble } else { World::Classic };
+    let world = match args.next().as_deref() {
+        Some("crumble") => World::Crumble,
+        Some("ice") => World::Ice,
+        _ => World::Classic,
+    };
     let per_tier: usize = args.next().and_then(|a| a.parse().ok()).unwrap_or(10);
     let tiers: usize = args.next().and_then(|a| a.parse().ok()).unwrap_or(4);
     let mut lines = vec![];
@@ -34,7 +38,7 @@ fn main() {
         }
     }
     println!("{{");
-    let name = if world == World::Classic { "out-of-the-box v1" } else { "crumble fixture, until suite v2" };
+    let name = if world == World::Classic { "out-of-the-box v1" } else { "fixture, until suite v2" };
     println!("  \"suite\": \"{name}\",");
     let bands: Vec<String> = TIERS.iter().map(|t| format!("[{}, {}]", t.moves.0, t.moves.1)).collect();
     println!("  \"tiers\": [{}],", bands.join(", "));

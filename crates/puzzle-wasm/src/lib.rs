@@ -10,6 +10,7 @@
 pub mod art;
 pub mod draw;
 pub mod game;
+pub mod trace;
 
 use game::Game;
 use puzzle_core::Key;
@@ -19,7 +20,8 @@ fn game<'a>(p: *mut Game) -> &'a mut Game {
     unsafe { &mut *p }
 }
 
-/// A game on the level for `seed` in `world` (0 Classic, 1 Crumble) and `tier` (1 to 4), or null if there is none.
+/// A game on the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice) and `tier` (1 to 4), or null if there is
+/// none.
 #[unsafe(no_mangle)]
 pub extern "C" fn game_new(world: u32, tier: u32, seed: u64) -> *mut Game {
     match Game::new(world as u8, tier as u8, seed) {

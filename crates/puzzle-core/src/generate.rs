@@ -14,6 +14,8 @@ pub enum World {
     Classic,
     /// Cracked floor tiles (`~`, M2).
     Crumble,
+    /// Ice blocks (`I`, M3).
+    Ice,
 }
 
 /// A difficulty tier: the band its shortest solutions fall in, and the grid it is built on.
@@ -82,12 +84,14 @@ struct Pit {
     facing: Facing,
     /// Wall cells drawn as cracked floor instead.
     cracked: Vec<bool>,
+    /// How many of each column's blocks are ice: the top ones.
+    ice: Vec<u8>,
     world: World,
 }
 
 impl Pit {
     /// A pit with a rolling floor, a few blocks, and the exit and the player in different columns; in the Crumble
-    /// world, some floor tiles cracked too.
+    /// world, some floor tiles cracked too, and in the Ice world, some ice blocks.
     fn new(rng: &mut Rng, w: usize, h: usize, world: World) -> Pit {
         let mut walls = vec![false; w * h];
         let mut floor = 1 + rng.below(h / 3);
@@ -115,7 +119,15 @@ impl Pit {
                 }
             }
         }
-        Pit { w, h, walls, blocks, exit, player, facing, cracked, world }
+        let mut ice = vec![0; w];
+        if world == World::Ice {
+            for _ in 0..w / 4 {
+                let x = 1 + rng.below(w - 2);
+                blocks[x] += u8::from(blocks[x] == ice[x]);
+                ice[x] += 1;
+            }
+        }
+        Pit { w, h, walls, blocks, exit, player, facing, cracked, ice, world }
     }
 
     /// One random change. The border walls stay. Classic levels draw from ten kinds of change; other worlds add their
@@ -129,16 +141,28 @@ impl Pit {
                 self.walls[i] = !self.walls[i];
             }
             5 | 6 => self.blocks[col] += 1,
-            7 => self.blocks[col] = self.blocks[col].saturating_sub(1),
+            7 => {
+                self.blocks[col] = self.blocks[col].saturating_sub(1);
+                self.ice[col] = self.ice[col].min(self.blocks[col]);
+            }
             8 => self.exit = col,
             9 => {
                 self.player = col;
                 self.facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
             }
-            _ => {
+            _ if self.world == World::Crumble => {
                 let i = rng.below(h) * w + col;
                 self.cracked[i] = !self.cracked[i];
             }
+            10 => {
+                self.blocks[col] += 1;
+                self.ice[col] += 1;
+            }
+            _ if self.ice[col] > 0 => {
+                self.blocks[col] -= 1;
+                self.ice[col] -= 1;
+            }
+            _ => {}
         }
     }
 
@@ -161,8 +185,8 @@ impl Pit {
             Some(())
         };
         for x in 1..w - 1 {
-            for _ in 0..self.blocks[x] {
-                drop(&mut g, x, b'B')?;
+            for k in 0..self.blocks[x] {
+                drop(&mut g, x, if k + self.ice[x] >= self.blocks[x] { b'I' } else { b'B' })?;
             }
         }
         drop(&mut g, self.exit, b'E')?;
@@ -188,13 +212,14 @@ fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
         }
         walls
     });
-    fixed.start.blocks = Default::default();
+    (fixed.start.blocks, fixed.start.ice) = Default::default();
     let needs_block = tier.n < 2 || (!level.start.carrying && solve_within(&fixed, CAP).solution.is_none());
     Some((needs_block && matters(level, world, found.len()), found))
 }
 
-/// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall, the level
-/// must be unsolvable or solved in a different number of moves. So a Crumble level is one where a breaking tile either
+/// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall (Crumble) or
+/// every ice block made a plain one (Ice), the level must be unsolvable or solved in a different number of moves. So a
+/// Crumble level is one where a breaking tile either
 /// opens the way or costs you the way you'd otherwise take.
 fn matters(level: &Level, world: World, moves: usize) -> bool {
     match world {
@@ -207,6 +232,12 @@ fn matters(level: &Level, world: World, moves: usize) -> bool {
             level.start.cracked != fixed.start.cracked
                 && !search.gave_up
                 && search.solution.map(|s| s.len()) != Some(moves)
+        }
+        World::Ice => {
+            let mut plain = level.clone();
+            (plain.start.ice, plain.start.carrying_ice) = Default::default();
+            let search = solve_within(&plain, CAP);
+            level.start != plain.start && !search.gave_up && search.solution.map(|s| s.len()) != Some(moves)
         }
     }
 }

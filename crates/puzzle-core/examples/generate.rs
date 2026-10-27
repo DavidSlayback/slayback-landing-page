@@ -1,7 +1,7 @@
 //! Times generation per tier: how often a seed fills, how long it takes, how many candidates it tries, and how long
 //! the solutions come out.
 //!
-//! `bash scripts/native.sh run -p puzzle-core --release --example generate [seeds per tier, default 20] [tiers, e.g. 34] [world: classic or crumble]`
+//! `bash scripts/native.sh run -p puzzle-core --release --example generate [seeds per tier, default 20] [tiers, e.g. 34] [world: classic, crumble or ice]`
 
 use std::time::Instant;
 
@@ -11,7 +11,11 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let seeds: u64 = args.next().and_then(|a| a.parse().ok()).unwrap_or(20);
     let only = args.next().unwrap_or_else(|| "1234".into());
-    let world = if args.next().as_deref() == Some("crumble") { World::Crumble } else { World::Classic };
+    let world = match args.next().as_deref() {
+        Some("crumble") => World::Crumble,
+        Some("ice") => World::Ice,
+        _ => World::Classic,
+    };
     for tier in TIERS.iter().filter(|t| only.contains(char::from(b'0' + t.n))) {
         let (mut ms, mut tries, mut lens, mut misses) = (vec![], vec![], vec![], 0);
         for seed in 1..=seeds {
