@@ -165,6 +165,24 @@ fn down_while_carrying_puts_the_block_in_front_and_it_falls() {
 }
 
 #[test]
+fn a_block_and_then_you_fall_the_whole_height_of_the_biggest_grid() {
+    // 20 × 12: you stand on a pillar in the left column; the column beside it is open to the bottom edge, so the
+    // fall crosses every 64-cell word of the grid.
+    let at = |cells: &[(usize, usize, char)]| {
+        let mut g: Vec<Vec<char>> =
+            (0..12).map(|y| (0..20).map(|x| if x == 0 && y >= 2 { '#' } else { '.' }).collect()).collect();
+        g[11][19] = 'E';
+        for &(x, y, c) in cells {
+            g[y][x] = c;
+        }
+        g.iter().map(|r| r.iter().collect::<String>()).collect::<Vec<_>>().join("\n")
+    };
+    let start = at(&[(0, 0, 'B'), (0, 1, '>')]);
+    assert_eq!(after(&start, "D"), grid(&at(&[(0, 1, '>'), (1, 11, 'B')])));
+    assert_eq!(after(&start, "DR"), grid(&at(&[(1, 10, '>'), (1, 11, 'B')])));
+}
+
+#[test]
 fn lifting_with_no_block_in_front_is_refused() {
     assert_eq!(refused("#>..E#\n######", "D"), Refusal::NoBlock);
     assert_eq!(refused("#>#.E#\n######", "D"), Refusal::NoBlock); // walls stay put

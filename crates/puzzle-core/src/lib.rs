@@ -27,6 +27,31 @@ impl Bits {
         let bit = 1u64 << (i % 64);
         if on { self.0[i / 64] |= bit } else { self.0[i / 64] &= !bit }
     }
+    fn is_empty(&self) -> bool {
+        self.0 == [0; 4]
+    }
+    fn zip(self, o: Bits, f: impl Fn(u64, u64) -> u64) -> Bits {
+        Bits(std::array::from_fn(|k| f(self.0[k], o.0[k])))
+    }
+    /// The cells from `lo` up to, not including, `hi`.
+    fn range(lo: usize, hi: usize) -> Bits {
+        let below = |n: usize| {
+            Bits(std::array::from_fn(|k| match n.saturating_sub(64 * k) {
+                0 => 0,
+                m if m >= 64 => !0,
+                m => (1 << m) - 1,
+            }))
+        };
+        below(hi).zip(below(lo), |a, b| a & !b)
+    }
+    /// Every cell moved `n` (1 to 63) cells later in the grid's order: with `n = w`, one row down.
+    fn down(self, n: usize) -> Bits {
+        Bits(std::array::from_fn(|k| self.0[k] << n | if k > 0 { self.0[k - 1] >> (64 - n) } else { 0 }))
+    }
+    /// Every cell moved `n` (1 to 63) cells earlier: with `n = w`, one row up.
+    fn up(self, n: usize) -> Bits {
+        Bits(std::array::from_fn(|k| self.0[k] >> n | if k < 3 { self.0[k + 1] << (64 - n) } else { 0 }))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -342,18 +367,16 @@ pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
             n.carrying = true;
         }
         Key::D => {
-            let (fx, mut by) = (x + dx(s.facing), y - 1);
-            if solid(fx, by) {
+            // Set down in front of your head; settling drops it the rest of the way.
+            let fx = x + dx(s.facing);
+            if solid(fx, y - 1) {
                 return Err(Refusal::NoRoom);
             }
-            while !solid(fx, by + 1) {
-                by += 1;
-            }
-            n.blocks.set((by * level.w as i32 + fx) as usize, true);
+            n.blocks.set(((y - 1) * level.w as i32 + fx) as usize, true);
             n.carrying = false;
         }
     }
-    fall(level, &mut n);
+    settle(level, &mut n);
     Ok(n)
 }
 
@@ -361,10 +384,30 @@ fn dx(facing: Facing) -> i32 {
     if facing == Facing::Left { -1 } else { 1 }
 }
 
-/// Drops the player (and any carried block) until something is under them.
-fn fall(level: &Level, s: &mut State) {
-    while !level.solid(&s.blocks, s.x as i32, s.y as i32 + 1) {
-        s.y += 1;
+/// Lets everything come to rest after a move (`docs/planning/puzzle-mechanics.md`, "settle"): each round, every
+/// unsupported block falls a row, all at once, and so do you with what you carry. You and your carried block are
+/// solid to blocks landing on you. Blocks are identical and each column just packs down, so the resting state doesn't
+/// depend on the order.
+fn settle(level: &Level, s: &mut State) {
+    let (w, h) = (level.w as usize, level.h as usize);
+    let floor = Bits::range(w * (h - 1), w * h);
+    loop {
+        let mut solid = level.walls.zip(s.blocks, |a, b| a | b);
+        let me = s.y as usize * w + s.x as usize;
+        let falls = me + w < w * h && !solid.get(me + w);
+        solid.set(me, true);
+        if s.carrying {
+            solid.set(me - w, true);
+        }
+        let held = solid.up(w).zip(floor, |a, b| a | b);
+        let dropping = s.blocks.zip(held, |a, b| a & !b);
+        if dropping.is_empty() && !falls {
+            return;
+        }
+        s.blocks = s.blocks.zip(dropping, |a, b| a & !b).zip(dropping.down(w), |a, b| a | b);
+        if falls {
+            s.y += 1;
+        }
     }
 }
 
