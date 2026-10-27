@@ -1,5 +1,6 @@
 // Out of the Box at /puzzle: loads puzzle.wasm (crates/puzzle-wasm), which holds the rules, the animation and the
-// drawing; this file only maps keys, blits the frame Rust drew, and keeps the HUD. ?tier=1..4&seed=<n> picks the level;
+// drawing; this file only maps keys, blits the frame Rust drew, and keeps the HUD. ?world=crumble&tier=1..4&seed=<n>
+// picks the level (the world defaults to classic);
 // ?palette=netrunner|synthwave|gold overrides the site's colour scheme; ?touch=1 shows the touch pad on any device.
 // window.__puzzle exposes the state for tests.
 'use strict';
@@ -16,6 +17,11 @@ const REFUSALS = ['', 'Something is in the way.', 'The block you carry would hit
 const qs = new URLSearchParams(location.search);
 const tier = Math.min(4, Math.max(1, parseInt(qs.get('tier'), 10) || 1));
 const seed = Math.max(1, parseInt(qs.get('seed'), 10) || 1);
+// Worlds (P38), in puzzle-core's order: the index is what game_new takes.
+const WORLDS = ['classic', 'crumble'];
+const world = Math.max(0, WORLDS.indexOf(qs.get('world')));
+const worldName = world ? WORLDS[world][0].toUpperCase() + WORLDS[world].slice(1) + ' · ' : '';
+const query = (t, s) => `?${world ? `world=${WORLDS[world]}&` : ''}tier=${t}&seed=${s}`;
 const stored = (() => { try { return localStorage.getItem('slayback-scheme'); } catch { return null; } })();
 const scheme = SCHEMES[qs.get('palette')] || SCHEMES[stored] || SCHEMES.netrunner;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -28,8 +34,13 @@ const overlay = $('overlay'), message = $('message');
 
 const root = document.documentElement.style;
 [['fg', 0], ['muted', 1], ['accent', 2]].forEach(([k, i]) => root.setProperty('--' + k, scheme[i]));
-document.querySelectorAll('nav [data-tier]').forEach(a => a.setAttribute('aria-current', String(+a.dataset.tier === tier)));
-$('where').textContent = `Tier ${tier} · level ${seed}`;
+document.querySelectorAll('nav [data-tier]').forEach(a => {
+  a.setAttribute('aria-current', String(+a.dataset.tier === tier));
+  a.href = query(a.dataset.tier, 1);
+});
+document.querySelectorAll('[data-world]').forEach(el => { el.hidden = el.dataset.world !== WORLDS[world]; });
+const where = `${worldName}Tier ${tier} · level ${seed}`;
+$('where').textContent = where;
 
 function say(html, state) {
   main.dataset.state = state;
@@ -49,8 +60,8 @@ load().then(X => {
 }).catch(e => { say(`<span class="error">The puzzle needs WebAssembly: ${e.message}</span>`, 'error'); });
 
 function start(X) {
-  const g = X.game_new(tier, BigInt(seed));
-  if (!g) return say(`<span class="error">No level for tier ${tier}, seed ${seed}.</span>`, 'error');
+  const g = X.game_new(world, tier, BigInt(seed));
+  if (!g) return say(`<span class="error">No level for ${worldName}tier ${tier}, seed ${seed}.</span>`, 'error');
   scheme.forEach((hex, i) => {
     const n = parseInt(hex.slice(1), 16);
     X.game_color(g, i, (n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255);
@@ -69,7 +80,7 @@ function start(X) {
     if (solved && !solvedShown) {
       solvedShown = true;
       const moves = X.game_moves(g), best = X.game_optimal(g);
-      const next = `?tier=${tier}&seed=${seed + 1}`;
+      const next = query(tier, seed + 1);
       setTimeout(() => say(`<strong>Out!</strong><span>${moves} moves${moves === best ? ', the shortest way' : ` (shortest: ${best})`}</span>
         <span><a href="${next}" style="color:var(--accent)">Next level</a><span class="keys-only"> · <kbd>N</kbd> next, <kbd>R</kbd> again</span></span>`, 'solved'),
         reduceMotion ? 0 : 1500);   // after the climber goes through the door and the crates break
@@ -83,10 +94,10 @@ function start(X) {
   function act(a) {
     if (typeof a === 'number') {
       const r = X.game_key(g, a);
-      $('where').textContent = (r && REFUSALS[r]) || `Tier ${tier} · level ${seed}`;
+      $('where').textContent = (r && REFUSALS[r]) || where;
     } else if (a === 'undo') X.game_undo(g);
     else if (a === 'restart') X.game_restart(g);
-    else if (a === 'next' && X.game_solved(g)) location.search = `?tier=${tier}&seed=${seed + 1}`;
+    else if (a === 'next' && X.game_solved(g)) location.search = query(tier, seed + 1);
     hud();
   }
 

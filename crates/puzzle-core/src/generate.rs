@@ -8,6 +8,14 @@
 
 use crate::{Facing, Key, Level, solve_within};
 
+/// Which mechanic a world's levels are built around (P38). Classic is suite v1's Block Dude rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum World {
+    Classic,
+    /// Cracked floor tiles (`~`, M2).
+    Crumble,
+}
+
 /// A difficulty tier: the band its shortest solutions fall in, and the grid it is built on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tier {
@@ -72,11 +80,15 @@ struct Pit {
     exit: usize,
     player: usize,
     facing: Facing,
+    /// Wall cells drawn as cracked floor instead.
+    cracked: Vec<bool>,
+    world: World,
 }
 
 impl Pit {
-    /// A pit with a rolling floor, a few blocks, and the exit and the player in different columns.
-    fn new(rng: &mut Rng, w: usize, h: usize) -> Pit {
+    /// A pit with a rolling floor, a few blocks, and the exit and the player in different columns; in the Crumble
+    /// world, some floor tiles cracked too.
+    fn new(rng: &mut Rng, w: usize, h: usize, world: World) -> Pit {
         let mut walls = vec![false; w * h];
         let mut floor = 1 + rng.below(h / 3);
         for x in 0..w {
@@ -94,14 +106,24 @@ impl Pit {
         let exit = 1 + rng.below(w - 2);
         let player = (exit + 1 + rng.below(w - 3)) % (w - 2) + 1;
         let facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
-        Pit { w, h, walls, blocks, exit, player, facing }
+        let mut cracked = vec![false; w * h];
+        if world == World::Crumble {
+            for _ in 0..w / 3 {
+                let x = 1 + rng.below(w - 2);
+                if let Some(y) = (0..h).find(|&y| walls[y * w + x]) {
+                    cracked[y * w + x] = true;
+                }
+            }
+        }
+        Pit { w, h, walls, blocks, exit, player, facing, cracked, world }
     }
 
-    /// One random change. The border walls stay.
+    /// One random change. The border walls stay. Classic levels draw from ten kinds of change; other worlds add their
+    /// own after those, so a classic seed's draws never change.
     fn mutate(&mut self, rng: &mut Rng) {
         let (w, h) = (self.w, self.h);
         let col = 1 + rng.below(w - 2);
-        match rng.below(10) {
+        match rng.below(if self.world == World::Classic { 10 } else { 12 }) {
             0..=4 => {
                 let i = rng.below(h - 1) * w + col;
                 self.walls[i] = !self.walls[i];
@@ -109,9 +131,13 @@ impl Pit {
             5 | 6 => self.blocks[col] += 1,
             7 => self.blocks[col] = self.blocks[col].saturating_sub(1),
             8 => self.exit = col,
-            _ => {
+            9 => {
                 self.player = col;
                 self.facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
+            }
+            _ => {
+                let i = rng.below(h) * w + col;
+                self.cracked[i] = !self.cracked[i];
             }
         }
     }
@@ -120,7 +146,12 @@ impl Pit {
     /// under it. `None` when a column is too full to take what was dropped into it.
     fn level(&self) -> Option<Level> {
         let (w, h) = (self.w, self.h);
-        let mut g: Vec<u8> = self.walls.iter().map(|&wall| if wall { b'#' } else { b'.' }).collect();
+        let cell = |(&wall, &cracked)| match (wall, cracked) {
+            (true, true) => b'~',
+            (true, false) => b'#',
+            _ => b'.',
+        };
+        let mut g: Vec<u8> = self.walls.iter().zip(&self.cracked).map(cell).collect();
         let drop = |g: &mut Vec<u8>, x: usize, c: u8| -> Option<()> {
             let mut y = (0..h).find(|&y| g[y * w + x] == b'.')?;
             while y + 1 < h && g[(y + 1) * w + x] == b'.' {
@@ -141,9 +172,10 @@ impl Pit {
     }
 }
 
-/// How good a candidate is: from tier 2 up, needing a block comes first, then the length of the shortest solution.
-/// `None` for a candidate that is unsolvable, too costly to verify, or longer than the tier allows.
-fn score(level: &Level, tier: &Tier) -> Option<(bool, Vec<Key>)> {
+/// How good a candidate is: being what its world and tier want comes first (from tier 2 up, needing a block; outside
+/// Classic, its mechanic changing the shortest solution), then the length of the shortest solution. `None` for a
+/// candidate that is unsolvable, too costly to verify, or longer than the tier allows.
+fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
     let found = solve_within(level, CAP).solution?;
     if found.len() > tier.moves.1 {
         return None;
@@ -158,17 +190,35 @@ fn score(level: &Level, tier: &Tier) -> Option<(bool, Vec<Key>)> {
     });
     fixed.start.blocks = Default::default();
     let needs_block = tier.n < 2 || (!level.start.carrying && solve_within(&fixed, CAP).solution.is_none());
-    Some((needs_block, found))
+    Some((needs_block && matters(level, world, found.len()), found))
 }
 
-/// The level for `seed` in `tier`, or `None` if the search ran out of tries.
-pub fn generate(seed: u64, tier: &Tier) -> Option<Generated> {
-    let mut rng = Rng::new(seed ^ (tier.n as u64) << 56);
+/// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall, the level
+/// must be unsolvable or solved in a different number of moves. So a Crumble level is one where a breaking tile either
+/// opens the way or costs you the way you'd otherwise take.
+fn matters(level: &Level, world: World, moves: usize) -> bool {
+    match world {
+        World::Classic => true,
+        World::Crumble => {
+            let mut fixed = level.clone();
+            fixed.walls = fixed.walls.zip(fixed.start.cracked, |a, b| a | b);
+            fixed.start.cracked = Default::default();
+            let search = solve_within(&fixed, CAP);
+            level.start.cracked != fixed.start.cracked
+                && !search.gave_up
+                && search.solution.map(|s| s.len()) != Some(moves)
+        }
+    }
+}
+
+/// The level for `seed` in `world` and `tier`, or `None` if the search ran out of tries.
+pub fn generate(seed: u64, world: World, tier: &Tier) -> Option<Generated> {
+    let mut rng = Rng::new(seed ^ (tier.n as u64) << 56 ^ (world as u64) << 48);
     let (w, h) = (tier.w as usize, tier.h as usize);
     let mut tries = 0;
     for _ in 0..CLIMBS {
-        let mut pit = Pit::new(&mut rng, w, h);
-        let mut best = pit.level().and_then(|l| score(&l, tier).map(|s| (l, s)));
+        let mut pit = Pit::new(&mut rng, w, h, world);
+        let mut best = pit.level().and_then(|l| score(&l, world, tier).map(|s| (l, s)));
         tries += 1;
         for _ in 0..STEPS {
             if let Some((l, (needs_block, solution))) = &best
@@ -181,7 +231,7 @@ pub fn generate(seed: u64, tier: &Tier) -> Option<Generated> {
             next.mutate(&mut rng);
             let Some(l) = next.level() else { continue };
             tries += 1;
-            let Some((needs_block, solution)) = score(&l, tier) else { continue };
+            let Some((needs_block, solution)) = score(&l, world, tier) else { continue };
             let better = match &best {
                 None => true,
                 Some((_, (had_block, had))) => (needs_block, solution.len()) >= (*had_block, had.len()),

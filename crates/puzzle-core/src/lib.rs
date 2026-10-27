@@ -8,7 +8,7 @@ use std::fmt;
 
 mod generate;
 mod solve;
-pub use generate::{CAP, Generated, TIERS, Tier, generate};
+pub use generate::{CAP, Generated, TIERS, Tier, World, generate};
 pub use solve::{Search, solve, solve_within};
 
 /// Widest and tallest grid a level may have; 20 × 12 = 240 cells fit a [`Bits`].
@@ -30,7 +30,7 @@ impl Bits {
     fn is_empty(&self) -> bool {
         self.0 == [0; 4]
     }
-    fn zip(self, o: Bits, f: impl Fn(u64, u64) -> u64) -> Bits {
+    pub(crate) fn zip(self, o: Bits, f: impl Fn(u64, u64) -> u64) -> Bits {
         Bits(std::array::from_fn(|k| f(self.0[k], o.0[k])))
     }
     /// The cells from `lo` up to, not including, `hi`.
@@ -88,6 +88,8 @@ pub struct State {
     pub facing: Facing,
     pub carrying: bool,
     pub blocks: Bits,
+    /// Cracked floor tiles still standing (M2): solid until whatever stands directly on one leaves it.
+    pub cracked: Bits,
 }
 
 /// The fixed part of a level, plus where play starts.
@@ -125,8 +127,8 @@ pub enum ParseError {
 }
 
 impl Level {
-    /// Reads the text form: `#` wall, `B` block, `E` exit, `.` empty, `>`/`<` the player facing that way, `b` a block
-    /// resting on the exit. A `B` directly above the player is the block they carry.
+    /// Reads the text form: `#` wall, `~` cracked floor, `B` block, `E` exit, `.` empty, `>`/`<` the player facing that
+    /// way, `b` a block resting on the exit. A `B` directly above the player is the block they carry.
     pub fn parse(text: &str) -> Result<Level, ParseError> {
         let rows: Vec<Vec<char>> = text.lines().map(|l| l.chars().collect()).collect();
         let (h, w) = (rows.len(), rows.first().map_or(0, Vec::len));
@@ -136,7 +138,7 @@ impl Level {
         if w > MAX_W || h > MAX_H {
             return Err(ParseError::TooBig { w, h });
         }
-        let (mut walls, mut blocks) = (Bits::default(), Bits::default());
+        let (mut walls, mut blocks, mut cracked) = (Bits::default(), Bits::default(), Bits::default());
         let (mut players, mut exits) = (vec![], vec![]);
         for (y, row) in rows.iter().enumerate() {
             if row.len() != w {
@@ -147,6 +149,7 @@ impl Level {
                 match ch {
                     '.' => {}
                     '#' => walls.set(i, true),
+                    '~' => cracked.set(i, true),
                     'B' => blocks.set(i, true),
                     'E' => exits.push((x, y)),
                     'b' => {
@@ -165,15 +168,15 @@ impl Level {
         if carrying {
             blocks.set((py - 1) * w + px, false);
         }
-        let start = State { x: px as u8, y: py as u8, facing, carrying, blocks };
+        let start = State { x: px as u8, y: py as u8, facing, carrying, blocks, cracked };
         let level = Level { w: w as u8, h: h as u8, walls, exit: (ex as u8, ey as u8), start };
         let (x, y) = (px as i32, py as i32);
-        if !level.solid(&blocks, x, y + 1) {
+        if !level.solid(&start, x, y + 1) {
             return Err(ParseError::Floating { x: px, y: py });
         }
         for i in (0..w * h).filter(|&i| blocks.get(i)) {
             let (x, y) = ((i % w) as i32, (i / w) as i32);
-            if !level.solid(&blocks, x, y + 1) {
+            if !level.solid(&start, x, y + 1) {
                 return Err(ParseError::Floating { x: x as usize, y: y as usize });
             }
         }
@@ -198,6 +201,7 @@ impl Level {
                     _ if player && state.facing == Facing::Right => '>',
                     _ if player => '<',
                     _ if self.walls.get(i) => '#',
+                    _ if state.cracked.get(i) => '~',
                     _ if block && exit => 'b',
                     _ if block => 'B',
                     _ if exit => 'E',
@@ -218,13 +222,13 @@ impl Level {
         (s.x, s.y) == self.exit
     }
 
-    /// Whether the cell at (x, y) is a wall or a block in `blocks`. Outside the grid counts as wall.
-    pub fn solid(&self, blocks: &Bits, x: i32, y: i32) -> bool {
+    /// Whether the cell at (x, y) is a wall, or a block or a cracked tile in `s`. Outside the grid counts as wall.
+    pub fn solid(&self, s: &State, x: i32, y: i32) -> bool {
         if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 {
             return true;
         }
         let i = y as usize * self.w as usize + x as usize;
-        self.walls.get(i) || blocks.get(i)
+        self.walls.get(i) || s.blocks.get(i) || s.cracked.get(i)
     }
 }
 
@@ -320,7 +324,7 @@ impl Play {
 pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
     let mut n = *s;
     let (x, y) = (s.x as i32, s.y as i32);
-    let solid = |x, y| level.solid(&s.blocks, x, y);
+    let solid = |x, y| level.solid(s, x, y);
     match key {
         Key::L | Key::R => {
             let way = if key == Key::L { Facing::Left } else { Facing::Right };
@@ -377,7 +381,24 @@ pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
         }
     }
     settle(level, &mut n);
+    crumble(level, s, &mut n);
     Ok(n)
+}
+
+/// Breaks every cracked tile that something stood directly on before the move and nothing stands on after it (P28,
+/// P29). Whatever left was the only thing on the tile, so nothing is left hanging.
+fn crumble(level: &Level, before: &State, after: &mut State) {
+    if after.cracked.is_empty() {
+        return;
+    }
+    let w = level.w as usize;
+    let on = |s: &State| {
+        let mut on = s.blocks;
+        on.set(s.y as usize * w + s.x as usize, true);
+        on
+    };
+    let left = on(before).zip(on(after), |a, b| a & !b);
+    after.cracked = after.cracked.zip(left.down(w), |a, b| a & !b);
 }
 
 fn dx(facing: Facing) -> i32 {
@@ -392,7 +413,7 @@ fn settle(level: &Level, s: &mut State) {
     let (w, h) = (level.w as usize, level.h as usize);
     let floor = Bits::range(w * (h - 1), w * h);
     loop {
-        let mut solid = level.walls.zip(s.blocks, |a, b| a | b);
+        let mut solid = level.walls.zip(s.blocks, |a, b| a | b).zip(s.cracked, |a, b| a | b);
         let me = s.y as usize * w + s.x as usize;
         let falls = me + w < w * h && !solid.get(me + w);
         solid.set(me, true);

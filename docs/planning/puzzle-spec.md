@@ -45,6 +45,8 @@ The grid is at most 20 wide and 12 tall; y grows downward. Each cell holds empty
 
 These rules are written as tests before the code, one per row of the table, refusals included (TDD).
 
+- **Cracked floor (`~`, the Crumble world, M2 #119):** solid like a wall until whatever stands directly on it leaves (you walk, climb or fall off; a crate is lifted off), then gone for good (P28, P29). Turning on it, or standing on a crate that stands on it, doesn't break it. Breaking can't leave anything hanging: the only thing on the tile just left. The state carries the tiles still standing, so undo brings them back. Tests: `tests/crumble.rs`.
+
 ## Solver and generator
 
 - **Solver:** A* over states. The heuristic is `max(|dx|, rise)` to the exit, where `rise` is how far the exit is above you. It is admissible because each move changes x by at most 1 and climbs at most 1. It returns the shortest solution and the number of states it expanded. It is the oracle row in the bench and the source of each level's tier and budget.
@@ -78,6 +80,9 @@ These rules are written as tests before the code, one per row of the table, refu
   - **Tier 4 fills at 20×12; no shrink needed.**
   - **Solutions cluster at the low end of each band,** because the climb stops on entering it. Tier 4 never went past 116 moves, so 117–150 is empty in practice.
   - **They are block puzzles, not mazes:** tier-4 solutions use 24–26 lifts and put-downs and 11–14 climbs.
+- **Worlds (`World`, P38):** `generate(seed, world, tier)`. Classic keeps suite v1's draws exactly (other worlds add their kinds of change after Classic's ten, and Classic's seed mixing is unchanged), so suite v1 still regenerates byte for byte.
+  - **Crumble (M2):** a pit cracks the top tile of a third of its columns, and the climb can crack or mend any wall cell. A level is kept only if its world's mechanic changes the shortest solution: with every cracked tile made wall it must be unsolvable or solved in a different number of moves (a broken tile either opens the way or takes one away). Agent choice: the ticket asked only for "unsolvable", which would keep only levels where breaking opens a way and drop the ones where it costs you one.
+  - **Measured (10 seeds a tier, loaded machine):** every tier fills. Median and worst: tier 1 1 ms and 4 ms, tier 2 14 and 347 ms, tier 3 0.11 and 0.40 s, tier 4 0.84 and 35 s (one slow seed; Classic's worst was 11 s). Solutions sit at the low end of each band, as in Classic.
   - **Known issue for the human campaign (OB9):** wall toggling leaves floating wall cells and piles in blocks (up to 39 in a tier-4 level), so levels look cluttered rather than like a pit. The bench doesn't care. The campaign should either pick the cleanest levels or add a tidiness term to the score.
 
 ## Agents through MCP (`puzzle-mcp`)
@@ -115,6 +120,8 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
 - **Bench row:** a Rust forward pass of the trained policy, as `box_env::policy` does, so the bench plays it natively. Whether it generalises to tiers 3 and 4 is a finding either way.
 
 ## Browser (`puzzle-wasm`, `site/puzzle/`)
+
+- **Worlds:** `?world=crumble` picks the Crumble world (default Classic); the tier links, the HUD, the next-level link and a line of help follow it. Cracked tiles are slabs with a warm lit edge and a jagged crack; one breaking drops four pieces of rubble through the hole with dust and a small shake, and the still scene re-bakes once. The browser tests play a Crumble level from `tests/e2e/fixtures/crumble.json` (written by `--example suite -- crumble 2 2`) until suite v2.
 
 - **Build (P7):** C-ABI exports with no wasm-bindgen and no imports, like `hero-wasm`.
   - Rust owns the rules, the level, the animation and the drawing, into an RGBA buffer in wasm memory.

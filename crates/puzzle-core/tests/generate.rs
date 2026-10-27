@@ -9,7 +9,7 @@ fn keys(ks: &[Key]) -> String {
 
 /// Checks one generated level against everything its tier promises.
 fn check(seed: u64, tier: &Tier) -> Generated {
-    let g = generate(seed, tier).unwrap_or_else(|| panic!("tier {} seed {seed}: no level", tier.n));
+    let g = generate(seed, World::Classic, tier).unwrap_or_else(|| panic!("tier {} seed {seed}: no level", tier.n));
     let (l, len) = (&g.level, g.solution.len());
     let at = format!("tier {} seed {seed}, {len} moves, in\n{l}", tier.n);
     assert!((tier.moves.0..=tier.moves.1).contains(&len), "outside the band: {at}");
@@ -83,7 +83,7 @@ fn regenerates(tiers: &[u8]) {
         assert_eq!(levels.iter().filter(|l| l.0 == t).count(), 10, "tier {t} should have 10 levels");
     }
     for &(t, seed, fingerprint, moves) in levels.iter().filter(|l| tiers.contains(&l.0)) {
-        let g = generate(seed, &TIERS[t as usize - 1]).unwrap();
+        let g = generate(seed, World::Classic, &TIERS[t as usize - 1]).unwrap();
         assert_eq!((g.level.fingerprint(), g.solution.len()), (fingerprint, moves), "tier {t} seed {seed} changed");
     }
 }
@@ -104,7 +104,39 @@ fn the_published_suite_still_regenerates_tier_4() {
 
 #[test]
 fn the_same_seed_gives_the_same_level() {
-    let a = generate(7, &TIERS[1]).unwrap();
-    assert_eq!(generate(7, &TIERS[1]), Some(a.clone()));
-    assert_ne!(generate(8, &TIERS[1]).map(|g| g.level), Some(a.level), "different seeds should differ");
+    let a = generate(7, World::Classic, &TIERS[1]).unwrap();
+    assert_eq!(generate(7, World::Classic, &TIERS[1]), Some(a.clone()));
+    assert_ne!(generate(8, World::Classic, &TIERS[1]).map(|g| g.level), Some(a.level), "different seeds should differ");
+}
+
+/// A Crumble level keeps its tier's promises, has cracked tiles, and needs them: with every cracked tile made wall
+/// the shortest solution changes or disappears (M2).
+fn check_crumble(seed: u64, tier: &Tier) {
+    let g =
+        generate(seed, World::Crumble, tier).unwrap_or_else(|| panic!("crumble tier {} seed {seed}: no level", tier.n));
+    let (l, len) = (&g.level, g.solution.len());
+    let at = format!("crumble tier {} seed {seed}, {len} moves, in\n{l}", tier.n);
+    assert!((tier.moves.0..=tier.moves.1).contains(&len), "outside the band: {at}");
+    assert_eq!(solve(l).solution.map(|s| s.len()), Some(len), "not a shortest solution: {at}");
+    assert!(Play::new(l.clone()).apply(&keys(&g.solution)).solved, "doesn't reach the exit: {at}");
+    let text = l.to_string();
+    assert!(text.contains('~'), "no cracked tiles: {at}");
+    let walled = Level::parse(&text.replace('~', "#")).unwrap();
+    assert_ne!(solve(&walled).solution.map(|s| s.len()), Some(len), "cracked tiles change nothing: {at}");
+}
+
+#[test]
+fn crumble_levels_keep_their_promises_and_need_their_cracked_tiles() {
+    for tier in &TIERS[..2] {
+        for seed in 1..=5 {
+            check_crumble(seed, tier);
+        }
+    }
+    check_crumble(1, &TIERS[2]);
+}
+
+#[test]
+fn worlds_give_different_levels_for_the_same_seed() {
+    let classic = generate(3, World::Classic, &TIERS[0]).unwrap().level;
+    assert_ne!(generate(3, World::Crumble, &TIERS[0]).unwrap().level, classic);
 }

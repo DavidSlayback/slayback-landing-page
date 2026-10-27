@@ -22,7 +22,7 @@ fn ms(n: usize, mut f: impl FnMut()) -> f64 {
 }
 
 fn main() {
-    let mut g = Game::new(4, 1).expect("tier 4 seed 1");
+    let mut g = Game::new(0, 4, 1).expect("tier 4 seed 1");
     let (w, h) = (g.canvas.w, g.canvas.h);
     // The intro moves every crate at once, so it is the costliest stretch; it lasts about a second.
     let intro = ms(50, || g.frame(1.0 / 60.0));
