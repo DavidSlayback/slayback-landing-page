@@ -46,6 +46,13 @@ The grid is at most 20 wide and 12 tall; y grows downward. Each cell holds empty
 These rules are written as tests before the code, one per row of the table, refusals included (TDD).
 
 - **Cracked floor (`~`, the Crumble world, M2 #119):** solid like a wall until whatever stands directly on it leaves (you walk, climb or fall off; a crate is lifted off), then gone for good (P28, P29). Turning on it, or standing on a crate that stands on it, doesn't break it. Breaking can't leave anything hanging: the only thing on the tile just left. The state carries the tiles still standing, so undo brings them back. Tests: `tests/crumble.rs`.
+- **Ice blocks (`I`, `i` on the exit; the Ice world, M3 #120):** a block kind; the state marks which blocks are ice and whether the one you carry is (P34-P37). A move plays out in rounds of falling, landing and sliding (`settle`):
+  - **Set down,** an ice block slides away from you until the next cell is filled, and after a ledge it falls and keeps sliding the same way.
+  - **Landing:** something that falls at least a cell and stops on resting ice knocks it sliding the way the lander was going (you: your facing; a block you set down: your facing; sliding ice: its way), and the lander drops into the gap. Something with no way of its own (dropping because ice slid out from under it) just lands. Walking or climbing onto ice is not a landing.
+  - **Ice hits ice:** the slider stops and the ice it hit slides on, carrying the blocks stacked on it; a rider that would hit something stays behind and falls.
+  - **You never ride ice:** everything you set moving moves away from your own column, so your position still changes by at most a column and a row per move, and the solver keeps its estimate.
+  - **Stacks fall together:** what rests on something falling falls with it in the same round (needed once ice can slide out from under a stack).
+  - Tests: `tests/ice.rs`. `step_traced` reports each round's state and which blocks fell, for the browser.
 
 ## Solver and generator
 
@@ -82,7 +89,9 @@ These rules are written as tests before the code, one per row of the table, refu
   - **They are block puzzles, not mazes:** tier-4 solutions use 24–26 lifts and put-downs and 11–14 climbs.
 - **Worlds (`World`, P38):** `generate(seed, world, tier)`. Classic keeps suite v1's draws exactly (other worlds add their kinds of change after Classic's ten, and Classic's seed mixing is unchanged), so suite v1 still regenerates byte for byte.
   - **Crumble (M2):** a pit cracks the top tile of a third of its columns, and the climb can crack or mend any wall cell. A level is kept only if its world's mechanic changes the shortest solution: with every cracked tile made wall it must be unsolvable or solved in a different number of moves (a broken tile either opens the way or takes one away). Agent choice: the ticket asked only for "unsolvable", which would keep only levels where breaking opens a way and drop the ones where it costs you one.
-  - **Measured (10 seeds a tier, loaded machine):** every tier fills. Median and worst: tier 1 1 ms and 4 ms, tier 2 14 and 347 ms, tier 3 0.11 and 0.40 s, tier 4 0.84 and 35 s (one slow seed; Classic's worst was 11 s). Solutions sit at the low end of each band, as in Classic.
+  - **Ice (M3):** a pit turns a quarter of its columns' top blocks to ice, and the climb can add or remove an ice block. A level is kept only if making every ice block plain changes its shortest solution. Measured (10 seeds a tier): every tier fills; median and worst tier 1 2 and 13 ms, tier 2 9 and 222 ms, tier 3 0.42 and 1.8 s, tier 4 3.4 and 11.5 s. Tier 4 Ice is the slowest to build, a few seconds in the browser too.
+  - **Search cost of the bigger state (M3):** ice added 33 bytes to every state, and the search ran 1.35× slower until its map dropped SipHash for an Fx hash (no dependency); suite generation is now within noise of before (34-36 s against 39-47 s, alternated, loaded machine). Suite v1 still regenerates byte for byte.
+  - **Crumble measured (10 seeds a tier, loaded machine):** every tier fills. Median and worst: tier 1 1 ms and 4 ms, tier 2 14 and 347 ms, tier 3 0.11 and 0.40 s, tier 4 0.84 and 35 s (one slow seed; Classic's worst was 11 s). Solutions sit at the low end of each band, as in Classic.
   - **Known issue for the human campaign (OB9):** wall toggling leaves floating wall cells and piles in blocks (up to 39 in a tier-4 level), so levels look cluttered rather than like a pit. The bench doesn't care. The campaign should either pick the cleanest levels or add a tidiness term to the score.
 
 ## Agents through MCP (`puzzle-mcp`)
@@ -121,7 +130,8 @@ A hand-rolled MCP server over stdio, as in `box-mcp`. One session plays one leve
 
 ## Browser (`puzzle-wasm`, `site/puzzle/`)
 
-- **Worlds:** `?world=crumble` picks the Crumble world (default Classic); the tier links, the HUD, the next-level link and a line of help follow it. Cracked tiles are slabs with a warm lit edge and a jagged crack; one breaking drops four pieces of rubble through the hole with dust and a small shake, and the still scene re-bakes once. The browser tests play a Crumble level from `tests/e2e/fixtures/crumble.json` (written by `--example suite -- crumble 2 2`) until suite v2.
+- **Sliding is drawn from the rules' own trace (M3):** a move where ice slides is replayed round by round from `step_traced` (`trace.rs`), each block gliding a cell per 55 ms between rounds, with sparks where a block lands and dust where ice stops; blocks that never move in it stay baked. Other moves keep the hand-made tweens (walk cycle, squash and stretch). Ice blocks are cold clear cubes with a sheen, tinted from the scheme's accent.
+- **Worlds:** `?world=crumble` or `?world=ice` picks a world (default Classic); the tier links, the HUD, the next-level link and a line of help follow it. Cracked tiles are slabs with a warm lit edge and a jagged crack; one breaking drops four pieces of rubble through the hole with dust and a small shake, and the still scene re-bakes once. The browser tests play a level of each world from `tests/e2e/fixtures/<world>.json` (written by `--example suite -- <world> 2 2`) until suite v2.
 
 - **Build (P7):** C-ABI exports with no wasm-bindgen and no imports, like `hero-wasm`.
   - Rust owns the rules, the level, the animation and the drawing, into an RGBA buffer in wasm memory.

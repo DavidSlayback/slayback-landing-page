@@ -109,40 +109,42 @@ test.describe('puzzle', () => {
     }
   });
 
-  // The Crumble world (M2): levels from tests/e2e/fixtures/crumble.json, written by the native generator
-  // (`--example suite -- crumble 2 2`) until suite v2.
-  test.describe('crumble', () => {
-    const FIXTURE = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/crumble.json', import.meta.url)), 'utf8'));
-    const crumble = (tier, seed) => FIXTURE.levels.find(l => l.tier === tier && l.seed === seed);
-    const go = async (page, tier, seed) => {
-      await page.goto(`/puzzle/?world=crumble&tier=${tier}&seed=${seed}`);
-      await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
-    };
+  // The other worlds (M2, M3): levels from tests/e2e/fixtures/<world>.json, written by the native generator
+  // (`--example suite -- <world> 2 2`) until suite v2.
+  for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice']]) {
+    test.describe(world, () => {
+      const FIXTURE = JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${world}.json`, import.meta.url)), 'utf8'));
+      const go = async (page, tier, seed) => {
+        await page.goto(`/puzzle/?world=${world}&tier=${tier}&seed=${seed}`);
+        await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
+      };
 
-    test('builds the native levels, says which world, and keeps it in the tier links', async ({ page }) => {
-      for (const l of FIXTURE.levels) {
-        await go(page, l.tier, l.seed);
-        expect(await page.evaluate(() => __puzzle.fingerprint()), `tier ${l.tier} seed ${l.seed}`).toBe(l.fingerprint);
-      }
-      await expect(page.locator('#where')).toHaveText('Crumble · Tier 2 · level 2');
-      await expect(page.locator('[data-world="crumble"]')).toBeVisible();
-      await expect(page.locator('nav [data-tier="3"]')).toHaveAttribute('href', '?world=crumble&tier=3&seed=1');
-    });
+      test('builds the native levels, says which world, and keeps it in the tier links', async ({ page }) => {
+        for (const l of FIXTURE.levels) {
+          await go(page, l.tier, l.seed);
+          expect(await page.evaluate(() => __puzzle.fingerprint()), `tier ${l.tier} seed ${l.seed}`).toBe(l.fingerprint);
+        }
+        await expect(page.locator('#where')).toHaveText(`${name} · Tier 2 · level 2`);
+        await expect(page.locator(`[data-world="${world}"]`)).toBeVisible();
+        await expect(page.locator('nav [data-tier="3"]')).toHaveAttribute('href', `?world=${world}&tier=3&seed=1`);
+      });
 
-    test('a level is solved by its native solution, cracked tiles breaking on the way, with no errors', async ({ page }) => {
-      const errors = collectErrors(page);
-      const { solution, moves } = crumble(1, 1);
-      await go(page, 1, 1);
-      for (const k of solution) await page.keyboard.press(PRESS[k]);
-      await expect.poll(() => state(page)).toEqual({ moves, solved: true });
-      await expect(page.locator('#message')).toContainText('Out!');
-      await expect(page.locator('#message a')).toHaveAttribute('href', '?world=crumble&tier=1&seed=2');
-      expect(errors).toEqual([]);
+      test('a level is solved by its native solution, with no errors', async ({ page }) => {
+        const errors = collectErrors(page);
+        const { solution, moves } = FIXTURE.levels.find(l => l.tier === 1 && l.seed === 1);
+        await go(page, 1, 1);
+        for (const k of solution) await page.keyboard.press(PRESS[k]);
+        await expect.poll(() => state(page)).toEqual({ moves, solved: true });
+        await expect(page.locator('#message')).toContainText('Out!');
+        await expect(page.locator('#message a')).toHaveAttribute('href', `?world=${world}&tier=1&seed=2`);
+        expect(errors).toEqual([]);
+      });
     });
+  }
 
-    test('the classic page shows no crumble help', async ({ page }) => {
-      await open(page, 1, 1);
-      await expect(page.locator('[data-world="crumble"]')).toBeHidden();
-    });
+  test('the classic page shows no world help', async ({ page }) => {
+    await open(page, 1, 1);
+    await expect(page.locator('[data-world]')).toHaveCount(2);
+    for (const el of await page.locator('[data-world]').all()) await expect(el).toBeHidden();
   });
 });

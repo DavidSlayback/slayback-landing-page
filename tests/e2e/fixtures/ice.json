@@ -1,0 +1,11 @@
+{
+  "suite": "fixture, until suite v2",
+  "tiers": [[8, 15], [16, 40], [41, 80], [81, 150]],
+  "cap": 200000,
+  "levels": [
+    {"tier": 1, "seed": 1, "fingerprint": "0x8fbe4be7b91a2100", "moves": 10, "level": "#I.....#\n##.....#\n#.>.BE.#\n#IB.#I.#\n###B#B.#\n########", "solution": "RLDLRDUDRR"},
+    {"tier": 1, "seed": 2, "fingerprint": "0x5059c9f385e29b72", "moves": 8, "level": "##.B..##\n##.#>..#\n#E..I.B#\n#I.BIBB#\n##B#BB##\n########", "solution": "RLDDLLLL"},
+    {"tier": 2, "seed": 1, "fingerprint": "0x07e97575702175e2", "moves": 22, "level": "#.>##..B...#\n#.B....#..E#\n#I#I#.I...I#\n#B#B.BB.I.B#\n##.#.##I#.##\n##..##.#####\n#...########\n############", "solution": "LLRDRLDRRRRDDRRRLDRDUU"},
+    {"tier": 2, "seed": 2, "fingerprint": "0xb28f46c6cc7f091c", "moves": 33, "level": "####.#..#II#\n#.<#.....I##\n#.##....I#I#\n#.###..#B###\n#.....B##..#\n##...IB.#..#\n###B.##...E#\n############", "solution": "LRRRRLDLRDUUDRLDLLRDRLDRDRLDRRRRR"}
+  ]
+}

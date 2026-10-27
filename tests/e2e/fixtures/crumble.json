@@ -1,5 +1,5 @@
 {
-  "suite": "crumble fixture, until suite v2",
+  "suite": "fixture, until suite v2",
   "tiers": [[8, 15], [16, 40], [41, 80], [81, 150]],
   "cap": 200000,
   "levels": [

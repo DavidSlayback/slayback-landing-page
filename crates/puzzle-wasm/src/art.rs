@@ -86,15 +86,27 @@ pub fn cracked(c: &mut Canvas, cx: usize, cy: usize, open: [bool; 4], muted: Rgb
     c.line(fx + bx, fy + by, fx + 23.0, fy + 13.0 + k, 1.1, scale(accent, 0.3));
 }
 
-/// A crate at cell (`x`, `y`): a glowing frame, cross braces and corner rivets. `squash` > 0 squashes it flat
-/// around its bottom edge (a landing), < 0 stretches it tall.
-pub fn crate_(c: &mut Canvas, x: f32, y: f32, squash: f32, accent: Rgb) {
+/// The cold tint of ice blocks (M3), mixed into the accent so it still belongs to the site's scheme.
+const ICE: Rgb = [0.55, 0.9, 1.0];
+
+/// A crate at cell (`x`, `y`): a glowing frame, cross braces and corner rivets; an ice block (`ice`) is a cold, clear
+/// cube with a sheen instead of braces. `squash` > 0 squashes it flat around its bottom edge (a landing), < 0
+/// stretches it tall.
+pub fn crate_(c: &mut Canvas, x: f32, y: f32, squash: f32, accent: Rgb, ice: bool) {
+    let accent = if ice { mix(accent, ICE, 0.75) } else { accent };
     let (w, h) = (26.0 * (1.0 + 0.2 * squash), 26.0 * (1.0 - 0.18 * squash));
     let (mx, by) = (x * T + T / 2.0, y * T + T - 3.0);
     let (x0, y0, x1, y1) = (mx - w / 2.0, by - h, mx + w / 2.0, by);
     let (ix0, iy0, ix1, iy1) = (x0.round() as i32, y0.round() as i32, x1.round() as i32, y1.round() as i32);
     c.fill(ix0, iy0, ix1, iy1, scale(accent, 0.07));
     c.frame(ix0, iy0, ix1, iy1, 2, scale(accent, 0.95));
+    if ice {
+        // Two sheen streaks across the top-left corner and a frosted bottom edge.
+        c.line(x0 + 5.0, y0 + 12.0, x0 + 12.0, y0 + 5.0, 1.6, scale(accent, 0.7));
+        c.line(x0 + 5.0, y0 + 18.0, x0 + 18.0, y0 + 5.0, 1.1, scale(accent, 0.4));
+        c.fill(ix0 + 3, iy1 - 5, ix1 - 3, iy1 - 3, scale(accent, 0.3));
+        return;
+    }
     let (bx0, by0, bx1, by1) = (x0 + 4.0, y0 + 4.0, x1 - 4.0, y1 - 4.0);
     c.line(bx0, by0, bx1, by1, 1.6, scale(accent, 0.42));
     c.line(bx1, by0, bx0, by1, 1.6, scale(accent, 0.42));
