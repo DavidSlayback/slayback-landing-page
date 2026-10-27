@@ -18,6 +18,8 @@ pub enum World {
     Ice,
     /// Springs (`^`, M4).
     Springs,
+    /// All three at once, their rules combined (M5).
+    Mixed,
 }
 
 /// A difficulty tier: the band its shortest solutions fall in, and the grid it is built on.
@@ -84,16 +86,18 @@ struct Pit {
     exit: usize,
     player: usize,
     facing: Facing,
-    /// Wall cells drawn as cracked floor (Crumble) or springs (Springs) instead.
+    /// Wall cells drawn as cracked floor instead.
     cracked: Vec<bool>,
+    /// Wall cells drawn as springs instead (a spring wins over a crack on the same cell).
+    springs: Vec<bool>,
     /// How many of each column's blocks are ice: the top ones.
     ice: Vec<u8>,
     world: World,
 }
 
 impl Pit {
-    /// A pit with a rolling floor, a few blocks, and the exit and the player in different columns; in the Crumble
-    /// world, some floor tiles cracked too, and in the Ice world, some ice blocks.
+    /// A pit with a rolling floor, a few blocks, and the exit and the player in different columns; then, by world,
+    /// some floor tiles cracked or made springs, and some blocks made ice.
     fn new(rng: &mut Rng, w: usize, h: usize, world: World) -> Pit {
         let mut walls = vec![false; w * h];
         let mut floor = 1 + rng.below(h / 3);
@@ -112,24 +116,39 @@ impl Pit {
         let exit = 1 + rng.below(w - 2);
         let player = (exit + 1 + rng.below(w - 3)) % (w - 2) + 1;
         let facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
-        let mut cracked = vec![false; w * h];
-        if world == World::Crumble || world == World::Springs {
-            for _ in 0..w / 3 {
+        let (mut cracked, mut springs) = (vec![false; w * h], vec![false; w * h]);
+        // Marks the top tile of `n` random columns.
+        let tops = |rng: &mut Rng, n: usize, cells: &mut Vec<bool>| {
+            for _ in 0..n {
                 let x = 1 + rng.below(w - 2);
                 if let Some(y) = (0..h).find(|&y| walls[y * w + x]) {
-                    cracked[y * w + x] = true;
+                    cells[y * w + x] = true;
                 }
             }
+        };
+        match world {
+            World::Crumble => tops(rng, w / 3, &mut cracked),
+            World::Springs => tops(rng, w / 3, &mut springs),
+            World::Mixed => {
+                tops(rng, w / 6, &mut cracked);
+                tops(rng, w / 6, &mut springs);
+            }
+            _ => {}
         }
         let mut ice = vec![0; w];
-        if world == World::Ice {
-            for _ in 0..w / 4 {
+        let iced = match world {
+            World::Ice => w / 4,
+            World::Mixed => w / 6,
+            _ => 0,
+        };
+        if iced > 0 {
+            for _ in 0..iced {
                 let x = 1 + rng.below(w - 2);
                 blocks[x] += u8::from(blocks[x] == ice[x]);
                 ice[x] += 1;
             }
         }
-        Pit { w, h, walls, blocks, exit, player, facing, cracked, ice, world }
+        Pit { w, h, walls, blocks, exit, player, facing, cracked, springs, ice, world }
     }
 
     /// One random change. The border walls stay. Classic levels draw from ten kinds of change; other worlds add their
@@ -137,7 +156,12 @@ impl Pit {
     fn mutate(&mut self, rng: &mut Rng) {
         let (w, h) = (self.w, self.h);
         let col = 1 + rng.below(w - 2);
-        match rng.below(if self.world == World::Classic { 10 } else { 12 }) {
+        let kinds = match self.world {
+            World::Classic => 10,
+            World::Mixed => 14,
+            _ => 12,
+        };
+        match rng.below(kinds) {
             0..=4 => {
                 let i = rng.below(h - 1) * w + col;
                 self.walls[i] = !self.walls[i];
@@ -152,11 +176,23 @@ impl Pit {
                 self.player = col;
                 self.facing = if rng.below(2) == 0 { Facing::Left } else { Facing::Right };
             }
-            _ if self.world == World::Crumble || self.world == World::Springs => {
+            10 | 11 if self.world == World::Crumble => {
                 let i = rng.below(h) * w + col;
                 self.cracked[i] = !self.cracked[i];
             }
-            10 => {
+            10 | 11 if self.world == World::Springs => {
+                let i = rng.below(h) * w + col;
+                self.springs[i] = !self.springs[i];
+            }
+            10 if self.world == World::Mixed => {
+                let i = rng.below(h) * w + col;
+                self.cracked[i] = !self.cracked[i];
+            }
+            11 if self.world == World::Mixed => {
+                let i = rng.below(h) * w + col;
+                self.springs[i] = !self.springs[i];
+            }
+            10 | 12 => {
                 self.blocks[col] += 1;
                 self.ice[col] += 1;
             }
@@ -172,13 +208,13 @@ impl Pit {
     /// under it. `None` when a column is too full to take what was dropped into it.
     fn level(&self) -> Option<Level> {
         let (w, h) = (self.w, self.h);
-        let special = if self.world == World::Springs { b'^' } else { b'~' };
-        let cell = |(&wall, &cracked)| match (wall, cracked) {
-            (true, true) => special,
-            (true, false) => b'#',
+        let cell = |i: usize| match (self.walls[i], self.springs[i], self.cracked[i]) {
+            (true, true, _) => b'^',
+            (true, _, true) => b'~',
+            (true, ..) => b'#',
             _ => b'.',
         };
-        let mut g: Vec<u8> = self.walls.iter().zip(&self.cracked).map(cell).collect();
+        let mut g: Vec<u8> = (0..w * h).map(cell).collect();
         let drop = |g: &mut Vec<u8>, x: usize, c: u8| -> Option<()> {
             let mut y = (0..h).find(|&y| g[y * w + x] == b'.')?;
             while y + 1 < h && g[(y + 1) * w + x] == b'.' {
@@ -220,35 +256,39 @@ fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
     Some((needs_block && matters(level, world, found.len()), found))
 }
 
-/// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall (Crumble) or
+/// Whether the world's mechanic changes the level's shortest solution: with every cracked tile made wall (Crumble),
 /// every ice block made a plain one (Ice) or every spring made wall (Springs), the level must be unsolvable or solved in a different number of moves. So a
 /// Crumble level is one where a breaking tile either
 /// opens the way or costs you the way you'd otherwise take.
 fn matters(level: &Level, world: World, moves: usize) -> bool {
+    let crumble = || {
+        changes(level, moves, |l| {
+            l.walls = l.walls.zip(l.start.cracked, |a, b| a | b);
+            l.start.cracked = Default::default();
+        })
+    };
+    let ice = || changes(level, moves, |l| (l.start.ice, l.start.carrying_ice) = Default::default());
+    let springs = || changes(level, moves, |l| l.springs = Default::default());
     match world {
         World::Classic => true,
-        World::Crumble => {
-            let mut fixed = level.clone();
-            fixed.walls = fixed.walls.zip(fixed.start.cracked, |a, b| a | b);
-            fixed.start.cracked = Default::default();
-            let search = solve_within(&fixed, CAP);
-            level.start.cracked != fixed.start.cracked
-                && !search.gave_up
-                && search.solution.map(|s| s.len()) != Some(moves)
-        }
-        World::Springs => {
-            let mut fixed = level.clone();
-            fixed.springs = Default::default();
-            let search = solve_within(&fixed, CAP);
-            !level.springs.is_empty() && !search.gave_up && search.solution.map(|s| s.len()) != Some(moves)
-        }
-        World::Ice => {
-            let mut plain = level.clone();
-            (plain.start.ice, plain.start.carrying_ice) = Default::default();
-            let search = solve_within(&plain, CAP);
-            level.start != plain.start && !search.gave_up && search.solution.map(|s| s.len()) != Some(moves)
-        }
+        World::Crumble => crumble(),
+        World::Ice => ice(),
+        World::Springs => springs(),
+        // At least two of the three must matter, so a mixed level really mixes.
+        World::Mixed => [crumble(), ice(), springs()].iter().filter(|&&m| m).count() >= 2,
     }
+}
+
+/// Whether `edit` (taking a mechanic out) changes the level's shortest solution: it must make the level different,
+/// and then unsolvable or solved in another number of moves, proved within the cap.
+fn changes(level: &Level, moves: usize, edit: impl FnOnce(&mut Level)) -> bool {
+    let mut other = level.clone();
+    edit(&mut other);
+    if other == *level {
+        return false;
+    }
+    let search = solve_within(&other, CAP);
+    !search.gave_up && search.solution.map(|s| s.len()) != Some(moves)
 }
 
 /// The level for `seed` in `world` and `tier`, or `None` if the search ran out of tries.

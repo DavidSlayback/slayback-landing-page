@@ -20,7 +20,7 @@ fn game<'a>(p: *mut Game) -> &'a mut Game {
     unsafe { &mut *p }
 }
 
-/// A game on the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs) and `tier` (1 to 4), or null if there is
+/// A game on the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs, 4 Mixed) and `tier` (1 to 4), or null if there is
 /// none.
 #[unsafe(no_mangle)]
 pub extern "C" fn game_new(world: u32, tier: u32, seed: u64) -> *mut Game {

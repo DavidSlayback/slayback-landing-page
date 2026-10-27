@@ -15,7 +15,8 @@
   [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); }
   body { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 16px 24px; }
-  header { width: min(100%, 1100px); display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header { width: min(100%, 1100px); display: flex; justify-content: space-between; align-items: baseline; gap: 12px 16px; flex-wrap: wrap; }
+  header nav[aria-label="World"] { order: 3; width: 100%; flex-wrap: wrap; row-gap: 10px; }
   h1 { margin: 0; font: 700 clamp(22px, 3.2vw, 34px)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--fg); }
   h1 span { color: var(--accent); }
   nav { display: flex; gap: 18px; font: 600 13px/1 var(--font); letter-spacing: .14em; text-transform: uppercase; }
@@ -42,7 +43,7 @@
   #pad, .touch-help { display: none; }
   .touch #pad { display: flex; }
   .touch .touch-help { display: block; }
-  .touch .keys:not(.touch-help), .touch .keys-only { display: none; }
+  .touch .keys:not(.touch-help):not([data-world]), .touch .keys-only { display: none; }
   #pad { width: min(94vw, 720px); justify-content: space-between; align-items: flex-end; gap: 10px; user-select: none; -webkit-user-select: none; }
   #pad .group { display: flex; gap: 10px; }
   #pad button { display: grid; place-items: center; gap: 2px; min-width: 76px; min-height: 76px; padding: 8px 6px; border-radius: 14px; cursor: pointer;
@@ -64,8 +65,11 @@
   @media (orientation: landscape) and (max-height: 520px) {
     body { gap: 6px; padding: 8px 16px; }
     h1 { font-size: 18px; }
+    /* Both pickers share the title's line, compact, so the board keeps its height. */
+    header { flex-wrap: nowrap; gap: 14px; }
+    header nav, header nav[aria-label="World"] { order: 0; width: auto; gap: 10px; font-size: 11px; letter-spacing: .06em; }
     canvas { width: min(94vw, calc((100svh - 150px) * var(--ar))); }
-    .touch .touch-help { display: none; }
+    .touch .touch-help, .touch .keys[data-world] { display: none; }
     #pad button { min-height: 62px; }
   }
 </style>
@@ -79,6 +83,13 @@
     <a href="?tier=3&amp;seed=1" data-tier="3">Tier 3</a>
     <a href="?tier=4&amp;seed=1" data-tier="4">Tier 4</a>
     <a href="/">Home</a>
+  </nav>
+  <nav aria-label="World">
+    <a href="?tier=1&amp;seed=1" data-pick="classic">Classic</a>
+    <a href="?world=crumble&amp;tier=1&amp;seed=1" data-pick="crumble">Crumble</a>
+    <a href="?world=ice&amp;tier=1&amp;seed=1" data-pick="ice">Ice</a>
+    <a href="?world=springs&amp;tier=1&amp;seed=1" data-pick="springs">Springs</a>
+    <a href="?world=mixed&amp;tier=1&amp;seed=1" data-pick="mixed">Mixed</a>
   </nav>
 </header>
 <main class="stage" data-state="loading">
@@ -108,12 +119,14 @@
 <p class="keys">Climb out to the doorway. <kbd>←</kbd> <kbd>→</kbd> walk (or turn to face that way), <kbd>↑</kbd> climb one step,
   <kbd>↓</kbd> lift the block in front onto your head, or set the one you carry down. <kbd>Z</kbd> undo, <kbd>R</kbd> restart.
   WASD works too.</p>
-<p class="keys" data-world="crumble" hidden><b>Crumble:</b> cracked floor holds you up, but breaks for good once whatever stands on it
+<p class="keys" data-world="mixed" hidden><b>Mixed:</b> cracked floor, ice and springs together. Ice that reaches a spring is thrown
+  its own way and keeps sliding, and anything passing over cracked floor breaks it.</p>
+<p class="keys" data-world="crumble mixed" hidden><b>Crumble:</b> cracked floor holds you up, but breaks for good once whatever stands on it
   leaves it, you or a crate.</p>
-<p class="keys" data-world="ice" hidden><b>Ice:</b> an ice block you set down slides away until it hits something, off ledges too.
+<p class="keys" data-world="ice mixed" hidden><b>Ice:</b> an ice block you set down slides away until it hits something, off ledges too.
   Drop onto resting ice and it shoots out from under you; ice that hits ice stops, and the one it hit slides on with whatever
   sits on it.</p>
-<p class="keys" data-world="springs" hidden><b>Springs:</b> land on a spring, or walk onto one, and it throws you as high as you
+<p class="keys" data-world="springs mixed" hidden><b>Springs:</b> land on a spring, or walk onto one, and it throws you as high as you
   fell (at least one cell), then a cell forward. Blocks you set down bounce too.</p>
 <script src="puzzle.js"></script>
 </body>

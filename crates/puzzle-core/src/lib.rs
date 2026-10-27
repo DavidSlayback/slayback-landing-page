@@ -434,13 +434,14 @@ pub fn step_traced(
         }
     }
     let walked = (n.x, n.y) != (s.x, s.y);
-    settle(level, &mut n, movers, walked, &mut on_tick);
     crumble(level, s, &mut n);
+    settle(level, &mut n, movers, walked, &mut on_tick);
     Ok(n)
 }
 
-/// Breaks every cracked tile that something stood directly on before the move and nothing stands on after it (P28,
-/// P29). Whatever left was the only thing on the tile, so nothing is left hanging.
+/// Breaks every cracked tile that something stood directly on before and nothing stands on after (P28, P29): checked
+/// after the key acts and after every round of settling, so ice or a bounce passing over a tile mid-move breaks it
+/// too (M5). Whatever left was the only thing on the tile, so nothing is left hanging.
 fn crumble(level: &Level, before: &State, after: &mut State) {
     if after.cracked.is_empty() {
         return;
@@ -530,6 +531,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
     let rounds = 8 * w * h * (2 + s.ice.count() + usize::from(s.carrying_ice));
     for _ in 0..rounds {
         let mut moved = false;
+        let start = *s;
         // Rising.
         let mut rose = false;
         if me_rise > 0 {
@@ -613,6 +615,9 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
         if falls {
             (s.y, me_fall, me_arrived, moved) = (s.y + 1, me_fall + 1, true, true);
         }
+        // A tile is left by falling off it or by sliding off it, so check after each.
+        crumble(level, &start, s);
+        let start = *s;
         // Sliding.
         let sliding = |movers: &[Mover], i: usize| movers.iter().any(|m| m.slides && m.at == i);
         let mut k = 0;
@@ -673,6 +678,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
         movers.iter_mut().for_each(|m| m.arrived = false);
         // A block set down, or one whose bounce is over, has done its knocking once it rests.
         movers.retain(|m| m.slides || m.rise > 0 || !rests(s, m.at));
+        crumble(level, &start, s);
         if !moved {
             return;
         }

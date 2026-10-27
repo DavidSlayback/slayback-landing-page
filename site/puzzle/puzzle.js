@@ -1,5 +1,5 @@
 // Out of the Box at /puzzle: loads puzzle.wasm (crates/puzzle-wasm), which holds the rules, the animation and the
-// drawing; this file only maps keys, blits the frame Rust drew, and keeps the HUD. ?world=crumble|ice|springs&tier=1..4&seed=<n>
+// drawing; this file only maps keys, blits the frame Rust drew, and keeps the HUD. ?world=crumble|ice|springs|mixed&tier=1..4&seed=<n>
 // picks the level (the world defaults to classic);
 // ?palette=netrunner|synthwave|gold overrides the site's colour scheme; ?touch=1 shows the touch pad on any device.
 // window.__puzzle exposes the state for tests.
@@ -18,7 +18,7 @@ const qs = new URLSearchParams(location.search);
 const tier = Math.min(4, Math.max(1, parseInt(qs.get('tier'), 10) || 1));
 const seed = Math.max(1, parseInt(qs.get('seed'), 10) || 1);
 // Worlds (P38), in puzzle-core's order: the index is what game_new takes.
-const WORLDS = ['classic', 'crumble', 'ice', 'springs'];
+const WORLDS = ['classic', 'crumble', 'ice', 'springs', 'mixed'];
 const world = Math.max(0, WORLDS.indexOf(qs.get('world')));
 const worldName = world ? WORLDS[world][0].toUpperCase() + WORLDS[world].slice(1) + ' · ' : '';
 const query = (t, s) => `?${world ? `world=${WORLDS[world]}&` : ''}tier=${t}&seed=${s}`;
@@ -38,7 +38,15 @@ document.querySelectorAll('nav [data-tier]').forEach(a => {
   a.setAttribute('aria-current', String(+a.dataset.tier === tier));
   a.href = query(a.dataset.tier, 1);
 });
-document.querySelectorAll('[data-world]').forEach(el => { el.hidden = el.dataset.world !== WORLDS[world]; });
+// The world picker (M5) keeps the tier and starts the world's first level; each world's help shows only in it.
+document.querySelectorAll('nav [data-pick]').forEach(a => {
+  const w = WORLDS.indexOf(a.dataset.pick);
+  a.setAttribute('aria-current', String(w === world));
+  a.href = `?${w ? `world=${WORLDS[w]}&` : ''}tier=${tier}&seed=1`;
+});
+document.querySelectorAll('[data-world]').forEach(el => {
+  el.hidden = !el.dataset.world.split(' ').includes(WORLDS[world]);
+});
 const where = `${worldName}Tier ${tier} · level ${seed}`;
 $('where').textContent = where;
 

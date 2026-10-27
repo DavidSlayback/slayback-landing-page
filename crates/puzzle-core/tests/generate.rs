@@ -191,3 +191,82 @@ fn springs_levels_keep_their_promises_and_need_their_springs() {
     }
     check_springs(1, &TIERS[2]);
 }
+
+/// A Mixed level keeps its tier's promises and needs at least two of its three mechanics (M5).
+fn check_mixed(seed: u64, tier: &Tier) {
+    let g = generate(seed, World::Mixed, tier).unwrap_or_else(|| panic!("mixed tier {} seed {seed}: no level", tier.n));
+    let (l, len) = (&g.level, g.solution.len());
+    let at = format!("mixed tier {} seed {seed}, {len} moves, in\n{l}", tier.n);
+    assert!((tier.moves.0..=tier.moves.1).contains(&len), "outside the band: {at}");
+    assert_eq!(solve(l).solution.map(|s| s.len()), Some(len), "not a shortest solution: {at}");
+    let text = l.to_string();
+    let needed = [text.replace('~', "#"), text.replace('I', "B").replace('i', "b"), text.replace('^', "#")]
+        .iter()
+        .filter(|t| **t != text && solve(&Level::parse(t).unwrap()).solution.map(|s| s.len()) != Some(len))
+        .count();
+    assert!(needed >= 2, "only {needed} mechanics matter: {at}");
+}
+
+#[test]
+fn mixed_levels_keep_their_promises_and_need_two_mechanics() {
+    for tier in &TIERS[..2] {
+        for seed in 1..=3 {
+            check_mixed(seed, tier);
+        }
+    }
+}
+
+/// `(world, tier, seed, fingerprint, moves)` for every level of suite v2 (P39).
+fn suite_v2() -> Vec<(String, u8, u64, u64, usize)> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../bench/puzzle/suite-v2.json");
+    let text = std::fs::read_to_string(path).expect("bench/puzzle/suite-v2.json");
+    let field = |line: &str, name: &str| -> String {
+        let at = line.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("no {name} in {line}")) + name.len() + 4;
+        line[at..].trim_start_matches('"').chars().take_while(|c| c.is_ascii_alphanumeric()).collect()
+    };
+    text.lines()
+        .filter(|l| l.contains("\"fingerprint\""))
+        .map(|l| {
+            let fp = field(l, "fingerprint");
+            (
+                field(l, "world"),
+                field(l, "tier").parse().unwrap(),
+                field(l, "seed").parse().unwrap(),
+                u64::from_str_radix(fp.trim_start_matches("0x"), 16).unwrap(),
+                field(l, "moves").parse().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn regenerates_v2(tiers: &[u8]) {
+    let levels = suite_v2();
+    let worlds =
+        [("crumble", World::Crumble), ("ice", World::Ice), ("springs", World::Springs), ("mixed", World::Mixed)];
+    for (name, world) in worlds {
+        for t in 1..=4 {
+            assert_eq!(levels.iter().filter(|l| l.0 == name && l.1 == t).count(), 5, "{name} tier {t}");
+        }
+        for (_, t, seed, fingerprint, moves) in levels.iter().filter(|l| l.0 == name && tiers.contains(&l.1)) {
+            let g = generate(*seed, world, &TIERS[*t as usize - 1]).unwrap();
+            assert_eq!(
+                (g.level.fingerprint(), g.solution.len()),
+                (*fingerprint, *moves),
+                "{name} tier {t} seed {seed}"
+            );
+        }
+    }
+}
+
+/// Suite v2 (P39) is 5 levels per tier for each new world, and the published levels regenerate exactly.
+#[test]
+fn suite_v2_still_regenerates() {
+    regenerates_v2(&[1, 2]);
+}
+
+/// Tiers 3 and 4 take minutes: `bash scripts/native.sh test -p puzzle-core --release -- --ignored`.
+#[test]
+#[ignore]
+fn suite_v2_still_regenerates_tiers_3_and_4() {
+    regenerates_v2(&[3, 4]);
+}

@@ -182,11 +182,11 @@ pub struct Game {
 }
 
 impl Game {
-    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs) and `tier`, opening
-    /// with its intro.
+    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs, 4 Mixed) and `tier`,
+    /// opening with its intro.
     pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
         use puzzle_core::World::*;
-        let world = [Classic, Crumble, Ice, Springs].get(world as usize).copied()?;
+        let world = [Classic, Crumble, Ice, Springs, Mixed].get(world as usize).copied()?;
         let g = generate(seed, world, TIERS.get(tier.checked_sub(1)? as usize)?)?;
         let mut game = Game::from_level(g.level, g.solution.len(), tier, seed);
         game.intro_on = true;
