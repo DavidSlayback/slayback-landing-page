@@ -57,6 +57,33 @@ David: "Can we make it easier to get to the puzzle page from the main page? Also
 | P25 | Art direction | **Neon arcade, richer**: a backdrop with depth (a faint grid, drifting embers), walls with bevels and brick courses, blocks as glowing crates, CRT scanlines and bloom | Keeps the hero's neon (P14) and adds a world around it. |
 | P26 | Animation | **All four**: character life (walk cycle, climb pose, idle breath and blink, a lean on turning); weight (squash and stretch, a small shake when a block lands, dust); a living backdrop (embers, the doorway shimmering); a level intro (blocks drop in) and a win (through the door, the crates break apart) | Reduced motion turns all of it off. |
 
+## Round 6: mechanics (2026-10-26)
+
+David found that tier 1 level 1's shortest count (10) includes its turns, then: "I think we could use more mechanics. Maybe some physics based ones." The candidates, their rules and their cost are in `puzzle-mechanics.md`. David: "Recommendation" picked crumbling floor, springs and ice crates to grill first; balloons, the lift and tall crates are not decided.
+
+| # | Decision | Answer | Notes |
+|---|---|---|---|
+| P27 | Turning | **Still costs a move** (David: "Turns is the same") | Keeps P8; every shortest count stays comparable with suite v1. |
+| P28 | What breaks a cracked tile | **Being left**: it breaks when whatever stands directly on it leaves | No settle pass needed for this rule. |
+| P29 | Who breaks it | **Crates count**: lifting a crate off it, or a crate sliding or bouncing off it, breaks it too | |
+| P30 | Spring height | **As high as you fell, at least 1** | A walk-on (a fall of 0) throws 1. Rejected: a fixed 2. |
+| P31 | Walking onto a spring | **Launches you** | So a spring is also a hazard you may cover. |
+| P32 | Spring chains | **Chain**: a bounce that ends on another spring bounces again | Every bounce moves a cell forward, so a chain ends. |
+| P33 | Crates on springs | **Crates bounce too**, forward the way you faced when you set them down | Rejected: a crate holding the spring down. |
+| P34 | Ice at a ledge | **Keeps sliding**: it falls, then slides on the same way | Rejected: falls and stops. |
+| P35 | Landing on ice | **Anything landing on it knocks it sliding**, you included, the way the lander was going (your facing, for you); the lander drops into the gap | Rejected: slides only when set down. |
+| P36 | Ice hits ice | **Passes it on**: the slider stops and the one it hit slides on | Hitting a normal crate or a wall just stops it. |
+| P37 | Riders on pushed ice | **Ride along** when the ice is pushed from the side (P36). A lander from above still drops (P35) | David confirmed the split: "Yes, record it". |
+| P38 | Worlds | **One mechanic each, then mixed**: Crumble, Ice and Springs worlds, and a final world that mixes all three | The bench scores each mechanic on its own. |
+| P39 | Suite v2 | **5 levels per tier per new world** (80 levels); suite v1's 40 classic levels stay frozen | Keeps a full run's API cost near v1's. |
+
+Agent defaults that follow from P28-P39 (agent choice):
+
+- **A bounce stops at a ceiling.** If its forward cell is blocked, the bouncer comes down onto the spring and stays (no re-trigger), so nothing bounces forever.
+- **A crate with no direction** (one that drops because ice slid out from under it) bounces straight up and so stays on its spring.
+- **In the mixed world the rules simply combine:** ice that lands on a spring bounces the way it was sliding and keeps sliding after.
+- **Search:** with chains and riding, one move can carry you any distance, so the Ice, Springs and mixed worlds solve with no estimate (plain shortest-path search). Its cost is not yet measured.
+
 ## Engineering defaults (agent choice, confirmed by David)
 
 Proposed at the end of the grilling. David: "Yes, write it".
