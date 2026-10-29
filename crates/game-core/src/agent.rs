@@ -12,6 +12,19 @@ pub const DIRS: usize = 9;
 pub const VERBS: usize = 5;
 /// Every action: each direction with each verb.
 pub const ACTIONS: usize = DIRS * VERBS;
+/// The verbs' places in an action ([`Action::new`]'s `verb`); 0 presses none.
+pub const DASH: usize = 1;
+pub const PUNCH: usize = 2;
+pub const KICK: usize = 3;
+pub const GRAB: usize = 4;
+/// The eight floor directions' compass names, x being east and y north: direction `k + 1` is `COMPASS[k]`.
+pub const COMPASS: [&str; 8] = ["east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast"];
+
+/// The floor direction (1 to 8) nearest a floor offset's heading.
+pub fn toward(offset: [f32; 2]) -> usize {
+    let [x, y] = offset;
+    ((y.atan2(x) / std::f32::consts::FRAC_PI_4).round() as i32).rem_euclid(8) as usize + 1
+}
 
 /// One of the [`ACTIONS`] discrete actions: direction `index / VERBS`, verb `index % VERBS`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -33,7 +46,13 @@ impl Action {
             let a = (dir - 1) as f32 * std::f32::consts::FRAC_PI_4;
             [a.cos(), a.sin()]
         };
-        let verbs = Verbs { dash: verb == 1, punch: verb == 2, kick: verb == 3, grab: verb == 4, ..Verbs::default() };
+        let verbs = Verbs {
+            dash: verb == DASH,
+            punch: verb == PUNCH,
+            kick: verb == KICK,
+            grab: verb == GRAB,
+            ..Verbs::default()
+        };
         (floor, verbs)
     }
 }

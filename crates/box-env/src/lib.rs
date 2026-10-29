@@ -26,13 +26,15 @@
 use std::path::PathBuf;
 
 use bevy::prelude::*;
-use game_core::agent::Obs;
+use game_core::agent::{self, Obs};
 pub use game_core::agent::{ACTIONS, Action, FLAT};
 use game_core::run::{BoxSpec, Run, box_spec};
 use game3d::Frame;
 use game3d::enemy::Waves;
 use game3d::fighter::{Defeated, Team};
 use game3d::flow::Phase;
+/// Game frames a second: an env step holds its action for `frame_skip` of them.
+pub use game3d::headless::FPS;
 use game3d::input::{Actions, ReadActions};
 use game3d::run::{BoxEnded, RunState};
 use game3d::score::RunScore;
@@ -334,10 +336,8 @@ pub fn replay(trace: &Trace) -> Outcome {
 pub fn brawler(obs: &Obs) -> Action {
     let Some(e) = obs.enemies.iter().find(|e| !e.carried) else { return Action::new(0, 0) };
     let [x, y] = e.offset;
-    // The nearest of the eight directions toward it (direction k + 1 points at k·45°).
-    let k = ((y.atan2(x) / std::f32::consts::FRAC_PI_4).round() as i32).rem_euclid(8) as usize;
     let reach = (x * x + y * y).sqrt() < 1.6;
-    Action::new(k + 1, if reach { 2 } else { 0 })
+    Action::new(agent::toward(e.offset), if reach { agent::PUNCH } else { 0 })
 }
 
 /// The headless game with the agent's controls and books added, starting straight into play.

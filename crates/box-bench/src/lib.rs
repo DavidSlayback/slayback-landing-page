@@ -46,8 +46,8 @@ pub enum Flag {
 
 /// Repeats that count as a loop.
 pub const LOOP: usize = 5;
-/// Metres from a wall that count as hugging it.
-pub const WALL: f32 = 0.8;
+/// Metres from a wall that count as hugging it: the game's own distance for standing against one.
+pub const WALL: f32 = game_core::run::AT_WALL;
 /// Kills that, heaped in one place, reach box 1's rim (about 20 fodder; the README's G3 measurements).
 pub const RAMP_KILLS: u32 = 15;
 /// Refused calls that count as fumbling.
@@ -132,7 +132,7 @@ pub fn analyse(record: &Record) -> Analysis {
         flags,
         best_pile,
         wall_share,
-        game_seconds: replayed.steps as f32 * trace.config.frame_skip as f32 / 60.0,
+        game_seconds: replayed.steps as f32 * trace.config.frame_skip as f32 / box_env::FPS,
         score: f32::from_bits(replayed.reward_bits),
         calls: record.calls.len(),
         refused,
