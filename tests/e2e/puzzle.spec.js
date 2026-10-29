@@ -17,11 +17,13 @@ async function open(page, tier, seed) {
 const state = page => page.evaluate(() => ({ moves: __puzzle.moves(), solved: __puzzle.solved() }));
 
 test.describe('puzzle', () => {
-  test('the homepage links it from the nav and the hero', async ({ page }) => {
+  test('the homepage links it from the games section, which the nav and the hero lead to', async ({ page }) => {
     await page.route(/hero\.wasm$/, r => r.abort());   // links are what matter here, not the spark field
     await page.goto('/');
-    await expect(page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Puzzle' })).toHaveAttribute('href', 'puzzle/');
-    await page.locator('.hero .cta[href="puzzle/"]').click();
+    await expect(page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name: 'Games' })).toHaveAttribute('href', '#games');
+    await page.locator('.hero .cta[href="#games"]').click();
+    await expect(page.locator('#games')).toBeInViewport();
+    await page.locator('#games .card').filter({ hasText: 'Out of the Box' }).getByRole('link', { name: 'Out of the Box' }).click();
     await expect(page).toHaveURL(/\/puzzle\/$/);
     await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');
   });

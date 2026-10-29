@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skifire · David Slayback</title>
+<meta name="description" content="Skifire: an online 2D arena shooter with Tribes-style skiing, jetpacks and destructible terrain, on peer-to-peer rollback netcode.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Cpath d='M4 12 Q16 14 28 26' fill='none' stroke='%23a6ff00' stroke-width='2.4' stroke-linecap='round'/%3E%3Ccircle cx='11' cy='9' r='3' fill='%23eafffb'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../project.css">
+</head>
+<body>
+<nav class="top" aria-label="Site"><a href="../">← David Slayback</a><a href="../#games">Games</a></nav>
+<main>
+  <h1>Skifire</h1>
+  <p class="pitch">An online 2D arena shooter: Tribes-style skiing, Soldat-style jetpacks and Worms-style terrain you blow apart.</p>
+  <p class="actions"><a class="button primary" href="https://skifire.pages.dev/">Play in the browser ↗</a></p>
+  <figure>
+    <img src="../img/skifire.jpg" alt="A player grapples off a ledge at speed 1070 while a rival skis below; the weapon bar shows disc, grenade and chaingun." width="960" height="540">
+    <figcaption>Skyhold, four players: grappling off a ledge at speed with a rival below.</figcaption>
+  </figure>
+
+  <h2>The game</h2>
+  <p>Two to four players fight in a free-for-all, or against bots. Hold ski to slide frictionless down the slopes and carry that speed into the air, burn the jetpack to climb, and swing on a grappling hook. The disc launcher, grenades and chaingun carve the earth, and a disc that hits an airborne target scores a <strong>MIDAIR</strong> bonus.</p>
+  <ul>
+    <li><strong>Modes:</strong> deathmatch, or Rabbit, where whoever holds the one flag scores.</li>
+    <li><strong>Maps:</strong> four script-painted maps, each with its own colour theme, plus seeded generated maps.</li>
+    <li><strong>Matches:</strong> five minutes, or first to 10, 20 or 30. A room code in the URL is the whole lobby: share the link and the match starts when everyone has joined.</li>
+  </ul>
+  <figure>
+    <img src="../img/skifire-ramp.jpg" alt="A player skiing up a long ramp at speed, streaks trailing behind." width="960" height="540" loading="lazy">
+  </figure>
+
+  <h2>How it's built</h2>
+  <ul>
+    <li><strong>Rollback netcode, peer to peer.</strong> Bevy with ggrs over WebRTC (matchbox): a 60 Hz fixed simulation, two frames of input delay, up to eight frames of prediction. There is no game server, only a signalling server and a relay for players behind strict NATs.</li>
+    <li><strong>Deterministic from day one.</strong> All simulation state lives in one rollback resource stepped in a fixed order. Every test run also plays an offline sync-test session that re-simulates frames and fails on any desync.</li>
+    <li><strong>Terrain that rolls back.</strong> The world is an 8192×1536 pixel mask. An explosion is a carve event in an undo log that keeps the pixels it removed, so a rollback undoes carves newer than the restored frame instead of snapshotting the map.</li>
+    <li><strong>Movement without a physics engine.</strong> Players move kinematically against the mask, with surface normals averaged from nearby solid pixels and sub-stepping so nothing tunnels through a wall at ski speed.</li>
+    <li><strong>A seat for agents.</strong> A headless agent API runs matches at about 250× real time over JSON lines, with a Gymnasium-style Python wrapper, so an RL loop or an LLM with tool calls can take seats beside the bots.</li>
+    <li><strong>Sound from recipes.</strong> Every sound effect is synthesised from a fixed-seed recipe layered over CC0 recordings, and a check proves the rebuilt clips are byte for byte the ones shipped.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -13,10 +13,11 @@ const blockGame = page => page.route(GAME_FILES, r => r.abort());
 test.describe('release switch off', () => {
   test.skip(ON, 'GAME_RELEASE=1: this build has the switch on');
 
-  test('the homepage has no Play nav item, call to action or game link', async ({ page }) => {
+  test('the homepage has no Play nav item, call to action or link to this build\'s game', async ({ page }) => {
     await page.goto(HOME);
-    await expect(page.locator('.topnav a')).toHaveText(['Puzzle', 'GitHub']);
-    await expect(page.locator('a[href*="play"]')).toHaveCount(0);
+    await expect(page.locator('.topnav a')).toHaveText(['Games', 'GitHub']);
+    // The beat 'em up's card links to the game on the preview site instead (David, 2026-10-28: ship its card).
+    await expect(page.locator('a[href^="play"], a[href*="/play"]:not([href^="https://rc-5.slayback.pages.dev/"])')).toHaveCount(0);
     expect((await page.request.get('/play/watch/')).status(), 'no clip page').toBe(404);
   });
 
