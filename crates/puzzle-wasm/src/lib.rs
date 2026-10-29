@@ -10,7 +10,7 @@
 pub mod art;
 pub mod draw;
 pub mod game;
-pub mod trace;
+pub mod motion;
 
 use game::Game;
 use puzzle_core::Key;
@@ -118,7 +118,7 @@ pub extern "C" fn game_shake(p: *mut Game, axis: u32) -> f32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn game_reduce_motion(p: *mut Game, on: u32) {
-    game(p).reduce_motion = on != 0;
+    game(p).reduce_motion(on != 0);
 }
 
 #[cfg(test)]

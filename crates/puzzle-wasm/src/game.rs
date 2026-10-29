@@ -1,19 +1,18 @@
-//! One level being played on the page: the rules from `puzzle-core`, short tweens so moves never snap, `sim` sparks
-//! that bounce off the level's own walls and blocks, and the look and motion of P25 and P26 (`art.rs` draws).
+//! One level being played on the page: the rules from `puzzle-core`, its motion from `motion.rs`, `sim` sparks that
+//! bounce off the level's own walls and blocks, and the look of P25 (`art.rs` draws).
 //!
-//! Motion, all of it off under reduced motion: the climber walks, climbs, breathes, blinks and leans into turns; what
-//! falls stretches and lands with a squash, dust and (a crate) a small shake; embers drift up the backdrop and the
-//! doorway shimmers; a level opens with its crates dropping in, and a win takes the climber through the door and
-//! breaks the crates apart.
+//! What `Motion` says falls due sets off the effects here, all of them off under reduced motion: landings throw sparks
+//! and (a crate) a small shake, what comes to rest puffs dust, a cracked tile falls apart, the exit bursts and a win
+//! breaks the crates apart; embers drift up the backdrop and the doorway shimmers.
 
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::TAU;
 
-use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, Round, State, levels};
+use puzzle_core::{Bits, Key, Level, Play, Refusal, levels};
 use sim::World;
 
-use crate::art::{self, Pose, T, TILE};
+use crate::art::{self, T, TILE};
 use crate::draw::{Canvas, Rect, Rgb, mix, scale};
-use crate::trace::{self, Trace};
+use crate::motion::{Event, Motion, Pos};
 
 /// The spark world's obstacle mask has a cell every 4 pixels.
 const MASK_SCALE: f32 = 0.25;
@@ -22,111 +21,13 @@ const EMBERS: usize = 70;
 /// sim tags each spark's hue with its insertion order, so a negative hue is free to mark dust.
 const DUST: f32 = -1.0;
 
-const WALK: f32 = 0.08;
-const CLIMB: f32 = 0.09;
-const LIFT: f32 = 0.09;
-/// How long a landing squashes.
-const SQUASH: f32 = 0.14;
-/// A win: the climber shrinks into the doorway, then the crates break.
-const INTO_DOOR: f32 = 0.35;
 const GLOW: (usize, f32) = (6, 1.8);
-
-/// A position in cells (fractional while tweening).
-type Pos = (f32, f32);
-
-fn lerp(a: Pos, b: Pos, t: f32) -> Pos {
-    (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
-}
-
-/// How long a fall of `rows` cells takes: quick, and slower for longer drops so they read as falls.
-fn fall_time(rows: f32) -> f32 {
-    0.05 + 0.055 * rows.max(0.0).sqrt()
-}
-
-/// A two-part path: across (or up) to `mid`, then falling to `to`, eased in like gravity.
-#[derive(Clone, Copy)]
-struct Path {
-    from: Pos,
-    mid: Pos,
-    to: Pos,
-    across: f32,
-    fall: f32,
-}
-
-impl Path {
-    fn still(at: Pos) -> Path {
-        Path { from: at, mid: at, to: at, across: 0.0, fall: 0.0 }
-    }
-    fn drop(from: Pos, to: Pos) -> Path {
-        Path { from, mid: from, to, across: 0.0, fall: fall_time(to.1 - from.1) }
-    }
-    fn total(&self) -> f32 {
-        self.across + self.fall
-    }
-    fn at(&self, t: f32) -> Pos {
-        if t < self.across {
-            lerp(self.from, self.mid, t / self.across)
-        } else if t < self.total() {
-            let u = (t - self.across) / self.fall;
-            lerp(self.mid, self.to, u * u)
-        } else {
-            self.to
-        }
-    }
-    /// Stretched while falling (< 0), squashed for a moment on landing (> 0), harder after a longer drop.
-    fn squash(&self, t: f32) -> f32 {
-        if self.fall <= 0.0 || t < self.across {
-            0.0
-        } else if t < self.total() {
-            -0.3 * (t - self.across) / self.fall
-        } else if t < self.total() + SQUASH {
-            (PI * (t - self.total()) / SQUASH).sin() * (0.45 + 0.25 * (self.to.1 - self.mid.1)).min(1.0)
-        } else {
-            0.0
-        }
-    }
-}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Burst {
     Landing,
     Dust,
     Exit,
-}
-
-/// What is moving since the last key: the player, and a block on its way to or from the player's head.
-struct Tween {
-    t: f32,
-    player: Path,
-    /// A block in motion and the cell it ends in (hidden from the still blocks until it has landed and squashed);
-    /// `None` for the block being lifted, which ends on the player's head.
-    block: Option<(Path, Option<usize>)>,
-    /// What happens when, in seconds into the tween: sparks, dust, the win.
-    events: Vec<(f32, Burst, Pos)>,
-}
-
-impl Tween {
-    fn still(at: Pos) -> Tween {
-        Tween { t: 0.0, player: Path::still(at), block: None, events: vec![] }
-    }
-    /// The moving block while it still moves or squashes.
-    fn block_moving(&self) -> Option<(Path, Option<usize>)> {
-        self.block.filter(|(p, _)| self.t < p.total() + if p.fall > 0.0 { SQUASH } else { 0.0 })
-    }
-}
-
-/// The level opening: crates drop into place bottom first, column by column, then the climber.
-struct Intro {
-    t: f32,
-    drops: Vec<(f32, Path)>,
-    player: (f32, Path),
-}
-
-impl Intro {
-    fn end(&self) -> f32 {
-        let last = self.drops.iter().chain([&self.player]).map(|(d, p)| d + p.total()).fold(0.0, f32::max);
-        last + SQUASH
-    }
 }
 
 /// A piece of a broken crate, in pixels.
@@ -158,25 +59,13 @@ pub struct Game {
     pub canvas: Canvas,
     /// fg, muted, accent: the site's colour scheme.
     pub colors: [Rgb; 3],
-    pub reduce_motion: bool,
-    tween: Tween,
+    motion: Motion,
     sparks: World,
     rng: u32,
-    time: f32,
-    refused: f32,
-    /// A turn: when, and which way, for the lean.
-    turned: (f32, f32),
     /// Screen shake, in pixels, decaying.
     shake: f32,
-    /// Whether restarting replays the intro (the page's games do; tests' don't).
-    intro_on: bool,
-    intro: Option<Intro>,
-    /// Seconds since the climber reached the doorway.
-    win: Option<f32>,
     shards: Vec<Shard>,
     embers: Vec<Ember>,
-    /// A move with sliding ice, drawn round by round from the rules' own trace instead of the tween.
-    trace: Option<Trace>,
     /// What the still scene was last baked from: blocks at rest, cracked tiles standing, colours, reduced motion.
     baked: Option<(Bits, Bits, [Rgb; 3], bool)>,
 }
@@ -187,8 +76,8 @@ impl Game {
     pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
         let picked = levels::pick(puzzle_core::World::from_number(world as u32)?, tier, seed)?;
         let mut game = Game::from_level(picked.level, picked.solution.len(), tier, picked.seed);
-        game.intro_on = true;
-        game.start_intro();
+        let s = *game.play.state();
+        game.motion.start_intro(&s);
         Some(game)
     }
 
@@ -201,7 +90,7 @@ impl Game {
         (p.spawn_rate, p.collide, p.life_min, p.life_max, p.emitters, p.eddies, p.erode) =
             (0.0, false, 0.0, 0.0, 0, 0, 0.0);
         sparks.set_params(p);
-        let start = level.start;
+        let motion = Motion::new(&level);
         let mut game = Game {
             play: Play::new(level),
             tier,
@@ -209,20 +98,12 @@ impl Game {
             optimal,
             canvas: Canvas::new(w, h),
             colors: [[0.94, 1.0, 0.84], [0.49, 0.6, 0.32], [0.65, 1.0, 0.0]],
-            reduce_motion: false,
-            tween: Tween::still((start.x as f32, start.y as f32)),
+            motion,
             sparks,
             rng: (seed as u32).wrapping_mul(2_654_435_761) | 1,
-            time: 0.0,
-            refused: 0.0,
-            turned: (-1.0, 0.0),
             shake: 0.0,
-            intro_on: false,
-            intro: None,
-            win: None,
             shards: vec![],
             embers: vec![],
-            trace: None,
             baked: None,
         };
         game.embers = (0..EMBERS)
@@ -242,187 +123,82 @@ impl Game {
         (self.rng >> 8) as f32 / (1u32 << 24) as f32
     }
 
-    /// The screen shake this frame, in canvas pixels: 0 across, 1 down.
-    pub fn shake(&self, axis: u32) -> f32 {
-        let wave = if axis == 0 { (self.time * 91.0).sin() } else { (self.time * 73.0 + 1.3).cos() };
-        self.shake * wave
+    /// Reduced motion (the page's `prefers-reduced-motion`), set before the first frame: moves snap and nothing
+    /// sparks, shakes, breaks apart or drifts.
+    pub fn reduce_motion(&mut self, on: bool) {
+        self.motion.reduce(on);
+        if on {
+            self.shake = 0.0;
+            self.shards.clear();
+        }
     }
 
-    /// Drops the crates in, bottom first, column by column, then the climber.
-    pub fn start_intro(&mut self) {
-        let (w, h) = (self.play.level.w as usize, self.play.level.h as usize);
-        let s = *self.play.state();
-        let mut drops: Vec<(f32, Path)> = (0..w * h)
-            .filter(|&i| s.blocks.get(i))
-            .map(|i| {
-                let (x, y) = ((i % w) as f32, (i / w) as f32);
-                (x * 0.035 + (h as f32 - 1.0 - y) * 0.06, Path::drop((x, -1.5), (x, y)))
-            })
-            .collect();
-        let last = drops.iter().map(|d| d.0).fold(0.0, f32::max);
-        // Keep the whole intro short on a big level.
-        let fit = if last > 0.9 { 0.9 / last } else { 1.0 };
-        drops.iter_mut().for_each(|d| d.0 *= fit);
-        let at = (s.x as f32, s.y as f32);
-        let player = (last * fit + 0.12, Path::drop((at.0, -1.5), at));
-        self.intro = Some(Intro { t: 0.0, drops, player });
+    /// The screen shake this frame, in canvas pixels: 0 across, 1 down.
+    pub fn shake(&self, axis: u32) -> f32 {
+        let time = self.motion.time();
+        let wave = if axis == 0 { (time * 91.0).sin() } else { (time * 73.0 + 1.3).cos() };
+        self.shake * wave
     }
 
     /// Plays one key: `None` if it played (or the level is already solved), else why it was refused. A key during the
     /// intro skips the rest of it.
     pub fn key(&mut self, key: Key) -> Option<Refusal> {
-        self.intro = None;
         let before = *self.play.state();
-        let rounds = match self.play.key(key) {
-            Ok(rounds) => rounds,
-            Err(why) => {
-                self.refused = 0.18;
-                return Some(why);
-            }
-        };
-        if rounds.is_empty() {
-            return None; // already solved: nothing played
+        let played = self.play.key(key);
+        for e in self.motion.key(&self.play, &before, played.as_deref()) {
+            self.effect(e);
         }
         let after = *self.play.state();
-        if after.facing != before.facing && (after.x, after.y) == (before.x, before.y) {
-            self.turned = (self.time, if after.facing == Facing::Left { -1.0 } else { 1.0 });
-        }
-        let w = self.play.level.w as usize;
-        let trace = Trace::new(before, &rounds);
-        self.trace = None;
-        if trace.needed(w) && !self.reduce_motion {
-            self.follow(trace);
-        } else {
-            self.animate(&before, &after, &rounds);
-        }
-        self.crumble(&before, &after);
         if before.blocks != after.blocks || before.cracked != after.cracked {
             self.update_mask();
         }
-        None
+        played.err()
     }
 
     pub fn undo(&mut self) {
         self.play.undo(1);
-        self.snap();
+        self.motion.snap(self.play.state());
+        self.reset();
     }
 
     pub fn restart(&mut self) {
         self.play.restart();
-        self.snap();
-        if self.intro_on && !self.reduce_motion {
-            self.start_intro();
-        }
+        self.motion.restart(self.play.state());
+        self.reset();
     }
 
-    fn snap(&mut self) {
-        let s = *self.play.state();
-        self.tween = Tween::still((s.x as f32, s.y as f32));
-        self.intro = None;
-        self.win = None;
-        self.trace = None;
+    /// Clears the effects for a board put back.
+    fn reset(&mut self) {
         self.shards.clear();
         self.update_mask();
     }
 
-    /// Draws the move from its trace: blocks glide round by round, landings throw sparks, sliding ice throws dust where
-    /// it stops.
-    fn follow(&mut self, trace: Trace) {
-        let w = self.play.level.w as usize;
-        let mut events = vec![];
-        let end = |k: usize| trace::FIRST + trace::ROUND * k as f32;
-        let at = |c: usize| ((c % w) as f32 + 0.5, (c / w) as f32 + 1.0);
-        for k in 0..trace.moves.len() {
-            if trace.launches(k) {
-                let s = &trace.ticks[k];
-                events.push((end(k - 1), Burst::Landing, (s.x as f32 + 0.5, s.y as f32 + 1.0)));
-            }
-            for c in trace.lands(k, w) {
-                events.push((end(k), Burst::Landing, at(c)));
-            }
-            let stops = trace.moves[k]
-                .iter()
-                .filter(|m| m.0 / w == m.1 / w && m.0 != m.1)
-                .filter(|m| trace.moves.get(k + 1).is_none_or(|next| next.iter().any(|n| n.0 == m.1 && n.1 == m.1)));
-            events.extend(stops.map(|m| (end(k), Burst::Dust, at(m.1))).collect::<Vec<_>>());
+    /// Sets off what `Motion` says is due.
+    fn effect(&mut self, e: Event) {
+        match e {
+            Event::Landing(at) => self.burst(Burst::Landing, at),
+            Event::Dust(at) => self.burst(Burst::Dust, at),
+            Event::Exit(at) => self.burst(Burst::Exit, at),
+            Event::Crumble(at) => self.crumble(at),
+            Event::Break => self.break_crates(),
         }
-        let s = trace.ticks.last().unwrap();
-        if self.play.solved() {
-            events.push((trace.end(), Burst::Exit, (s.x as f32 + 0.5, s.y as f32 + 0.5)));
-        }
-        self.tween = Tween { t: 0.0, player: Path::still((s.x as f32, s.y as f32)), block: None, events };
-        self.trace = Some(trace);
     }
 
-    /// Sets up the tween from `before` to `after` (`rounds` is how the key played out), starting wherever the player
-    /// is drawn now.
-    fn animate(&mut self, before: &State, after: &State, rounds: &[Round]) {
-        let now = self.tween.player.at(self.tween.t);
-        let (bx, by) = (before.x as f32, before.y as f32);
-        let to = (after.x as f32, after.y as f32);
-        let player = if after.y < before.y {
-            Path { from: now, mid: to, to, across: CLIMB, fall: 0.0 }
-        } else if after.x != before.x {
-            let mid = (to.0, by);
-            Path { from: now, mid, to, across: WALK, fall: if to.1 > by { fall_time(to.1 - by) } else { 0.0 } }
-        } else {
-            Path::still(to) // a turn: the facing flips at once, and the body leans into it
-        };
-        let front = bx + if before.facing == Facing::Left { -1.0 } else { 1.0 };
-        let w = self.play.level.w as usize;
-        let block = match (before.carrying, after.carrying) {
-            (false, true) => Some((
-                Path { from: (front, by), mid: (bx, by - 1.0), to: (bx, by - 1.0), across: LIFT, fall: 0.0 },
-                None,
-            )),
-            (true, false) => {
-                // The carried block, followed through the rounds to where it comes to rest.
-                let head = before.y as usize * w + before.x as usize - w;
-                let k = rounds[0].moved.iter().position(|m| m.from == head);
-                let cell = k.and_then(|k| rounds.last().map(|r| r.moved[k].to));
-                cell.map(|i| (Path::drop((front, by - 1.0), ((i % w) as f32, (i / w) as f32)), Some(i)))
-            }
-            _ => None,
-        };
-        let mut events = vec![];
-        if player.fall > 0.0 {
-            events.push((player.total(), Burst::Dust, (to.0 + 0.5, to.1 + 1.0)));
-        }
-        if let Some((path, Some(_))) = block {
-            events.push((path.total(), Burst::Landing, (path.to.0 + 0.5, path.to.1 + 1.0)));
-            events.push((path.total(), Burst::Dust, (path.to.0 + 0.5, path.to.1 + 1.0)));
-        }
-        if self.play.solved() {
-            events.push((player.total(), Burst::Exit, (to.0 + 0.5, to.1 + 0.5)));
-        }
-        self.tween = if self.reduce_motion { Tween::still(to) } else { Tween { t: 0.0, player, block, events } };
-    }
-
-    /// Each cracked tile the move broke falls apart: four shards dropping through the hole, a puff of dust, a small
-    /// shake.
-    fn crumble(&mut self, before: &State, after: &State) {
-        let w = self.play.level.w as usize;
-        let broken: Vec<usize> =
-            (0..w * self.play.level.h as usize).filter(|&i| before.cracked.get(i) && !after.cracked.get(i)).collect();
-        if broken.is_empty() || self.reduce_motion {
-            return;
-        }
-        for i in broken {
-            let (x, y) = ((i % w) as f32, (i / w) as f32);
-            self.burst(Burst::Dust, (x + 0.5, y));
-            for (qx, qy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-                let (a, b) = (self.rand(), self.rand());
-                self.shards.push(Shard {
-                    x: (x + 0.5) * T + qx * 8.0,
-                    y: (y + 0.5) * T + qy * 8.0,
-                    vx: qx * (20.0 + 50.0 * a),
-                    vy: -60.0 * b + qy * 20.0,
-                    size: 10.0 + 4.0 * b,
-                    age: 0.0,
-                    life: 0.6 + 0.3 * a,
-                    tile: true,
-                });
-            }
+    /// A cracked tile at cell `at` falls apart: four shards dropping through the hole, a puff of dust, a small shake.
+    fn crumble(&mut self, (x, y): Pos) {
+        self.burst(Burst::Dust, (x + 0.5, y));
+        for (qx, qy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            let (a, b) = (self.rand(), self.rand());
+            self.shards.push(Shard {
+                x: (x + 0.5) * T + qx * 8.0,
+                y: (y + 0.5) * T + qy * 8.0,
+                vx: qx * (20.0 + 50.0 * a),
+                vy: -60.0 * b + qy * 20.0,
+                size: 10.0 + 4.0 * b,
+                age: 0.0,
+                life: 0.6 + 0.3 * a,
+                tile: true,
+            });
         }
         self.shake = self.shake.max(1.5);
     }
@@ -447,13 +223,8 @@ impl Game {
     }
 
     fn burst(&mut self, kind: Burst, at: Pos) {
-        if self.reduce_motion {
-            return;
-        }
-        match kind {
-            Burst::Landing => self.shake = self.shake.max(2.5),
-            Burst::Exit => self.win = Some(0.0),
-            Burst::Dust => {}
+        if kind == Burst::Landing {
+            self.shake = self.shake.max(2.5);
         }
         let live = (0..self.sparks.active).any(|i| self.sparks.life[i] > 0.0);
         if !live {
@@ -523,48 +294,20 @@ impl Game {
     /// Advances `dt` seconds and draws the frame into `canvas.rgba`.
     pub fn frame(&mut self, dt: f32) {
         let dt = dt.clamp(0.0, 0.1);
-        self.time += dt;
-        self.refused = (self.refused - dt).max(0.0);
-        if self.reduce_motion {
-            (self.intro, self.shake) = (None, 0.0);
-            self.shards.clear();
-        }
         self.shake *= (-dt / 0.07).exp();
         if self.shake < 0.05 {
             self.shake = 0.0;
         }
-        if let Some(intro) = &mut self.intro {
-            intro.t += dt;
-            if intro.t >= intro.end() {
-                self.intro = None;
-            }
-        }
-        self.tween.t += dt;
-        if let Some(tr) = &mut self.trace {
-            tr.t += dt;
-            if tr.t >= tr.end() + SQUASH {
-                self.trace = None;
-            }
-        }
-        let due: Vec<_> = self.tween.events.iter().copied().filter(|e| e.0 <= self.tween.t).collect();
-        self.tween.events.retain(|e| e.0 > self.tween.t);
-        for (_, kind, at) in due {
-            self.burst(kind, at);
-        }
-        if let Some(t) = &mut self.win {
-            let before = *t;
-            *t += dt;
-            if before < INTO_DOOR && *t >= INTO_DOOR {
-                self.break_crates();
-            }
+        for e in self.motion.advance(dt) {
+            self.effect(e);
         }
         for s in &mut self.shards {
             s.vy += 900.0 * dt;
             (s.x, s.y, s.age) = (s.x + s.vx * dt, s.y + s.vy * dt, s.age + dt);
         }
         self.shards.retain(|s| s.age < s.life);
-        if !self.reduce_motion {
-            let (w, h, time) = (self.canvas.w as f32, self.canvas.h as f32, self.time);
+        if !self.motion.reduced() {
+            let (w, h, time) = (self.canvas.w as f32, self.canvas.h as f32, self.motion.time());
             for i in 0..self.embers.len() {
                 let respawn = self.rand() * w;
                 let e = &mut self.embers[i];
@@ -581,102 +324,23 @@ impl Game {
         self.draw();
     }
 
-    /// How the climber stands now.
-    fn pose(&self, s: &State) -> Pose {
-        let mut p = Pose::facing(s.facing);
-        p.refused = self.refused > 0.0;
-        if self.reduce_motion {
-            return p;
-        }
-        let (t, path) = (self.tween.t, self.tween.player);
-        if let Some(tr) = &self.trace {
-            let (k, u) = tr.at(tr.t);
-            if tr.rising(k) {
-                p.squash = -0.3; // stretched on the way up a bounce
-            } else if tr.ticks[k].x != tr.ticks[k + 1].x && u < 1.0 {
-                p.stride = (TAU * u).sin();
-            }
-        } else if t < path.across {
-            let u = t / path.across;
-            if path.from.1 > path.mid.1 + 0.01 {
-                p.climb = (PI * u).sin();
-            } else if (path.mid.0 - path.from.0).abs() > 0.01 {
-                p.stride = (TAU * u).sin();
-            }
-        }
-        p.squash = path.squash(t);
-        p.breath = 0.6 * (self.time * 2.2).sin();
-        p.blink = self.time % 3.7 < 0.12;
-        let since = self.time - self.turned.0;
-        if (0.0..0.4).contains(&since) {
-            p.lean = self.turned.1 * (-since / 0.07).exp();
-        }
-        if let Some(w) = self.win {
-            p.gone = (w / INTO_DOOR).min(1.0);
-        }
-        p
-    }
-
     fn draw(&mut self) {
         let [fg, muted, accent] = self.colors;
         let s = *self.play.state();
-        let moving = self.tween.block_moving();
-        let broken = self.win.is_some_and(|t| t >= INTO_DOOR);
-        let mut still = if self.intro.is_some() || broken { Bits::default() } else { s.blocks };
-        if let Some((_, Some(i))) = moving {
-            still.set(i, false);
-        }
-        // With a trace, what never moves during it stays baked; the rest is drawn where the trace has it now.
-        let mut gliding: Vec<(Pos, bool)> = vec![];
-        let mut traced_player = None;
-        if let Some(tr) = &self.trace {
-            let w = self.play.level.w as usize;
-            still = tr.ticks.iter().fold(still, |a, t| a.zip_and(t.blocks));
-            let (k, u) = tr.at(tr.t);
-            let cell = |c: usize| ((c % w) as f32, (c / w) as f32);
-            for &(from, to, ice) in &tr.moves[k] {
-                if from != to || !still.get(to) {
-                    gliding.push((lerp(cell(from), cell(to), u), ice));
-                }
-            }
-            let (a, b) = (&tr.ticks[k], &tr.ticks[k + 1]);
-            traced_player = Some(lerp((a.x as f32, a.y as f32), (b.x as f32, b.y as f32), u));
-        }
-        let key = (still, s.cracked, self.colors, self.reduce_motion);
+        let scene = self.motion.scene(&s);
+        let (reduced, time) = (self.motion.reduced(), self.motion.time());
+        let key = (scene.still, s.cracked, self.colors, reduced);
         if self.baked != Some(key) {
-            self.bake(&still, &s.cracked);
+            self.bake(&scene.still, &s.cracked);
             self.baked = Some(key);
         }
         let (ex, ey) = (self.play.level.exit.0 as usize, self.play.level.exit.1 as usize);
-        let t = self.tween.t;
-        let pose = self.pose(&s);
-        let gone = pose.gone >= 1.0;
-        // The player (or the climber dropping in), a block in flight, the crates of the intro.
-        let player_at = match &self.intro {
-            Some(intro) if intro.t < intro.player.0 => None,
-            Some(intro) => Some(intro.player.1.at(intro.t - intro.player.0)),
-            None => Some(traced_player.unwrap_or_else(|| self.tween.player.at(t))),
-        };
-        let drops: Vec<(Pos, f32)> = match &self.intro {
-            Some(intro) => intro
-                .drops
-                .iter()
-                .filter(|(d, _)| intro.t >= *d)
-                .map(|(d, p)| (p.at(intro.t - d), p.squash(intro.t - d)))
-                .collect(),
-            None => vec![],
-        };
         let mut rects = vec![];
-        if let Some((px, py)) = player_at.filter(|_| !gone) {
-            rects.push(around(px, py - 1.0, 1.0, 2.0));
+        if let Some(me) = &scene.climber {
+            rects.push(around(me.at.0, me.at.1 - 1.0, 1.0, 2.0));
         }
-        if let Some((path, _)) = moving {
-            let (bx, by) = path.at(t);
-            rects.push(around(bx, by, 1.0, 1.0));
-        }
-        rects.extend(drops.iter().map(|((x, y), _)| around(*x, *y, 1.0, 1.0)));
-        rects.extend(gliding.iter().map(|((x, y), _)| around(*x, *y, 1.0, 1.0)));
-        let shimmer = (!self.reduce_motion).then_some(self.time);
+        rects.extend(scene.crates.iter().map(|k| around(k.at.0, k.at.1, 1.0, 1.0)));
+        let shimmer = (!reduced).then_some(time);
         if shimmer.is_some() {
             rects.push(around(ex as f32, ey as f32, 1.0, 1.0));
         }
@@ -687,31 +351,20 @@ impl Game {
             if shimmer.is_some() {
                 art::door_light(c, ex, ey, shimmer, accent);
             }
-            let w = self.play.level.w as usize;
-            for ((x, y), squash) in &drops {
-                art::crate_(c, *x, *y, *squash, accent, s.ice.get(y.round().max(0.0) as usize * w + *x as usize));
+            for k in &scene.crates {
+                art::crate_(c, k.at.0, k.at.1, k.squash, accent, k.ice);
             }
-            for ((x, y), ice) in &gliding {
-                art::crate_(c, *x, *y, 0.0, accent, *ice);
-            }
-            if let Some((px, py)) = player_at.filter(|_| !gone) {
-                match moving {
-                    _ if traced_player.is_some() => {} // the trace draws a carried block with the rest
-                    Some((path, cell)) => {
-                        let (bx, by) = path.at(t);
-                        let ice = cell.map_or(s.carrying_ice, |i| s.ice.get(i));
-                        art::crate_(c, bx, by, path.squash(t), accent, ice);
-                    }
-                    None if s.carrying => art::crate_(c, px, py - 1.0, 0.0, accent, s.carrying_ice),
-                    None => {}
+            if let Some(me) = &scene.climber {
+                if let Some(ice) = me.carrying {
+                    art::crate_(c, me.at.0, me.at.1 - 1.0, 0.0, accent, ice);
                 }
-                art::climber(c, px, py, &pose, fg);
+                art::climber(c, me.at.0, me.at.1, &me.pose, fg);
             }
             c.composite(GLOW.0, GLOW.1);
         }
         for e in &self.embers {
-            if !self.reduce_motion {
-                let twinkle = 0.65 + 0.35 * (self.time * 3.1 + e.phase * 7.0).sin();
+            if !reduced {
+                let twinkle = 0.65 + 0.35 * (time * 3.1 + e.phase * 7.0).sin();
                 art::ember(c, e.x, e.y, e.depth, twinkle, accent);
             }
         }
@@ -775,7 +428,7 @@ impl Game {
         }
         let (ex, ey) = (l.exit.0 as usize, l.exit.1 as usize);
         art::door_frame(c, ex, ey, mix(accent, fg, 0.3));
-        if self.reduce_motion {
+        if self.motion.reduced() {
             art::door_light(c, ex, ey, None, accent);
         }
         let ice = self.play.state().ice;
@@ -825,6 +478,10 @@ mod tests {
 
     fn frames(g: &mut Game, n: usize) {
         (0..n).for_each(|_| g.frame(1.0 / 60.0));
+    }
+
+    fn scene(g: &Game) -> crate::motion::Scene {
+        g.motion.scene(g.play.state())
     }
 
     fn live_sparks(g: &Game) -> usize {
@@ -930,13 +587,11 @@ mod tests {
         let mut g = Game::from_level(level, 0, 1, 0);
         frames(&mut g, 5);
         g.key(Key::D);
-        let tr = g.trace.as_ref().expect("a slide is drawn from its trace");
-        // Before, set down, a round that drops it and slides it a cell, then four more cells to the wall.
-        assert_eq!(tr.ticks.len(), 7);
         frames(&mut g, 6);
+        assert_eq!(scene(&g).crates.len(), 1, "the block is drawn on its way");
         assert!(lit(&g, 3, 1) > 0.5 || lit(&g, 4, 1) > 0.5, "mid-slide the block is drawn on its way");
         frames(&mut g, 60);
-        assert!(g.trace.is_none(), "the trace ends");
+        assert!(scene(&g).crates.is_empty(), "the slide ends");
         assert!(lit(&g, 7, 1) > 0.5, "and the block rests against the wall");
         assert!(g.canvas.bakes <= 3, "{} bakes for one slide", g.canvas.bakes);
     }
@@ -947,10 +602,9 @@ mod tests {
         let mut g = Game::from_level(level, 0, 1, 0);
         frames(&mut g, 5);
         g.key(Key::R);
-        assert!(g.trace.is_some(), "a bounce is drawn from its trace");
         frames(&mut g, 90);
-        assert!(g.trace.is_none());
         assert_eq!((g.play.state().x, g.play.state().y), (3, 0), "thrown up two and over the wall");
+        assert_eq!(scene(&g).climber.map(|c| c.at), Some((3.0, 0.0)));
         assert!(lit(&g, 3, 0) > 0.5, "drawn where it landed");
         assert!(live_sparks(&g) > 0 || g.shake > 0.0 || g.canvas.bakes >= 1);
     }
@@ -973,17 +627,17 @@ mod tests {
     #[test]
     fn a_level_opens_with_its_crates_dropping_in_and_a_key_skips_it() {
         let mut g = Game::new(0, 1, 1).unwrap();
-        assert!(g.intro.is_some());
+        assert!(g.motion.opening());
         frames(&mut g, 3);
         assert_eq!(g.baked.unwrap().0, Bits::default(), "no crate stands still while they drop in");
         frames(&mut g, 120);
-        assert!(g.intro.is_none(), "the intro ends by itself");
+        assert!(!g.motion.opening(), "the intro ends by itself");
         assert_eq!(g.baked.unwrap().0, g.play.state().blocks, "then every crate is baked where it rests");
         g.restart();
-        assert!(g.intro.is_some(), "restart replays it");
+        assert!(g.motion.opening(), "restart replays it");
         let first = puzzle_core::solve(&g.play.level).solution.unwrap()[0];
         assert_eq!(g.key(first), None);
-        assert!(g.intro.is_none() && g.play.moves() == 1, "a key skips the intro and still plays");
+        assert!(!g.motion.opening() && g.play.moves() == 1, "a key skips the intro and still plays");
     }
 
     #[test]
@@ -994,19 +648,19 @@ mod tests {
             frames(&mut g, 12);
         }
         frames(&mut g, 30);
-        assert!(g.win.is_some_and(|t| t > INTO_DOOR));
+        assert!(scene(&g).climber.is_none(), "the climber is through the door");
         let crates =
             (0..g.play.level.w as usize * g.play.level.h as usize).filter(|&i| g.play.state().blocks.get(i)).count();
         assert_eq!(g.shards.len(), 4 * crates, "every crate breaks in four");
-        assert!(g.pose(g.play.state()).gone >= 1.0, "the climber is through the door");
+        assert_eq!(scene(&g).still, Bits::default(), "and none stands still");
         g.undo();
-        assert!(g.win.is_none() && g.shards.is_empty(), "undo puts the board back");
+        assert!(scene(&g).climber.is_some() && g.shards.is_empty(), "undo puts the board back");
     }
 
     #[test]
     fn reduced_motion_snaps_and_throws_no_sparks_shake_or_shards() {
         let mut g = Game::new(0, 1, 1).unwrap();
-        g.reduce_motion = true;
+        g.reduce_motion(true);
         for k in puzzle_core::solve(&g.play.level).solution.unwrap() {
             g.key(k);
             g.frame(1.0 / 60.0);
@@ -1014,6 +668,6 @@ mod tests {
         frames(&mut g, 30);
         assert!(g.play.solved());
         assert_eq!(live_sparks(&g), 0);
-        assert_eq!((g.shake, g.shards.len(), g.intro.is_some()), (0.0, 0, false));
+        assert_eq!((g.shake, g.shards.len(), g.motion.opening()), (0.0, 0, false));
     }
 }
