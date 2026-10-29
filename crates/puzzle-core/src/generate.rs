@@ -9,17 +9,38 @@
 use crate::{Facing, Key, Level, solve_within};
 
 /// Which mechanic a world's levels are built around (P38). Classic is suite v1's Block Dude rules.
+///
+/// The numbers are fixed: each feeds its levels' seeds (see [`generate`]), so changing one re-rolls that world, and
+/// they are what the page passes to `game_new`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum World {
-    Classic,
+    Classic = 0,
     /// Cracked floor tiles (`~`, M2).
-    Crumble,
+    Crumble = 1,
     /// Ice blocks (`I`, M3).
-    Ice,
+    Ice = 2,
     /// Springs (`^`, M4).
-    Springs,
+    Springs = 3,
     /// All three at once, their rules combined (M5).
-    Mixed,
+    Mixed = 4,
+}
+
+impl World {
+    /// Every world, in number order.
+    pub const ALL: [World; 5] = [World::Classic, World::Crumble, World::Ice, World::Springs, World::Mixed];
+
+    /// The name the page's `?world=`, the suites and the examples use.
+    pub fn name(self) -> &'static str {
+        ["classic", "crumble", "ice", "springs", "mixed"][self as usize]
+    }
+
+    pub fn from_name(name: &str) -> Option<World> {
+        World::ALL.into_iter().find(|w| w.name() == name)
+    }
+
+    pub fn from_number(n: u32) -> Option<World> {
+        World::ALL.get(n as usize).copied()
+    }
 }
 
 /// A difficulty tier: the band its shortest solutions fall in, and the grid it is built on.
@@ -235,8 +256,14 @@ impl Pit {
     }
 }
 
-/// How good a candidate is: being what its world and tier want comes first (from tier 2 up, needing a block; outside
-/// Classic, its mechanic changing the shortest solution), then the length of the shortest solution. `None` for a
+/// A candidate's rank, which the climb never lets get worse: being what its world and tier want comes first (from
+/// tier 2 up, needing a block; outside Classic, its mechanic changing the shortest solution), then the length of the
+/// shortest solution. Every suite and the page's built-in levels depend on this order: changing it re-rolls them.
+fn rank(fits: bool, solution: &[Key]) -> (bool, usize) {
+    (fits, solution.len())
+}
+
+/// Whether a candidate is what its world and tier want, and its shortest solution (see [`rank`]). `None` for a
 /// candidate that is unsolvable, too costly to verify, or longer than the tier allows.
 fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
     let found = solve_within(level, CAP).solution?;
@@ -274,8 +301,12 @@ fn matters(level: &Level, world: World, moves: usize) -> bool {
         World::Crumble => crumble(),
         World::Ice => ice(),
         World::Springs => springs(),
-        // At least two of the three must matter, so a mixed level really mixes.
-        World::Mixed => [crumble(), ice(), springs()].iter().filter(|&&m| m).count() >= 2,
+        // At least two of the three must matter, so a mixed level really mixes. Springs is searched only when the
+        // first two disagree: the same answer for one search fewer.
+        World::Mixed => match (crumble(), ice()) {
+            (a, b) if a == b => a,
+            _ => springs(),
+        },
     }
 }
 
@@ -314,7 +345,7 @@ pub fn generate(seed: u64, world: World, tier: &Tier) -> Option<Generated> {
             let Some((needs_block, solution)) = score(&l, world, tier) else { continue };
             let better = match &best {
                 None => true,
-                Some((_, (had_block, had))) => (needs_block, solution.len()) >= (*had_block, had.len()),
+                Some((_, (had_block, had))) => rank(needs_block, &solution) >= rank(*had_block, had),
             };
             if better {
                 pit = next;

@@ -11,13 +11,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let seeds: u64 = args.next().and_then(|a| a.parse().ok()).unwrap_or(20);
     let only = args.next().unwrap_or_else(|| "1234".into());
-    let world = match args.next().as_deref() {
-        Some("crumble") => World::Crumble,
-        Some("ice") => World::Ice,
-        Some("springs") => World::Springs,
-        Some("mixed") => World::Mixed,
-        _ => World::Classic,
-    };
+    let world = args.next().and_then(|name| World::from_name(&name)).unwrap_or(World::Classic);
     for tier in TIERS.iter().filter(|t| only.contains(char::from(b'0' + t.n))) {
         let (mut ms, mut tries, mut lens, mut misses) = (vec![], vec![], vec![], 0);
         for seed in 1..=seeds {

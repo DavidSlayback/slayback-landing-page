@@ -54,37 +54,26 @@ fn a_fingerprint_is_fnv1a_of_the_text_form() {
     assert_eq!(Level::parse("#>E#\n####").unwrap().fingerprint(), 0xa68c_59b5_6714_9aea);
 }
 
-/// `(tier, seed, fingerprint, moves)` for every level in `bench/puzzle/suite-v1.json`, read without a JSON parser:
-/// each level sits on one line of its own.
-fn suite() -> Vec<(u8, u64, u64, usize)> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../bench/puzzle/suite-v1.json");
-    let text = std::fs::read_to_string(path).expect("bench/puzzle/suite-v1.json");
-    let field = |line: &str, name: &str| -> String {
-        let at = line.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("no {name} in {line}")) + name.len() + 4;
-        line[at..].trim_start_matches('"').chars().take_while(|c| c.is_ascii_alphanumeric()).collect()
-    };
-    text.lines()
-        .filter(|l| l.contains("\"fingerprint\""))
-        .map(|l| {
-            let fp = field(l, "fingerprint");
-            (
-                field(l, "tier").parse().unwrap(),
-                field(l, "seed").parse().unwrap(),
-                u64::from_str_radix(fp.trim_start_matches("0x"), 16).unwrap(),
-                field(l, "moves").parse().unwrap(),
-            )
-        })
-        .collect()
+/// Every level of a suite in `bench/puzzle/`.
+fn suite(file: &str) -> Vec<levels::Entry> {
+    let path = format!("{}/../../bench/puzzle/{file}", env!("CARGO_MANIFEST_DIR"));
+    levels::read_suite(&std::fs::read_to_string(&path).expect(&path))
 }
 
 fn regenerates(tiers: &[u8]) {
-    let levels = suite();
+    let levels = suite("suite-v1.json");
     for &t in tiers {
-        assert_eq!(levels.iter().filter(|l| l.0 == t).count(), 10, "tier {t} should have 10 levels");
+        assert_eq!(levels.iter().filter(|l| l.tier == t).count(), 10, "tier {t} should have 10 levels");
     }
-    for &(t, seed, fingerprint, moves) in levels.iter().filter(|l| tiers.contains(&l.0)) {
-        let g = generate(seed, World::Classic, &TIERS[t as usize - 1]).unwrap();
-        assert_eq!((g.level.fingerprint(), g.solution.len()), (fingerprint, moves), "tier {t} seed {seed} changed");
+    for l in levels.iter().filter(|l| tiers.contains(&l.tier)) {
+        let g = generate(l.seed, World::Classic, &TIERS[l.tier as usize - 1]).unwrap();
+        assert_eq!(
+            (g.level.fingerprint(), g.solution.len()),
+            (l.fingerprint, l.moves),
+            "tier {} seed {}",
+            l.tier,
+            l.seed
+        );
     }
 }
 
@@ -216,43 +205,20 @@ fn mixed_levels_keep_their_promises_and_need_two_mechanics() {
     }
 }
 
-/// `(world, tier, seed, fingerprint, moves)` for every level of suite v2 (P39).
-fn suite_v2() -> Vec<(String, u8, u64, u64, usize)> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../bench/puzzle/suite-v2.json");
-    let text = std::fs::read_to_string(path).expect("bench/puzzle/suite-v2.json");
-    let field = |line: &str, name: &str| -> String {
-        let at = line.find(&format!("\"{name}\": ")).unwrap_or_else(|| panic!("no {name} in {line}")) + name.len() + 4;
-        line[at..].trim_start_matches('"').chars().take_while(|c| c.is_ascii_alphanumeric()).collect()
-    };
-    text.lines()
-        .filter(|l| l.contains("\"fingerprint\""))
-        .map(|l| {
-            let fp = field(l, "fingerprint");
-            (
-                field(l, "world"),
-                field(l, "tier").parse().unwrap(),
-                field(l, "seed").parse().unwrap(),
-                u64::from_str_radix(fp.trim_start_matches("0x"), 16).unwrap(),
-                field(l, "moves").parse().unwrap(),
-            )
-        })
-        .collect()
-}
-
 fn regenerates_v2(tiers: &[u8]) {
-    let levels = suite_v2();
-    let worlds =
-        [("crumble", World::Crumble), ("ice", World::Ice), ("springs", World::Springs), ("mixed", World::Mixed)];
-    for (name, world) in worlds {
+    let levels = suite("suite-v2.json");
+    for world in [World::Crumble, World::Ice, World::Springs, World::Mixed] {
         for t in 1..=4 {
-            assert_eq!(levels.iter().filter(|l| l.0 == name && l.1 == t).count(), 5, "{name} tier {t}");
+            assert_eq!(levels.iter().filter(|l| l.world == world && l.tier == t).count(), 5, "{world:?} tier {t}");
         }
-        for (_, t, seed, fingerprint, moves) in levels.iter().filter(|l| l.0 == name && tiers.contains(&l.1)) {
-            let g = generate(*seed, world, &TIERS[*t as usize - 1]).unwrap();
+        for l in levels.iter().filter(|l| l.world == world && tiers.contains(&l.tier)) {
+            let g = generate(l.seed, world, &TIERS[l.tier as usize - 1]).unwrap();
             assert_eq!(
                 (g.level.fingerprint(), g.solution.len()),
-                (*fingerprint, *moves),
-                "{name} tier {t} seed {seed}"
+                (l.fingerprint, l.moves),
+                "{world:?} tier {} seed {}",
+                l.tier,
+                l.seed
             );
         }
     }
