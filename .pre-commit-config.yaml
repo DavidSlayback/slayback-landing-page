@@ -79,7 +79,7 @@ repos:
         stages: [pre-push]
       - id: hero-budget
         name: hero + puzzle build, 80 KB and 300 KB gz budgets
-        entry: bash -c 'SKIP_GAME=1 bash scripts/build.sh >/dev/null && test "$(wc -c < dist/hero.wasm)" -le 81920'
+        entry: bash -c 'SKIP_GAME=1 bash scripts/build.sh >/dev/null'   # build.sh enforces both budgets
         language: system
         files: ^(crates/sim|crates/hero-wasm|crates/puzzle-core|crates/puzzle-wasm|site|scripts/build\.sh)/?|^Cargo\.(toml|lock)$
         pass_filenames: false
