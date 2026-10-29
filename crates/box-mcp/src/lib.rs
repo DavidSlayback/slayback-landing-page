@@ -7,7 +7,10 @@
 //! lines. Every step the agent takes is in the env's trace, so a session's [`Record`] replays to the same outcome
 //! (`box_env::replay`), which is how a benchmark result is checked.
 
-use box_env::{Action, Env, EnvConfig, Events, Outcome, Trace, obs_json};
+use box_env::{Action, Env, EnvConfig, Events, FPS, Outcome, Trace, obs_json};
+use game_core::agent::{COMPASS, DASH, GRAB, KICK, PUNCH};
+use game_core::climb::MAX_STEP;
+use game_core::run::{AT_WALL, REFILL, TIMEOUT_PENALTY};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -17,24 +20,23 @@ pub const TOOLS: &str = include_str!("../tools.json");
 /// Protocol versions this server speaks, newest first. It answers a client in the client's own version when listed.
 const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-/// What the server tells the agent once, at the start: the game's rules and conventions.
-pub const INSTRUCTIONS: &str = "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming \
-through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze \
-where they land. You escape a box when the pile of debris under your feet reaches the rim's height while you stand \
-against a wall (within 0.8 m of it: a pile out in the middle doesn't get you out); then the next box starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris \
-in steps of up to 0.4 m, so heap kills against a wall to build a ramp up to it. The box clock running out costs 25 health and \
-restarts it. One life: the run ends when your health reaches zero. Coordinates are metres on the floor from its \
-centre: x is east (right), y is north (away from the camera, toward the back wall). The game is frozen between your \
-tool calls; each action advances it. Call look often.";
-
-/// Compass names in the action table's order: direction `k + 1` points k·45° from east toward north.
-const COMPASS: [&str; 8] = ["east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast"];
-
-/// The verbs' indices in the action table (`game_core::agent`).
-const DASH: usize = 1;
-const PUNCH: usize = 2;
-const KICK: usize = 3;
-const GRAB: usize = 4;
+/// What the server tells the agent once, at the start: the game's rules and conventions, its numbers taken from the
+/// game.
+pub fn instructions() -> String {
+    format!(
+        "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming through four doors \
+         (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze where they \
+         land. You escape a box when the pile of debris under your feet reaches the rim's height while you stand \
+         against a wall (within {AT_WALL} m of it: a pile out in the middle doesn't get you out); then the next box \
+         starts (a higher rim, a busier crowd), and you keep {refill}% more health. You cannot jump: you climb by \
+         walking up debris in steps of up to {MAX_STEP} m, so heap kills against a wall to build a ramp up to it. The \
+         box clock running out costs {TIMEOUT_PENALTY} health and restarts it. One life: the run ends when your \
+         health reaches zero. Coordinates are metres on the floor from its centre: x is east (right), y is north \
+         (away from the camera, toward the back wall). The game is frozen between your tool calls; each action \
+         advances it. Call look often.",
+        refill = (REFILL * 100.0).round(),
+    )
+}
 
 /// Steps spent turning to face an attack's direction, and recovering after it.
 const TURN_STEPS: u32 = 2;
@@ -219,7 +221,7 @@ impl Server {
     }
 
     fn secs(&self, steps: u32) -> f32 {
-        steps as f32 * self.env.config().frame_skip as f32 / 60.0
+        steps as f32 * self.env.config().frame_skip as f32 / FPS
     }
 }
 
@@ -237,7 +239,7 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": { "tools": {} },
         "serverInfo": { "name": "escape-the-box", "version": env!("CARGO_PKG_VERSION") },
-        "instructions": INSTRUCTIONS,
+        "instructions": instructions(),
     })
 }
 
@@ -259,7 +261,7 @@ fn steps_for(args: &Value, env: &Env, max: f32) -> Result<u32, Value> {
     if !(0.1..=max as f64).contains(&secs) {
         return Err(json!({ "error": format!("seconds must be between 0.1 and {max}") }));
     }
-    let step = env.config().frame_skip as f64 / 60.0;
+    let step = env.config().frame_skip as f64 / FPS as f64;
     Ok(((secs / step).round() as u32).max(1))
 }
 
@@ -280,6 +282,20 @@ mod tests {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
             assert!(t["description"].as_str().is_some_and(|d| d.len() > 20), "{}", t["name"]);
         }
+    }
+
+    /// Built from the game's constants, the text is still exactly what the benchmark's agents were told.
+    #[test]
+    fn the_instructions_read_as_they_always_have() {
+        let told = "You are the fighter in Escape the Box, a 3D brawler seen from above. Enemies keep coming \
+through four doors (two in the back wall, one in each side). Defeated enemies burst into debris blocks that freeze \
+where they land. You escape a box when the pile of debris under your feet reaches the rim's height while you stand \
+against a wall (within 0.8 m of it: a pile out in the middle doesn't get you out); then the next box starts (a higher rim, a busier crowd), and you keep 30% more health. You cannot jump: you climb by walking up debris \
+in steps of up to 0.4 m, so heap kills against a wall to build a ramp up to it. The box clock running out costs 25 health and \
+restarts it. One life: the run ends when your health reaches zero. Coordinates are metres on the floor from its \
+centre: x is east (right), y is north (away from the camera, toward the back wall). The game is frozen between your \
+tool calls; each action advances it. Call look often.";
+        assert_eq!(instructions(), told);
     }
 
     #[test]

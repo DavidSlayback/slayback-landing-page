@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use box_bench::{Checked, RunResult, Transcript, analyse, baseline, native, summarise};
-use box_mcp::{INSTRUCTIONS, Record, TOOL_NAMES};
+use box_mcp::{Record, TOOL_NAMES, instructions};
 use serde_json::json;
 
 /// The capped default: one run, at most this many tool calls.
@@ -43,7 +43,7 @@ struct Args {
 
 impl Args {
     fn max_steps(&self) -> u32 {
-        (self.max_seconds * 60.0 / box_env::EnvConfig::default().frame_skip as f32).round() as u32
+        (self.max_seconds * box_env::FPS / box_env::EnvConfig::default().frame_skip as f32).round() as u32
     }
 }
 
@@ -251,9 +251,10 @@ fn server_args(args: &Args, seed: u32, record: &Path) -> Vec<String> {
 /// they reach the model whatever its harness does with MCP instructions.
 fn prompt(max_calls: u32) -> String {
     format!(
-        "{INSTRUCTIONS}\n\nYour goal: escape as many boxes as you can before you die. You have at most {max_calls} tool \
+        "{}\n\nYour goal: escape as many boxes as you can before you die. You have at most {max_calls} tool \
          calls in total (look and status count too), so make them count. Play until the run is over or your calls run \
-         out, then reply with one line saying how it went."
+         out, then reply with one line saying how it went.",
+        instructions()
     )
 }
 
