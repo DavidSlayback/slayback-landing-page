@@ -7,6 +7,7 @@
 use std::fmt;
 
 mod generate;
+pub mod levels;
 mod solve;
 pub use generate::{CAP, Generated, TIERS, Tier, World, generate};
 pub use solve::{Search, solve, solve_within};

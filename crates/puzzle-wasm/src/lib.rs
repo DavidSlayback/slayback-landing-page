@@ -20,8 +20,8 @@ fn game<'a>(p: *mut Game) -> &'a mut Game {
     unsafe { &mut *p }
 }
 
-/// A game on the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs, 4 Mixed) and `tier` (1 to 4), or null if there is
-/// none.
+/// A game on the level for `seed` in `world` (`puzzle_core::World`'s numbers) and `tier` (1 to 4), from a later seed
+/// if that one makes no level (`game_seed` says which), or null if there is none.
 #[unsafe(no_mangle)]
 pub extern "C" fn game_new(world: u32, tier: u32, seed: u64) -> *mut Game {
     match Game::new(world as u8, tier as u8, seed) {
@@ -90,6 +90,12 @@ pub extern "C" fn game_solved(p: *mut Game) -> u32 {
     game(p).play.solved() as u32
 }
 
+/// The seed the level came from: the one asked for, or a later one when that one made no level.
+#[unsafe(no_mangle)]
+pub extern "C" fn game_seed(p: *mut Game) -> u64 {
+    game(p).seed
+}
+
 /// The level's fingerprint, as in `bench/puzzle/suite-v1.json`.
 #[unsafe(no_mangle)]
 pub extern "C" fn game_fingerprint(p: *mut Game) -> u64 {
@@ -113,4 +119,15 @@ pub extern "C" fn game_shake(p: *mut Game, axis: u32) -> f32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn game_reduce_motion(p: *mut Game, on: u32) {
     game(p).reduce_motion = on != 0;
+}
+
+#[cfg(test)]
+mod tests {
+    /// The page sends a world's index in its `WORLDS` list to `game_new`, which reads it as `World`'s number.
+    #[test]
+    fn the_pages_world_list_is_in_world_number_order() {
+        let js = include_str!("../../../site/puzzle/puzzle.js");
+        let names: Vec<_> = puzzle_core::World::ALL.iter().map(|w| format!("'{}'", w.name())).collect();
+        assert!(js.contains(&format!("const WORLDS = [{}];", names.join(", "))), "puzzle.js WORLDS");
+    }
 }

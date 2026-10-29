@@ -8,7 +8,7 @@
 
 use std::f32::consts::{PI, TAU};
 
-use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, TIERS, generate, step_traced};
+use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, levels, step_traced};
 use sim::World;
 
 use crate::art::{self, Pose, T, TILE};
@@ -182,13 +182,11 @@ pub struct Game {
 }
 
 impl Game {
-    /// The page's game: the level for `seed` in `world` (0 Classic, 1 Crumble, 2 Ice, 3 Springs, 4 Mixed) and `tier`,
+    /// The page's game: the level `puzzle_core::levels::pick` gives for `seed` in `world` (by number) and `tier`,
     /// opening with its intro.
     pub fn new(world: u8, tier: u8, seed: u64) -> Option<Game> {
-        use puzzle_core::World::*;
-        let world = [Classic, Crumble, Ice, Springs, Mixed].get(world as usize).copied()?;
-        let g = generate(seed, world, TIERS.get(tier.checked_sub(1)? as usize)?)?;
-        let mut game = Game::from_level(g.level, g.solution.len(), tier, seed);
+        let picked = levels::pick(puzzle_core::World::from_number(world as u32)?, tier, seed)?;
+        let mut game = Game::from_level(picked.level, picked.solution.len(), tier, picked.seed);
         game.intro_on = true;
         game.start_intro();
         Some(game)

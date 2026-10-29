@@ -16,7 +16,7 @@ const REFUSALS = ['', 'Something is in the way.', 'The block you carry would hit
 
 const qs = new URLSearchParams(location.search);
 const tier = Math.min(4, Math.max(1, parseInt(qs.get('tier'), 10) || 1));
-const seed = Math.max(1, parseInt(qs.get('seed'), 10) || 1);
+let seed = Math.max(1, parseInt(qs.get('seed'), 10) || 1);   // a seed that makes no level hands over to the next
 // Worlds (P38), in puzzle-core's order: the index is what game_new takes.
 const WORLDS = ['classic', 'crumble', 'ice', 'springs', 'mixed'];
 const world = Math.max(0, WORLDS.indexOf(qs.get('world')));
@@ -47,7 +47,7 @@ document.querySelectorAll('nav [data-pick]').forEach(a => {
 document.querySelectorAll('[data-world]').forEach(el => {
   el.hidden = !el.dataset.world.split(' ').includes(WORLDS[world]);
 });
-const where = `${worldName}Tier ${tier} · level ${seed}`;
+let where = `${worldName}Tier ${tier} · level ${seed}`;
 $('where').textContent = where;
 
 function say(html, state) {
@@ -63,13 +63,18 @@ async function load() {
 }
 
 load().then(X => {
-  // Let "Building the level…" paint first: the higher tiers take a moment to generate.
+  // Let "Building the level…" paint first: past the built-in levels, the higher tiers take a while to generate.
   requestAnimationFrame(() => setTimeout(() => start(X), 0));
 }).catch(e => { say(`<span class="error">The puzzle needs WebAssembly: ${e.message}</span>`, 'error'); });
 
 function start(X) {
   const g = X.game_new(world, tier, BigInt(seed));
   if (!g) return say(`<span class="error">No level for ${worldName}tier ${tier}, seed ${seed}.</span>`, 'error');
+  if (Number(X.game_seed(g)) !== seed) {
+    seed = Number(X.game_seed(g));
+    history.replaceState(null, '', query(tier, seed));
+    $('where').textContent = where = `${worldName}Tier ${tier} · level ${seed}`;
+  }
   scheme.forEach((hex, i) => {
     const n = parseInt(hex.slice(1), 16);
     X.game_color(g, i, (n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255);
