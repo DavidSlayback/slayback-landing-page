@@ -11,6 +11,7 @@ use game_core::enemy::Kind;
 use game_core::grab::Held;
 
 use crate::Frame;
+use crate::arena::{Arena, WALL};
 use crate::bomb::{BombHead, lit_bomb};
 use crate::carry::Grabbable;
 use crate::enemy::Brain;
@@ -183,20 +184,33 @@ fn burst(
     }
 }
 
-/// Moving pieces freeze once they have rested long enough (asleep, or barely moving).
+/// Whether a piece is stuck in a wall: its centre past the wall's middle plane (`half` the floor plus half a wall).
+/// Flung hard into a wall or the fence above it, a piece can sink so deep that the solver, pushing it out both ways at
+/// once, holds it still. One merely pressed into a wall is not stuck.
+fn in_wall(at: Vec3, half: Vec2) -> bool {
+    at.x.abs() > half.x + WALL / 2.0 || at.z.abs() > half.y + WALL / 2.0
+}
+
+/// Moving pieces freeze once they have rested long enough (asleep, or barely moving). One stuck in a wall goes
+/// instead, rather than freeze floating in the fence over the rim; taking it away changes nothing in the heap.
 #[allow(clippy::type_complexity)]
 fn settle(
     mut commands: Commands,
     time: Res<Time>,
-    mut pieces: Query<(Entity, &mut Piece, &RigidBody, &LinearVelocity, &AngularVelocity, Has<Sleeping>)>,
+    arena: Res<Arena>,
+    mut pieces: Query<(Entity, &mut Piece, &RigidBody, &Transform, &LinearVelocity, &AngularVelocity, Has<Sleeping>)>,
 ) {
     let dt = time.delta_secs();
     if dt == 0.0 {
         return; // hit-stop: nothing moved
     }
-    for (e, mut piece, body, v, w, asleep) in &mut pieces {
+    for (e, mut piece, body, at, v, w, asleep) in &mut pieces {
         if *body == RigidBody::Dynamic && piece.settle.step(dt, asleep || at_rest(v.length(), w.length())) {
-            commands.entity(e).insert(RigidBody::Static);
+            if in_wall(at.translation, arena.floor / 2.0) {
+                commands.entity(e).despawn();
+            } else {
+                commands.entity(e).insert(RigidBody::Static);
+            }
         }
     }
 }
