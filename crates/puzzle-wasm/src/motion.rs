@@ -474,6 +474,7 @@ impl Motion {
             return p;
         }
         let (t, path) = (self.t, self.player);
+        p.squash = path.squash(t);
         if let Some(tr) = &self.trace {
             let (k, u) = tr.at(t);
             if tr.rising(k) {
@@ -489,7 +490,6 @@ impl Motion {
                 p.stride = (TAU * u).sin();
             }
         }
-        p.squash = path.squash(t);
         p.breath = 0.6 * (self.time * 2.2).sin();
         p.blink = self.time % 3.7 < 0.12;
         let since = self.time - self.turned.0;
@@ -704,6 +704,19 @@ mod tests {
         let events = run(&mut m, 1.0);
         assert!(events.iter().any(|e| matches!(e.1, Event::Landing(_))), "{events:?}");
         assert_eq!(m.scene(play.state()).climber.map(|c| c.at), Some((3.0, 0.0)));
+    }
+
+    #[test]
+    fn the_climber_stretches_on_the_way_up_a_bounce() {
+        let (mut play, mut m) = open("#>.....#\n##.#...#\n#..#..E#\n##^#####");
+        press(&mut play, &mut m, Key::R);
+        let mut stretched = false;
+        for _ in 0..60 {
+            m.advance(DT);
+            let pose = m.scene(play.state()).climber.unwrap().pose;
+            stretched |= pose.squash < 0.0;
+        }
+        assert!(stretched, "the climber never stretched while the bounce rose");
     }
 
     #[test]
