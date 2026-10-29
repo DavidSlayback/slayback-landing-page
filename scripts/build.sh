@@ -9,6 +9,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/target-dir.sh
 export PATH="$HOME/.cargo/bin:$PATH"
+# Binaryen's wasm-opt is part of the build, not an extra: without it hero.wasm is ~100 KB, over its budget, and the
+# game ships unoptimised. `bash scripts/doctor.sh` lists everything a machine needs.
+command -v wasm-opt >/dev/null || { echo "wasm-opt not found: cargo install wasm-opt --locked" >&2; exit 1; }
 target="${CARGO_TARGET_DIR:-target}"
 release="${GAME_RELEASE:-0}"
 if [ "$release" = 1 ] && [ "${SKIP_GAME:-0}" = 1 ]; then
@@ -19,14 +22,16 @@ cargo build -p hero-wasm --release --target wasm32-unknown-unknown --quiet
 rm -rf dist && mkdir -p dist
 cp -r site/. dist/
 cp "$target/wasm32-unknown-unknown/release/hero_wasm.wasm" dist/hero.wasm
-if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals dist/hero.wasm -o dist/hero.wasm; fi
-echo "dist/: hero.wasm $(( $(wc -c < dist/hero.wasm) / 1024 )) KB"
+wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals dist/hero.wasm -o dist/hero.wasm
+hero=$(wc -c < dist/hero.wasm)
+echo "dist/: hero.wasm $(( hero / 1024 )) KB"
+if [ "$hero" -gt 81920 ]; then echo "hero.wasm is $hero B, over its 80 KB budget (81920 B)" >&2; exit 1; fi
 
 # The puzzle (/puzzle, crates/puzzle-wasm): like the hero, a C-ABI module with no imports. Built every time, so a
 # break shows up in every build, with a budget of 300 KB gzipped (spec "Browser").
 cargo build -p puzzle-wasm --release --target wasm32-unknown-unknown --quiet
 cp "$target/wasm32-unknown-unknown/release/puzzle_wasm.wasm" dist/puzzle/puzzle.wasm
-if command -v wasm-opt >/dev/null; then wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int dist/puzzle/puzzle.wasm -o dist/puzzle/puzzle.wasm; fi
+wasm-opt -O3 --enable-simd --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int dist/puzzle/puzzle.wasm -o dist/puzzle/puzzle.wasm
 puzzle_gz=$(gzip -9 -c dist/puzzle/puzzle.wasm | wc -c)
 echo "dist/puzzle/: puzzle.wasm $(( $(wc -c < dist/puzzle/puzzle.wasm) / 1024 )) KB ($(( puzzle_gz / 1024 )) KB gzipped)"
 if [ "$puzzle_gz" -gt 307200 ]; then echo "puzzle.wasm is over its 300 KB gzipped budget" >&2; exit 1; fi
@@ -54,8 +59,6 @@ else
   cargo build -p game3d --profile game --target wasm32-unknown-unknown --quiet
   wasm-bindgen --target web --no-typescript --out-dir dist/play --out-name game "$target/wasm32-unknown-unknown/game/game3d.wasm"
   # The workspace builds with simd128, so wasm-opt must be told which post-MVP features the module already uses.
-  if command -v wasm-opt >/dev/null; then
-    wasm-opt -Oz --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext       --enable-mutable-globals --enable-reference-types --enable-multivalue dist/play/game_bg.wasm -o dist/play/game_bg.wasm
-  fi
+  wasm-opt -Oz --enable-simd --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext       --enable-mutable-globals --enable-reference-types --enable-multivalue dist/play/game_bg.wasm -o dist/play/game_bg.wasm
   echo "dist/play/: game_bg.wasm $(( $(wc -c < dist/play/game_bg.wasm) / 1024 )) KB ($(( $(gzip -9 -c dist/play/game_bg.wasm | wc -c) / 1024 )) KB gzipped)"
 fi

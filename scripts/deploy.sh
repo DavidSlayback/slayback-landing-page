@@ -14,10 +14,12 @@ cd "$(dirname "$0")/.."
 if [ "${1:-}" = rc ]; then
   n="${2:?usage: deploy.sh rc <n>}"
   branch="rc-$n"
+  bash scripts/doctor.sh
   GAME_RELEASE=1 bash scripts/build.sh
   harness_env=(GAME_RELEASE=1 REQUIRE_GAME=1)
 else
   branch=main
+  SKIP_GAME=1 bash scripts/doctor.sh
   SKIP_GAME=1 bash scripts/build.sh
   harness_env=()
 fi
