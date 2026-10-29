@@ -1,7 +1,7 @@
-//! A move that plays out over several rounds (ice sliding, M3): the rules' state after each round
-//! (`puzzle_core::step_traced`), and which block went where between rounds, so blocks glide instead of snapping.
+//! A move that plays out over several rounds (ice sliding, M3): the rules' state after each round and every block's
+//! way there (`puzzle_core::Play::key`), so blocks glide instead of snapping.
 
-use puzzle_core::{Bits, State};
+use puzzle_core::{Round, State};
 
 /// Seconds for the key's own action (a walk, a lift), then for each round after it.
 pub const FIRST: f32 = 0.09;
@@ -19,14 +19,10 @@ pub struct Trace {
 }
 
 impl Trace {
-    /// `rounds`: each state from `step_traced` with the cells of the blocks that fell a row to reach it.
-    pub fn new(before: State, rounds: Vec<(State, Bits)>, w: usize, h: usize) -> Trace {
-        let mut ticks = vec![before];
-        let mut moves = vec![];
-        for (s, fell) in rounds {
-            moves.push(between(ticks.last().unwrap(), &s, fell, w, h));
-            ticks.push(s);
-        }
+    /// `rounds`: how the key played out, from `Play::key`.
+    pub fn new(before: State, rounds: &[Round]) -> Trace {
+        let ticks = std::iter::once(before).chain(rounds.iter().map(|r| r.state)).collect();
+        let moves = rounds.iter().map(|r| r.moved.iter().map(|m| (m.from, m.to, m.ice)).collect()).collect();
         Trace { ticks, moves, t: 0.0 }
     }
 
@@ -76,47 +72,4 @@ impl Trace {
             .map(|m| m.1)
             .collect()
     }
-}
-
-/// The blocks of `s` by cell, the carried one in the cell above you: (cell, ice).
-fn blocks(s: &State, w: usize, h: usize) -> Vec<(usize, bool)> {
-    let mut out: Vec<(usize, bool)> = (0..w * h).filter(|&i| s.blocks.get(i)).map(|i| (i, s.ice.get(i))).collect();
-    if s.carrying {
-        out.push((s.y as usize * w + s.x as usize - w, s.carrying_ice));
-    }
-    out
-}
-
-/// Matches the blocks of `a` to those of `b`: those in `fell` came from the cell above, those in the same cell stayed,
-/// and the rest moved to a neighbouring cell of their own kind (a slide, a lift, a set-down, a climb).
-fn between(a: &State, b: &State, fell: Bits, w: usize, h: usize) -> Vec<Move> {
-    let (from, to) = (blocks(a, w, h), blocks(b, w, h));
-    let mut sources: Vec<(usize, bool)> = vec![];
-    let mut targets: Vec<(usize, bool)> = to.iter().copied().filter(|&(c, _)| !fell.get(c)).collect();
-    let mut out: Vec<Move> = to.iter().filter(|&&(c, _)| fell.get(c)).map(|&(c, ice)| (c - w, c, ice)).collect();
-    for &(c, ice) in &from {
-        if out.iter().any(|m| m.0 == c) {
-            continue;
-        }
-        match targets.iter().position(|&t| t == (c, ice)) {
-            Some(k) => {
-                targets.remove(k);
-                out.push((c, c, ice));
-            }
-            None => sources.push((c, ice)),
-        }
-    }
-    let (w, ci) = (w as i32, |c: usize| c as i32);
-    for (c, ice) in sources {
-        let near = [-1, 1, -w - 1, -w + 1, -w, w - 1, w + 1, w].map(|d| ci(c) + d);
-        let k = near
-            .iter()
-            .find_map(|&n| targets.iter().position(|&t| ci(t.0) == n && t.1 == ice))
-            .or_else(|| targets.iter().position(|t| t.1 == ice));
-        if let Some(k) = k {
-            out.push((c, targets.remove(k).0, ice));
-        }
-    }
-    out.extend(targets.into_iter().map(|(c, ice)| (c, c, ice)));
-    out
 }

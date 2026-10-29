@@ -345,6 +345,20 @@ impl Play {
         }
         Applied { played, stop: None, solved: self.solved() }
     }
+    /// Plays one key as one move, and says how it played out: the state after the key's own action and after each
+    /// round of settling, each with every block's path to it ([`step_traced`]). A solved level plays nothing and
+    /// gives no rounds.
+    pub fn key(&mut self, key: Key) -> Result<Vec<Round>, Refusal> {
+        if self.solved() {
+            return Ok(vec![]);
+        }
+        let mut rounds = vec![];
+        let next = step_traced(&self.level, self.state(), key, |state, moved| {
+            rounds.push(Round { state: *state, moved: moved.to_vec() })
+        })?;
+        self.history.push(next);
+        Ok(rounds)
+    }
     /// Takes back up to `n` moves; returns how many it took back.
     pub fn undo(&mut self, n: usize) -> usize {
         let n = n.min(self.moves());
@@ -356,20 +370,39 @@ impl Play {
     }
 }
 
+/// A block's way from one state of a move to the next, by cell; `from == to` for one that stayed. The carried block's
+/// cell is the one above you.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Moved {
+    pub from: usize,
+    pub to: usize,
+    pub ice: bool,
+}
+
+/// One step of a key playing out ([`Play::key`]): the state reached, and every block's way there from the step
+/// before (from the state before the key, for the first). Every round lists the blocks in the same order, so a block
+/// is followed through a move by its place in the list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Round {
+    pub state: State,
+    pub moved: Vec<Moved>,
+}
+
 /// Plays one key. A refused key changes nothing and is not a move.
 pub fn step(level: &Level, s: &State, key: Key) -> Result<State, Refusal> {
     step_traced(level, s, key, |_, _| {})
 }
 
-/// [`step`], calling `on_tick` with the state after the key acts and after each round of things falling and sliding,
-/// so the browser can animate a move as it plays out. With each state come the cells of the blocks that fell a row in
-/// that round (where they landed); any other block that moved slid a cell.
+/// [`step`], calling `on_tick` with the state after the key acts and after each round of things rising, falling and
+/// sliding, so the browser can animate a move as it plays out. With each state comes every block's way to it, recorded
+/// where the rules move it: the carried block too, and a lift or a set-down.
 pub fn step_traced(
     level: &Level,
     s: &State,
     key: Key,
-    mut on_tick: impl FnMut(&State, Bits),
+    mut on_tick: impl FnMut(&State, &[Moved]),
 ) -> Result<State, Refusal> {
+    let mut paths = Paths::new(level, s);
     let mut n = *s;
     let mut movers = vec![];
     let (x, y) = (s.x as i32, s.y as i32);
@@ -379,6 +412,7 @@ pub fn step_traced(
             let way = if key == Key::L { Facing::Left } else { Facing::Right };
             if s.facing != way {
                 n.facing = way;
+                paths.tick(&n, &mut on_tick);
                 return Ok(n);
             }
             let d = dx(way);
@@ -417,6 +451,7 @@ pub fn step_traced(
                 return Err(Refusal::NoHeadroom);
             }
             n.blocks.set((y * w + fx) as usize, false);
+            paths.lift((y * w + fx) as usize);
             n.carrying = true;
             n.carrying_ice = s.ice.get((y * w + fx) as usize);
             n.ice.set((y * w + fx) as usize, false);
@@ -432,11 +467,12 @@ pub fn step_traced(
             n.ice.set(at, s.carrying_ice);
             (n.carrying, n.carrying_ice) = (false, false);
             movers.push(Mover::new(at, dx(s.facing), s.carrying_ice, false));
+            paths.set_down(at);
         }
     }
     let walked = (n.x, n.y) != (s.x, s.y);
     crumble(level, s, &mut n);
-    settle(level, &mut n, movers, walked, &mut on_tick);
+    settle(level, &mut n, movers, walked, &mut paths, &mut on_tick);
     Ok(n)
 }
 
@@ -455,6 +491,67 @@ fn crumble(level: &Level, before: &State, after: &mut State) {
     };
     let left = on(before).zip(on(after), |a, b| a & !b);
     after.cracked = after.cracked.zip(left.down(w), |a, b| a & !b);
+}
+
+/// Every block's way through the current step of a move ([`Moved`]), kept as the rules move blocks, and which one
+/// you carry. Lookups skip the carried block: its cell follows you, so it is set only when a step ends.
+struct Paths {
+    moved: Vec<Moved>,
+    carried: Option<usize>,
+    w: usize,
+}
+
+impl Paths {
+    fn new(level: &Level, s: &State) -> Paths {
+        let w = level.w as usize;
+        let block = |c| Moved { from: c, to: c, ice: s.ice.get(c) };
+        let mut moved: Vec<Moved> = (0..w * level.h as usize).filter(|&c| s.blocks.get(c)).map(block).collect();
+        let carried = s.carrying.then(|| {
+            let c = s.y as usize * w + s.x as usize - w;
+            moved.push(Moved { from: c, to: c, ice: s.carrying_ice });
+            moved.len() - 1
+        });
+        Paths { moved, carried, w }
+    }
+
+    fn at(&mut self, cell: usize) -> Option<&mut Moved> {
+        let carried = self.carried;
+        self.moved.iter_mut().enumerate().find(|(k, m)| m.to == cell && Some(*k) != carried).map(|(_, m)| m)
+    }
+
+    fn shift(&mut self, from: usize, to: usize) {
+        if let Some(m) = self.at(from) {
+            m.to = to;
+        }
+    }
+
+    /// Everything in `dropping` falls a row together.
+    fn drop(&mut self, dropping: Bits) {
+        let (w, carried) = (self.w, self.carried);
+        for (_, m) in self.moved.iter_mut().enumerate().filter(|(k, m)| Some(*k) != carried && dropping.get(m.to)) {
+            m.to += w;
+        }
+    }
+
+    fn lift(&mut self, cell: usize) {
+        let carried = self.carried;
+        self.carried = self.moved.iter().enumerate().position(|(k, m)| m.to == cell && Some(k) != carried);
+    }
+
+    fn set_down(&mut self, cell: usize) {
+        if let Some(k) = self.carried.take() {
+            self.moved[k].to = cell;
+        }
+    }
+
+    /// Ends a step at `s`: hands every block's way there to `on_tick`, then starts the next step from it.
+    fn tick(&mut self, s: &State, on_tick: &mut impl FnMut(&State, &[Moved])) {
+        if let Some(k) = self.carried {
+            self.moved[k].to = s.y as usize * self.w + s.x as usize - self.w;
+        }
+        on_tick(s, &self.moved);
+        self.moved.iter_mut().for_each(|m| m.from = m.to);
+    }
 }
 
 fn dx(facing: Facing) -> i32 {
@@ -499,7 +596,14 @@ impl Mover {
 ///
 /// Everything you set moving moves away from your column, so you never ride ice. Every slide and every hop moves one
 /// way, every fall moves down and every rise is paid for by a fall, so the rounds end.
-fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on_tick: &mut impl FnMut(&State, Bits)) {
+fn settle(
+    level: &Level,
+    s: &mut State,
+    mut movers: Vec<Mover>,
+    walked: bool,
+    paths: &mut Paths,
+    on_tick: &mut impl FnMut(&State, &[Moved]),
+) {
     let (w, h) = (level.w as usize, level.h as usize);
     let floor = Bits::range(w * (h - 1), w * h);
     let or = |a: Bits, b: Bits| a.zip(b, |a, b| a | b);
@@ -518,14 +622,15 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
         (0..w as i32).contains(&x) && (0..h as i32).contains(&y) && !solid(s).get(y as usize * w + x as usize)
     };
     let rests = |s: &State, i: usize| i + w >= w * h || solid(s).get(i + w);
-    let shift = |s: &mut State, from: usize, to: usize| {
+    let shift = |s: &mut State, paths: &mut Paths, from: usize, to: usize| {
+        paths.shift(from, to);
         let ice = s.ice.get(from);
         s.blocks.set(from, false);
         s.ice.set(from, false);
         s.blocks.set(to, true);
         s.ice.set(to, ice);
     };
-    on_tick(s, Bits::default());
+    paths.tick(s, on_tick);
     // You: rows fallen, rows left to rise, whether you arrived this round, the spring a blocked bounce came back to.
     let (mut me_fall, mut me_rise, mut me_arrived, mut spent) = (0, 0, walked, None);
     let mut me_spring = 0;
@@ -559,7 +664,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
         for m in movers.iter_mut().filter(|m| m.rise > 0) {
             let (x, y) = ((m.at % w) as i32, (m.at / w) as i32);
             if free(s, x, y - 1) {
-                shift(s, m.at, m.at - w);
+                shift(s, paths, m.at, m.at - w);
                 m.at -= w;
                 m.rise -= 1;
             } else {
@@ -568,7 +673,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
             if m.rise == 0 {
                 let (x, y) = ((m.at % w) as i32 + m.dir, (m.at / w) as i32);
                 if free(s, x, y) {
-                    shift(s, m.at, y as usize * w + x as usize);
+                    shift(s, paths, m.at, y as usize * w + x as usize);
                     (m.at, m.arrived) = (y as usize * w + x as usize, true);
                 } else {
                     (m.dir, m.slides) = (0, false);
@@ -608,6 +713,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
             let ice = s.ice.zip(dropping, |a, b| a & b);
             s.blocks = or(minus(s.blocks, dropping), fell);
             s.ice = or(minus(s.ice, ice), ice.down(w));
+            paths.drop(dropping);
             for m in movers.iter_mut().filter(|m| dropping.get(m.at)) {
                 (m.at, m.fall, m.arrived) = (m.at + w, m.fall + 1, true);
             }
@@ -639,12 +745,12 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
                 continue;
             }
             let to = to as usize;
-            shift(s, m.at, to);
+            shift(s, paths, m.at, to);
             if m.riders {
                 let mut c = m.at;
                 while c >= w && s.blocks.get(c - w) && !solid(s).get(c - w + to - m.at) {
                     c -= w;
-                    shift(s, c, c + to - m.at);
+                    shift(s, paths, c, c + to - m.at);
                 }
             }
             (movers[k - 1].at, movers[k - 1].arrived) = (to, true);
@@ -683,7 +789,7 @@ fn settle(level: &Level, s: &mut State, mut movers: Vec<Mover>, walked: bool, on
         if !moved {
             return;
         }
-        on_tick(s, fell);
+        paths.tick(s, on_tick);
     }
     debug_assert!(false, "settling didn't end");
 }

@@ -8,7 +8,7 @@
 
 use std::f32::consts::{PI, TAU};
 
-use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, State, levels, step_traced};
+use puzzle_core::{Bits, Facing, Key, Level, Play, Refusal, Round, State, levels};
 use sim::World;
 
 use crate::art::{self, Pose, T, TILE};
@@ -273,30 +273,31 @@ impl Game {
     pub fn key(&mut self, key: Key) -> Option<Refusal> {
         self.intro = None;
         let before = *self.play.state();
-        let mut rounds = vec![];
-        let _ = step_traced(&self.play.level, &before, key, |s, fell| rounds.push((*s, fell)));
-        let applied = self.play.apply(&format!("{key:?}"));
-        if let Some(stop) = applied.stop {
-            self.refused = 0.18;
-            return Some(stop.why);
+        let rounds = match self.play.key(key) {
+            Ok(rounds) => rounds,
+            Err(why) => {
+                self.refused = 0.18;
+                return Some(why);
+            }
+        };
+        if rounds.is_empty() {
+            return None; // already solved: nothing played
         }
-        if applied.played == 1 {
-            let after = *self.play.state();
-            if after.facing != before.facing && (after.x, after.y) == (before.x, before.y) {
-                self.turned = (self.time, if after.facing == Facing::Left { -1.0 } else { 1.0 });
-            }
-            let (w, h) = (self.play.level.w as usize, self.play.level.h as usize);
-            let trace = Trace::new(before, rounds, w, h);
-            self.trace = None;
-            if trace.needed(w) && !self.reduce_motion {
-                self.follow(trace);
-            } else {
-                self.animate(&before, &after);
-            }
-            self.crumble(&before, &after);
-            if before.blocks != after.blocks || before.cracked != after.cracked {
-                self.update_mask();
-            }
+        let after = *self.play.state();
+        if after.facing != before.facing && (after.x, after.y) == (before.x, before.y) {
+            self.turned = (self.time, if after.facing == Facing::Left { -1.0 } else { 1.0 });
+        }
+        let w = self.play.level.w as usize;
+        let trace = Trace::new(before, &rounds);
+        self.trace = None;
+        if trace.needed(w) && !self.reduce_motion {
+            self.follow(trace);
+        } else {
+            self.animate(&before, &after, &rounds);
+        }
+        self.crumble(&before, &after);
+        if before.blocks != after.blocks || before.cracked != after.cracked {
+            self.update_mask();
         }
         None
     }
@@ -353,8 +354,9 @@ impl Game {
         self.trace = Some(trace);
     }
 
-    /// Sets up the tween from `before` to `after`, starting wherever the player is drawn now.
-    fn animate(&mut self, before: &State, after: &State) {
+    /// Sets up the tween from `before` to `after` (`rounds` is how the key played out), starting wherever the player
+    /// is drawn now.
+    fn animate(&mut self, before: &State, after: &State, rounds: &[Round]) {
         let now = self.tween.player.at(self.tween.t);
         let (bx, by) = (before.x as f32, before.y as f32);
         let to = (after.x as f32, after.y as f32);
@@ -374,7 +376,10 @@ impl Game {
                 None,
             )),
             (true, false) => {
-                let cell = (0..w * self.play.level.h as usize).find(|&i| after.blocks.get(i) && !before.blocks.get(i));
+                // The carried block, followed through the rounds to where it comes to rest.
+                let head = before.y as usize * w + before.x as usize - w;
+                let k = rounds[0].moved.iter().position(|m| m.from == head);
+                let cell = k.and_then(|k| rounds.last().map(|r| r.moved[k].to));
                 cell.map(|i| (Path::drop((front, by - 1.0), ((i % w) as f32, (i / w) as f32)), Some(i)))
             }
             _ => None,
