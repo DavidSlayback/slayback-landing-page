@@ -223,7 +223,8 @@ impl Server {
     }
 }
 
-const TOOL_NAMES: [&str; 8] = ["look", "status", "move", "punch", "kick", "dash", "grab", "wait"];
+/// The tools in `tools.json`, in its order.
+pub const TOOL_NAMES: [&str; 8] = ["look", "status", "move", "punch", "kick", "dash", "grab", "wait"];
 
 fn tools() -> Value {
     serde_json::from_str(TOOLS).expect("tools.json is valid JSON")
