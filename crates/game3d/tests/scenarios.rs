@@ -712,6 +712,9 @@ fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     }
     let before = pieces(&mut app);
     assert!(before.iter().all(|(_, b)| *b == RigidBody::Static), "the heap froze");
+    let half = app.world().resource::<Arena>().floor / 2.0;
+    let out: Vec<_> = before.iter().filter(|(p, _)| p.x.abs() > half.x || p.z.abs() > half.y).collect();
+    assert!(out.is_empty(), "none froze stuck in a wall, floating in the fence over it: {out:?}");
     // Walk at the heap from the open floor, up and across it, at 30 fps: from the south-east, then the east and the
     // south, then the south-east again a little to either side.
     let routes: [(Vec2, &[KeyCode]); 5] = [
