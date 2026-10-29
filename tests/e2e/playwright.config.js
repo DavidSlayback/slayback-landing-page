@@ -25,7 +25,9 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1280, height: 720 },
     ...(channel ? { channel } : {}),
-    launchOptions: { args: GL_ARGS },
+    // Autoplay allowed: Chrome on Linux kept the game's AudioContext suspended with no gesture, so the demo was
+    // silent. The wake-on-gesture path is still tested: that test suspends the context itself, then presses a key.
+    launchOptions: { args: [...GL_ARGS, '--autoplay-policy=no-user-gesture-required'] },
   },
   webServer: {
     command: `node serve.mjs "${DIST}" ${PORT}`,
