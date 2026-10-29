@@ -700,8 +700,10 @@ fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     let mut app = standing();
     app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f32(1.0 / 30.0)));
     // The heap is in a corner, against the walls: out of reach of the rim, so climbing it never ends the box (that
-    // would clear the pieces this watches). The bursts tumble before they freeze, so the heap's shape, and how high a
-    // climb gets, differs between platforms' floats.
+    // would clear the pieces this watches). The bursts tumble before they freeze, so the heap's shape differs between
+    // platforms' floats: a route that walks up a slope on one can meet a face taller than a step on another (on
+    // Linux the first route stops at 0.66 m against a 0.56 m face). So the player tries several routes in, and at
+    // least one must get well up; every route must keep it out of the floor and every piece still.
     app.world_mut().resource_mut::<Arena>().rim = 10.0;
     let centre = Vec2::new(-6.6, -4.1);
     heap(&mut app, 25, centre);
@@ -710,21 +712,34 @@ fn a_heap_of_bursts_built_and_climbed_at_30_fps_stays_put_under_the_player() {
     }
     let before = pieces(&mut app);
     assert!(before.iter().all(|(_, b)| *b == RigidBody::Static), "the heap froze");
-    // Walk at the heap from the open floor, up and across it, at 30 fps.
-    teleport(&mut app, Vec3::new(centre.x + 4.0, HEIGHT / 2.0 + 0.02, centre.y + 3.0));
-    for _ in 0..6 {
-        app.update();
-    }
-    let mut top: f32 = 0.0;
+    // Walk at the heap from the open floor, up and across it, at 30 fps: from the south-east, then the east and the
+    // south, then the south-east again a little to either side.
+    let routes: [(Vec2, &[KeyCode]); 5] = [
+        (Vec2::new(4.0, 3.0), &[KeyCode::KeyA, KeyCode::KeyW]),
+        (Vec2::new(4.0, 0.0), &[KeyCode::KeyA]),
+        (Vec2::new(0.0, 3.5), &[KeyCode::KeyW]),
+        (Vec2::new(4.5, 2.5), &[KeyCode::KeyA, KeyCode::KeyW]),
+        (Vec2::new(3.5, 3.5), &[KeyCode::KeyA, KeyCode::KeyW]),
+    ];
+    let mut tops = vec![];
     let mut lowest = f32::MAX;
-    press(&mut app, &[KeyCode::KeyA, KeyCode::KeyW]);
-    for _ in 0..120 {
-        app.update();
-        top = top.max(feet(&mut app));
-        lowest = lowest.min(feet(&mut app));
+    for (from, held) in routes {
+        teleport(&mut app, Vec3::new(centre.x + from.x, HEIGHT / 2.0 + 0.02, centre.y + from.y));
+        for _ in 0..6 {
+            app.update();
+        }
+        let mut top: f32 = 0.0;
+        press(&mut app, held);
+        for _ in 0..120 {
+            app.update();
+            top = top.max(feet(&mut app));
+            lowest = lowest.min(feet(&mut app));
+        }
+        keys(&mut app).release_all();
+        tops.push(top);
     }
-    keys(&mut app).release_all();
-    assert!(top > 1.2, "climbed well up the heap: feet reached {top}");
+    let top = tops.iter().copied().fold(0.0f32, f32::max);
+    assert!(top > 1.2, "climbed well up the heap on some route: feet reached {tops:?}");
     assert!(lowest > -0.02, "never sank into the floor: {lowest}");
     let after = pieces(&mut app);
     assert_eq!(after.len(), before.len(), "no piece was lost");
