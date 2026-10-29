@@ -14,14 +14,13 @@
 //!
 //! Until David approves a sweep, one run of at most 40 calls is the limit; `--allow-sweep` lifts it.
 
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use box_bench::{RunResult, analyse, baseline, native, summarise};
-use box_mcp::{INSTRUCTIONS, Record};
-use serde_json::{Value, json};
+use box_bench::{Checked, RunResult, Transcript, analyse, baseline, native, summarise};
+use box_mcp::{INSTRUCTIONS, Record, TOOL_NAMES};
+use serde_json::json;
 
 /// The capped default: one run, at most this many tool calls.
 const SMOKE_CALLS: u32 = 40;
@@ -159,10 +158,7 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
         "args": server_args(args, seed, &record_path),
     } } });
     std::fs::write(dir.join("mcp.json"), serde_json::to_string_pretty(&config).unwrap() + "\n").unwrap();
-    let tools: Vec<String> = ["look", "status", "move", "punch", "kick", "dash", "grab", "wait"]
-        .iter()
-        .map(|t| format!("mcp__box__{t}"))
-        .collect();
+    let tools: Vec<String> = TOOL_NAMES.iter().map(|t| format!("mcp__box__{t}")).collect();
 
     let transcript = std::fs::File::create(dir.join("transcript.jsonl")).unwrap();
     let mut cmd = Command::new("claude");
@@ -195,27 +191,12 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
     }
     let wall_seconds = started.elapsed().as_secs_f32();
 
-    let (init, result, rate) = read_transcript(&dir.join("transcript.jsonl"));
-    let limited = rate.as_ref().is_some_and(|r| r["status"] == "rejected")
-        || result.as_ref().is_some_and(|r| r["api_error_status"] == 429);
-    // The billing guard: a subscription session reports no API-key source.
-    if let Some(source) = init.as_ref().and_then(|i| i["apiKeySource"].as_str()).filter(|s| *s != "none") {
-        fail(&format!("the session used an API key ({source}), not the subscription: stopping the sweep"));
+    let transcript = Transcript::read(&std::fs::read_to_string(dir.join("transcript.jsonl")).unwrap_or_default());
+    let Checked { stop, limited, connected } = transcript.check("box");
+    if let Some(why) = stop {
+        fail(&format!("{why}: stopping the sweep"));
     }
-    let model_tools: Vec<&str> = init
-        .as_ref()
-        .and_then(|i| i["tools"].as_array())
-        .map(|t| t.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    if let Some(stray) = model_tools.iter().find(|t| !t.starts_with("mcp__box__")) {
-        fail(&format!("the agent had a tool besides the game's ({stray}): stopping the sweep"));
-    }
-
-    // A game server that didn't start is the harness's failure, not the agent's: no result, and said so.
-    let connected = init
-        .as_ref()
-        .and_then(|i| i["mcp_servers"].as_array())
-        .is_some_and(|servers| servers.iter().any(|s| s["name"] == "box" && s["status"] == "connected"));
+    let Transcript { result, rate, .. } = transcript;
 
     let usage = result.as_ref().map(|r| &r["usage"]);
     let tokens = |k: &str| usage.and_then(|u| u[k].as_u64()).unwrap_or(0);
@@ -234,6 +215,7 @@ fn run(args: &Args, server: &Path, dir: &Path, seed: u32, prompt: &str, system: 
         output_tokens: tokens("output_tokens"),
         plan_used: rate.as_ref().and_then(|r| r["unifiedWindows"]["five_hour"]["utilization"].as_f64()),
     };
+    // A game server that didn't start is the harness's failure, not the agent's: no result, and said so.
     if !connected {
         out.error = Some("the game server didn't connect (see stderr.txt and the transcript's init event)".into());
         return (out, limited);
@@ -263,23 +245,6 @@ fn server_args(args: &Args, seed: u32, record: &Path) -> Vec<String> {
     }
     a.extend(["--trace".to_owned(), record.display().to_string()]);
     a
-}
-
-/// The session's init event (model, tools, billing source), its final result event, and its last rate-limit info.
-fn read_transcript(path: &Path) -> (Option<Value>, Option<Value>, Option<Value>) {
-    let (mut init, mut result, mut rate) = (None, None, None);
-    let Ok(file) = std::fs::File::open(path) else { return (None, None, None) };
-    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
-        let Ok(e) = serde_json::from_str::<Value>(&line) else { continue };
-        match (e["type"].as_str(), e["subtype"].as_str()) {
-            // The first init is the session's own (later ones, after compaction or a resume, list no servers).
-            (Some("system"), Some("init")) if init.is_none() => init = Some(e),
-            (Some("result"), _) => result = Some(e),
-            (Some("rate_limit_event"), _) => rate = Some(e["rate_limit_info"].clone()),
-            _ => {}
-        }
-    }
-    (init, result, rate)
 }
 
 /// The task, the same for every model and run: the rules come from the server's own instructions, repeated here so
@@ -398,27 +363,4 @@ fn parse() -> Args {
 fn fail(message: &str) -> ! {
     eprintln!("box-bench: {message}");
     std::process::exit(2)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_real_transcript_reads_as_a_subscription_session_with_the_game_connected_and_room_left() {
-        // The first capped run's transcript, as Claude Code 2.1.303 wrote it.
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../bench/results/2026-10-19-2134-haiku/s1-t1/transcript.jsonl");
-        let (init, result, rate) = read_transcript(&path);
-        let init = init.expect("an init event");
-        assert_eq!(init["apiKeySource"], "none", "billed to the subscription");
-        assert!(
-            init["mcp_servers"].as_array().unwrap().iter().any(|s| s["name"] == "box" && s["status"] == "connected")
-        );
-        assert!(init["tools"].as_array().unwrap().iter().all(|t| t.as_str().unwrap().starts_with("mcp__box__")));
-        assert!(result.expect("a result event")["num_turns"].as_u64().unwrap() > 0);
-        let rate = rate.expect("a rate-limit event");
-        assert_eq!(rate["status"], "allowed");
-        assert!(rate["unifiedWindows"]["five_hour"]["utilization"].as_f64().is_some());
-    }
 }

@@ -15,7 +15,9 @@ struct Client {
 
 impl Client {
     fn start(args: &[&str]) -> Client {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_box-mcp"))
+        // Read when the test runs: cargo 1.99 sets it then, not when the test compiles.
+        let exe = std::env::var("CARGO_BIN_EXE_box-mcp").expect("cargo test sets CARGO_BIN_EXE_box-mcp");
+        let mut child = Command::new(exe)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

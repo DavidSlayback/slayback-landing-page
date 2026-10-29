@@ -10,6 +10,7 @@
 use box_env::{ACTIONS, Action, Env, EnvConfig, Outcome};
 use box_mcp::Record;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// How a run ended. One per run, first match wins in this order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,12 +273,69 @@ pub fn summarise(runs: &[RunResult]) -> Summary {
     }
 }
 
+/// What an agent session's stream-json transcript holds for the harness: its first init event (model, tools, billing
+/// source, servers), its final result event, and its last rate-limit info.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Transcript {
+    pub init: Option<Value>,
+    pub result: Option<Value>,
+    pub rate: Option<Value>,
+}
+
+/// What a transcript says about the harness, checked before the run's record is read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checked {
+    /// Why the sweep must stop at once: the session billed an API key rather than the subscription, or the agent had
+    /// a tool besides the game's.
+    pub stop: Option<String>,
+    /// The plan's rate limit refused the session, which ends the sweep after this run.
+    pub limited: bool,
+    /// The game server connected. When it didn't, the run is the harness's failure, not the agent's.
+    pub connected: bool,
+}
+
+impl Transcript {
+    pub fn read(text: &str) -> Transcript {
+        let mut t = Transcript::default();
+        for e in text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
+            match (e["type"].as_str(), e["subtype"].as_str()) {
+                // The first init is the session's own (later ones, after compaction or a resume, list no servers).
+                (Some("system"), Some("init")) if t.init.is_none() => t.init = Some(e),
+                (Some("result"), _) => t.result = Some(e),
+                (Some("rate_limit_event"), _) => t.rate = Some(e["rate_limit_info"].clone()),
+                _ => {}
+            }
+        }
+        t
+    }
+
+    /// The harness's checks on a session whose game server is named `server` (its tools are `mcp__<server>__*`).
+    pub fn check(&self, server: &str) -> Checked {
+        let init = self.init.as_ref();
+        let billed = init.and_then(|i| i["apiKeySource"].as_str()).filter(|s| *s != "none");
+        let prefix = format!("mcp__{server}__");
+        let tools = init.and_then(|i| i["tools"].as_array()).into_iter().flatten().filter_map(Value::as_str);
+        let stray = tools.into_iter().find(|t| !t.starts_with(&prefix));
+        let stop = match (billed, stray) {
+            (Some(source), _) => Some(format!("the session used an API key ({source}), not the subscription")),
+            (None, Some(tool)) => Some(format!("the agent had a tool besides the game's ({tool})")),
+            (None, None) => None,
+        };
+        let limited = self.rate.as_ref().is_some_and(|r| r["status"] == "rejected")
+            || self.result.as_ref().is_some_and(|r| r["api_error_status"] == 429);
+        let connected = init
+            .and_then(|i| i["mcp_servers"].as_array())
+            .is_some_and(|all| all.iter().any(|s| s["name"] == server && s["status"] == "connected"));
+        Checked { stop, limited, connected }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use box_env::EnvConfig;
     use box_mcp::Server;
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     /// A session driven straight through the server (no process, no agent).
     fn session(seed: u32, max_calls: Option<u32>, calls: &[(&str, Value)]) -> Record {
@@ -389,5 +447,61 @@ mod tests {
         assert!((s.pass_k - 0.5).abs() < 1e-6, "seed 1 of the two complete seeds; seed 3 isn't complete");
         assert!((s.pass_any - 2.0 / 3.0).abs() < 1e-6);
         assert!((s.reported_cost_usd - 1.25).abs() < 1e-9);
+    }
+
+    fn transcript() -> Transcript {
+        // The first capped run's transcript, as Claude Code 2.1.303 wrote it.
+        let path =
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../bench/results/2026-10-19-2134-haiku/s1-t1/transcript.jsonl");
+        Transcript::read(&std::fs::read_to_string(path).expect(path))
+    }
+
+    #[test]
+    fn a_real_transcript_passes_every_check() {
+        let t = transcript();
+        assert!(t.result.as_ref().expect("a result event")["num_turns"].as_u64().unwrap() > 0);
+        let rate = t.rate.as_ref().expect("a rate-limit event");
+        assert!(rate["unifiedWindows"]["five_hour"]["utilization"].as_f64().is_some());
+        assert_eq!(t.check("box"), Checked { stop: None, limited: false, connected: true });
+    }
+
+    #[test]
+    fn an_api_key_session_stops_the_sweep() {
+        let mut t = transcript();
+        t.init.as_mut().unwrap()["apiKeySource"] = json!("ANTHROPIC_API_KEY");
+        assert!(t.check("box").stop.unwrap().contains("API key (ANTHROPIC_API_KEY)"));
+    }
+
+    #[test]
+    fn a_tool_besides_the_games_stops_the_sweep() {
+        let mut t = transcript();
+        t.init.as_mut().unwrap()["tools"].as_array_mut().unwrap().push(json!("Bash"));
+        assert!(t.check("box").stop.unwrap().contains("(Bash)"));
+        assert!(transcript().check("puzzle").stop.is_some(), "another server's name makes every box tool a stray");
+    }
+
+    #[test]
+    fn a_server_that_failed_to_start_is_not_connected() {
+        let mut t = transcript();
+        t.init.as_mut().unwrap()["mcp_servers"] = json!([{ "name": "box", "status": "failed" }]);
+        assert_eq!(t.check("box"), Checked { stop: None, limited: false, connected: false });
+        assert!(!Transcript::default().check("box").connected, "no init event, nothing connected");
+    }
+
+    #[test]
+    fn a_rejected_rate_limit_or_a_429_ends_the_sweep() {
+        let mut t = transcript();
+        t.rate.as_mut().unwrap()["status"] = json!("rejected");
+        assert!(t.check("box").limited);
+        let mut t = transcript();
+        t.result.as_mut().unwrap()["api_error_status"] = json!(429);
+        assert!(t.check("box").limited);
+    }
+
+    #[test]
+    fn only_the_first_init_counts() {
+        let first = r#"{"type":"system","subtype":"init","apiKeySource":"none","tools":[],"mcp_servers":[{"name":"box","status":"connected"}]}"#;
+        let later = r#"{"type":"system","subtype":"init","apiKeySource":"none","tools":[],"mcp_servers":[]}"#;
+        assert!(Transcript::read(&format!("{first}\nnot json\n{later}")).check("box").connected);
     }
 }
