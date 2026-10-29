@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Earthsiege 2 in the browser · David Slayback</title>
+<meta name="description" content="Earthsiege 2 in the browser: the open-source HERCULAN engine compiled to WebAssembly and WebGL2, playing from your own disc.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23a6ff00' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='3' fill='none' stroke='%23eafffb' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../project.css">
+</head>
+<body>
+<nav class="top" aria-label="Site"><a href="../">← David Slayback</a><a href="../#games">Games</a></nav>
+<main>
+  <h1>Earthsiege 2</h1>
+  <p class="pitch">Dynamix's 1996 mech sim, running in a browser tab: the open-source HERCULAN engine compiled to WebAssembly, playing from your own copy of the disc.</p>
+  <p class="actions"><a class="button primary" href="https://earthsiege2.pages.dev/">Launch ↗</a></p>
+  <p class="note">No game data is hosted here or in the build. The page asks once for your disc (a cue sheet with its image, a CloneCD image, an ISO, a zip, or the CD drive itself) and installs it into your browser's storage.</p>
+
+  <h2>The port</h2>
+  <p><a href="https://github.com/kevinfoley/Herculan">HERCULAN</a> is an MIT-licensed reimplementation of Earthsiege 2 in C#, written for the desktop on .NET and OpenGL 3.3. The browser port keeps its engine unchanged and replaces what sits under it:</p>
+  <ul>
+    <li><strong>Graphics.</strong> Every OpenGL call in the engine now goes through one interface, with the desktop's OpenGL behind it on the desktop and WebGL2 (OpenGL ES 3.0) in the browser. The shaders are rewritten to GLSL ES 3.00 as they load, so the desktop and browser draw from the same sources.</li>
+    <li><strong>Runtime.</strong> The engine is compiled ahead of time to WebAssembly with .NET 9, rather than run on .NET's WebAssembly interpreter, which spent about 18 ms of CPU on each frame of a mission.</li>
+    <li><strong>The disc.</strong> The page reads the disc image itself, does what HERCULAN's installer does, and keeps the result in the browser. The CD's audio tracks become the music, even from a raw image with no cue sheet, where the tracks are found by the digital silence between them. Zips are read by a small reader of the page's own, built on the browser's decompression streams.</li>
+    <li><strong>Controls.</strong> Retail's cockpit pointer, or mouse aim with the pointer locked; a standard gamepad mapped the way the desktop maps one, with rumble when the cockpit is hit and on every shot.</li>
+    <li><strong>The rest.</strong> Movies upscaled smoothly with a bicubic filter (or retail's pixel-doubled look), retail bugs fixed by default with a switch to put them back, and save backups to a file.</li>
+  </ul>
+
+  <h2>Checking the record</h2>
+  <p>Alongside the port, HERCULAN's claims about how the retail game behaves are being checked against the original executables with a reverse-engineering toolkit and Ghidra, so real divergences can go back upstream as issues. The disc used here turned out to be a third pressing, version 1.13, that upstream hadn't documented.</p>
+  <p>Fixes the browser surfaced along the way, such as file paths that only worked on a case-insensitive filesystem and a shader qualifier GLSL ES doesn't allow, also help HERCULAN's own Linux build.</p>
+</main>
+</body>
+</html>

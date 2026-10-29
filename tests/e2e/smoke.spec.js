@@ -31,6 +31,35 @@ test.describe('homepage', () => {
   });
 });
 
+test.describe('games', () => {
+  test('every game has a card with its art, title link and a play link', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(HOME);
+    const cards = page.locator('#games .card');
+    await expect(cards.locator('h3')).toHaveText(['Skifire', 'Out of the Box', 'Earthsiege 2', 'Escape the box']);
+    for (const card of await cards.all()) {
+      const art = card.locator('.art');
+      await art.scrollIntoViewIfNeeded();
+      if (await art.evaluate(el => el.tagName === 'IMG')) await expect.poll(() => art.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+      await expect(card.locator('h3 a')).toHaveAttribute('href', /\S/);
+      await expect(card.locator('.links a').filter({ hasText: /Play|Launch/ })).toHaveCount(1);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  for (const [path, title] of [['/skifire/', 'Skifire'], ['/earthsiege2/', 'Earthsiege 2']]) {
+    test(`${path} renders its write-up and links home`, async ({ page }) => {
+      const errors = collectErrors(page);
+      await page.goto(path);
+      await expect(page.locator('h1')).toHaveText(title);
+      expect(await page.locator('main img').evaluateAll(imgs => imgs.every(i => i.complete && i.naturalWidth > 0))).toBe(true);
+      await page.getByRole('link', { name: 'Games' }).click();
+      await expect(page).toHaveURL(/\/#games$/);
+      expect(errors).toEqual([]);
+    });
+  }
+});
+
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 

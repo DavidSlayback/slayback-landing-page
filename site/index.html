@@ -40,12 +40,28 @@
   .cta { white-space: nowrap; color: var(--accent); font: 600 clamp(13px, 1.4vw, 17px)/1 var(--font); letter-spacing: .14em;
     text-transform: uppercase; text-decoration: none; }
   .cta:focus-visible { outline: 1px solid var(--accent); outline-offset: 6px; }
-  .projects { max-width: 760px; margin: 0 auto; padding: 96px 16px 160px; }
-  .projects h2 { font-size: 13px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
-  .projects ul { list-style: none; padding: 0; margin: 0; }
-  .projects li { display: flex; justify-content: space-between; gap: 16px; padding: 18px 0; border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
-  .projects a { color: var(--fg); text-decoration: none; font-size: 22px; font-weight: 600; }
-  .projects span { color: var(--muted); font-size: 14px; align-self: center; }
+  /* The games, under the hero: one card each, its title the card's link (stretched over it), its other links above that. */
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  .games { max-width: 1120px; margin: 0 auto; padding: 88px 16px 120px; }
+  .games h2 { margin: 0 0 10px; font: 600 13px/1 var(--font); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .games .lede { margin: 0 0 32px; color: var(--muted); font: 500 16px/1.5 var(--font); }
+  .cards { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 24px; }
+  .card { position: relative; display: flex; flex-direction: column; overflow: hidden; background: color-mix(in srgb, var(--accent) 3%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); transition: border-color .15s, box-shadow .15s; }
+  .card:hover, .card:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 14%, transparent); }
+  .card .art { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: #000; border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
+  .card .body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 20px; }
+  .card h3 { margin: 0; font: 700 22px/1.1 var(--font); letter-spacing: .04em; text-transform: uppercase; }
+  .card h3 a { color: var(--fg); text-decoration: none; }
+  .card h3 a::after { content: ""; position: absolute; inset: 0; }
+  .card h3 a:focus-visible { outline: none; }
+  .card p { margin: 0; color: color-mix(in srgb, var(--fg) 78%, var(--bg)); font: 500 15px/1.5 var(--font); }
+  .card .tags { margin-top: auto; padding-top: 4px; color: var(--muted); font: 600 12px/1.4 var(--font); letter-spacing: .12em; text-transform: uppercase; }
+  .card .links { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+  .card .links a { position: relative; z-index: 1; color: var(--accent); font: 600 13px/1 var(--font); letter-spacing: .14em; text-transform: uppercase; text-decoration: none; }
+  .card .links a:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .card .links a:focus-visible { outline: 1px solid var(--accent); outline-offset: 4px; }
   .hud { position: fixed; top: 56px; left: 12px; z-index: 10; pointer-events: none; white-space: pre-wrap; max-width: calc(100vw - 24px);
     font: 12px/1.5 ui-monospace, Consolas, monospace; color: #cfd3e0; background: rgba(0,0,0,.6); padding: 8px 10px; border-radius: 8px; }
   @media (max-width: 560px) { .topbar { left: 16px; right: 16px; } .topnav { gap: 14px; font-size: 11px; } }
@@ -56,11 +72,59 @@
   <canvas id="c" aria-hidden="true"></canvas>
   <div class="topbar">
     <div class="schemes" role="group" aria-label="Colour scheme"></div>
-    <nav class="topnav" data-collide aria-label="Site"><!-- GAME_RELEASE --><a href="play/">Play</a><!-- /GAME_RELEASE --><a href="puzzle/">Puzzle</a><a href="https://github.com/DavidSlayback">GitHub</a></nav>
+    <nav class="topnav" data-collide aria-label="Site"><!-- GAME_RELEASE --><a href="play/">Play</a><!-- /GAME_RELEASE --><a href="#games">Games</a><a href="https://github.com/DavidSlayback">GitHub</a></nav>
   </div>
   <h1 class="name" data-collide data-erode>David<br>Slayback</h1>
   <p class="tagline" id="tagline" data-collide>Reinforcement learner. Agent wrangler. Recovering gradient descender.</p>
-  <p class="ctas"><!-- GAME_RELEASE --><a class="cta" href="play/" data-collide>Play the game →</a><!-- /GAME_RELEASE --><a class="cta" href="puzzle/" data-collide>Try the puzzle →</a></p>
+  <p class="ctas"><!-- GAME_RELEASE --><a class="cta" href="play/" data-collide>Play the game →</a><!-- /GAME_RELEASE --><a class="cta" href="#games" data-collide>See the games ↓</a></p>
+</section>
+<section class="games" id="games" aria-labelledby="games-title">
+  <h2 id="games-title">Games</h2>
+  <p class="lede">Things I've built lately. Each one runs in the browser.</p>
+  <ul class="cards">
+    <li class="card">
+      <img class="art" src="img/skifire.jpg" alt="Skifire: a player grappling off a ledge at speed 1070 while a rival skis below, over dusk-coloured hills." width="960" height="540" loading="lazy">
+      <div class="body">
+        <h3><a href="skifire/">Skifire</a></h3>
+        <p>An online 2D arena shooter: Tribes-style skiing, jetpacks and terrain you blow apart. Two to four players over peer-to-peer rollback netcode, or bots.</p>
+        <p class="tags">Rust · Bevy · Rollback netcode · WebRTC</p>
+        <p class="links"><a href="https://skifire.pages.dev/">Play ↗</a><a href="skifire/">How it works</a></p>
+      </div>
+    </li>
+    <li class="card">
+      <img class="art" src="img/puzzle.jpg" alt="Out of the Box: a neon climber on a crate among glowing crates, ice blocks, springs and cracked floor." width="960" height="540" loading="lazy">
+      <div class="body">
+        <h3><a href="puzzle/">Out of the Box</a></h3>
+        <p>A turn-based block-stacking puzzle across five worlds of crumbling floor, sliding ice and springs. It doubles as a benchmark for LLM agents and RL.</p>
+        <p class="tags">Rust · WebAssembly · A* solver · Level generator</p>
+        <p class="links"><a href="puzzle/">Play</a></p>
+      </div>
+    </li>
+    <li class="card">
+      <svg class="art" viewBox="0 0 320 180" role="img" aria-label="A compact disc drawn in outline: the game plays from your own copy.">
+        <g fill="none" stroke="var(--accent)" stroke-width="1.5">
+          <circle cx="160" cy="90" r="62"/><circle cx="160" cy="90" r="16"/><circle cx="160" cy="90" r="6" opacity=".6"/>
+          <path d="M160 42a48 48 0 0 1 48 48M160 52a38 38 0 0 1 38 38M112 90a48 48 0 0 0 48 48" opacity=".45"/>
+        </g>
+        <text x="160" y="172" fill="var(--muted)" font-family="Chakra Petch, sans-serif" font-size="9" letter-spacing="2.2" text-anchor="middle">BRING YOUR OWN DISC</text>
+      </svg>
+      <div class="body">
+        <h3><a href="earthsiege2/">Earthsiege 2</a></h3>
+        <p>The 1996 mech sim in a browser tab: the open-source HERCULAN engine compiled to WebAssembly, playing from your own copy of the disc.</p>
+        <p class="tags">C# · .NET WebAssembly · WebGL2 · Port</p>
+        <p class="links"><a href="earthsiege2/">How it works</a><a href="https://earthsiege2.pages.dev/">Launch ↗</a></p>
+      </div>
+    </li>
+    <li class="card">
+      <img class="art" src="img/escape.jpg" alt="Escape the box: blocky fighters in a walled green box, beaten enemies scattered across the floor as blocks." width="640" height="360" loading="lazy">
+      <div class="body">
+        <h3><a href="https://rc-5.slayback.pages.dev/play/">Escape the box</a></h3>
+        <p>A 3D beat 'em up: beaten enemies break into blocks, and you heap them up to climb out of the box. In playtest, on the preview site.</p>
+        <p class="tags">Rust · Bevy · avian3d physics</p>
+        <p class="links"><a href="https://rc-5.slayback.pages.dev/play/">Play the preview ↗</a></p>
+      </div>
+    </li>
+  </ul>
 </section>
 <div class="hud" id="hud"></div>
 <script src="hero.js" defer></script>
