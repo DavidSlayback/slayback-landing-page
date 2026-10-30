@@ -1,0 +1,9 @@
+[package]
+name = "mcp-stdio"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Hand-rolled MCP on stdio for the games' servers: JSON-RPC, the call cap and the record rewrite, behind a Game trait (box-mcp, puzzle-mcp)."
+
+[dependencies]
+serde_json = "1"

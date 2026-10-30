@@ -1,0 +1,1 @@
+{ "mcpServers": { "puzzle": { "command": "target/release/puzzle-mcp", "args": ["--world", "classic", "--tier", "1", "--seed", "1", "--trace", "bench/puzzle/smoke/2026-10-29-ob4-haiku/record.json"] } } }

@@ -4,11 +4,8 @@
 //! `--trace`, the session's record (trace, outcome and calls) is rewritten after every message, so a session cut off
 //! mid-run still leaves it.
 
-use std::io::{BufRead, Write};
-
 use box_env::EnvConfig;
 use box_mcp::Server;
-use serde_json::{Value, json};
 
 fn main() {
     let mut config = EnvConfig::default();
@@ -34,27 +31,7 @@ fn main() {
     if let Some(max) = max_calls {
         server = server.with_max_calls(max);
     }
-    let stdin = std::io::stdin();
-    let mut out = std::io::stdout().lock();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let reply = match serde_json::from_str::<Value>(&line) {
-            Ok(msg) => server.handle(&msg),
-            Err(e) => {
-                Some(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": e.to_string() } }))
-            }
-        };
-        if let Some(reply) = reply {
-            writeln!(out, "{reply}").and_then(|_| out.flush()).expect("stdout");
-        }
-        if let Some(path) = &trace {
-            let record = serde_json::to_string_pretty(&server.record()).expect("a record serialises") + "\n";
-            std::fs::write(path, record).unwrap_or_else(|e| fail(&format!("writing {}: {e}", path.display())));
-        }
-    }
+    server.serve(trace.as_deref());
 }
 
 fn number<T: std::str::FromStr>(s: &str) -> T {
@@ -62,6 +39,5 @@ fn number<T: std::str::FromStr>(s: &str) -> T {
 }
 
 fn fail(message: &str) -> ! {
-    eprintln!("box-mcp: {message}");
-    std::process::exit(2)
+    mcp_stdio::fail("box-mcp", message)
 }

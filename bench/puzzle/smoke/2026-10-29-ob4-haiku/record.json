@@ -1,0 +1,51 @@
+{
+  "budget": 30,
+  "calls": [
+    {
+      "arguments": {},
+      "error": false,
+      "reply": [
+        "Classic world, tier 1.\n#...##.#\n#.B.##.#\n#.B.##.#\n#.#...>#\n#E.B.#B#\n########\nYou face right, carrying nothing.\nMoves on the board: 0 of 30 allowed. Tool calls left: 29."
+      ],
+      "tool": "look"
+    },
+    {
+      "arguments": {},
+      "error": false,
+      "reply": [
+        "Moves on the board: 0 of 30 allowed. Tool calls left: 28."
+      ],
+      "tool": "status"
+    },
+    {
+      "arguments": {
+        "keys": "LLDLRDLLL"
+      },
+      "error": false,
+      "reply": [
+        "Played 2 of 9 key(s): key 3 ('D') was refused: there is no block in front of you at your level.\nClassic world, tier 1.\n#...##.#\n#.B.##.#\n#.B.##.#\n#.#..<.#\n#E.B.#B#\n########\nYou face left, carrying nothing.\nMoves on the board: 2 of 30 allowed. Tool calls left: 27."
+      ],
+      "tool": "move"
+    },
+    {
+      "arguments": {
+        "keys": "LDLRDLLL"
+      },
+      "error": false,
+      "reply": [
+        "Played 8 of 8 key(s): solved!\nClassic world, tier 1.\n#...##.#\n#.B.##.#\n#.B.##.#\n#.#....#\n#<..B#B#\n########\nYou face left, carrying nothing.\nMoves on the board: 10 of 30 allowed. Tool calls left: 26. Solved: the session is over."
+      ],
+      "tool": "move"
+    }
+  ],
+  "fingerprint": "0x1a207d451ba3c50e",
+  "max_calls": 30,
+  "outcome": {
+    "moves": 10,
+    "solved": true
+  },
+  "seed": 1,
+  "shortest": 10,
+  "tier": 1,
+  "world": "classic"
+}

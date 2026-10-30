@@ -8,6 +8,7 @@ use std::fmt;
 
 mod generate;
 pub mod levels;
+pub mod session;
 mod solve;
 mod tidy;
 pub use generate::{CAP, Generated, TIERS, Tier, World, generate};

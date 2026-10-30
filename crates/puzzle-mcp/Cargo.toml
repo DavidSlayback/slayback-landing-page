@@ -1,0 +1,12 @@
+[package]
+name = "puzzle-mcp"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Out of the Box as an MCP server: an LLM agent plays one level through text tools, with move and call budgets, and the session's record replays (OB4, docs/planning/puzzle-spec.md)."
+
+[dependencies]
+mcp-stdio = { path = "../mcp-stdio" }
+puzzle-core = { path = "../puzzle-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
