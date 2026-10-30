@@ -1,0 +1,13 @@
+[package]
+name = "puzzle-bench"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Out of the Box as an agent benchmark: headless Claude Code or a native player per suite level through puzzle-mcp, every session replayed before it counts (OB5, docs/planning/puzzle-spec.md)."
+
+[dependencies]
+bench-core = { path = "../bench-core" }
+puzzle-core = { path = "../puzzle-core" }
+puzzle-mcp = { path = "../puzzle-mcp" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

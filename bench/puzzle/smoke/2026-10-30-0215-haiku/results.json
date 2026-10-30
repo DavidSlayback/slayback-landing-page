@@ -1,0 +1,94 @@
+{
+  "agent": "claude -p (Claude Code, headless) through puzzle-mcp; subscription billing",
+  "claude_version": "2.1.314 (Claude Code)",
+  "fresh_per_tier": 0,
+  "game_commit": "c3869110a0082727a6285a55cc22de85980d3dbd",
+  "game_dirty": true,
+  "max_calls": 30,
+  "model": "haiku",
+  "prompts": {
+    "classic": "You are playing Out of the Box, a turn-based puzzle. You stand in a pit of walls and loose blocks and must reach the exit. The level is a grid shown as text, one line per row, y growing downward. Legend: # wall, B block, E exit, . empty, > or < you, facing right or left. A block on the exit shows as b. A block you carry is drawn in the cell above you.\n\nKeys, played as a string with the move tool:\n- L or R: if you already face that way, step one cell that way, then fall until you land; otherwise turn to face it (a turn counts as a move). Refused if the cell is filled, or if you carry a block and the cell above it is filled.\n- U: climb onto the cell in front of you, up one and forward one. Refused if that cell is empty, if the cell above it or above you is filled, or if you carry a block and the cell two above the one in front is filled.\n- D: with empty hands, lift the block in front of you (at your level) onto your head; refused if there is none, if something sits on it, or if the cell above you is filled. Carrying, put the block down in the cell in front of you at head height, where it falls until it rests; refused if that cell is filled.\n\nAfter every move everything settles: whatever has nothing under it falls a row at a time, all together, you and what you carry included, until nothing moves. The level is solved when a move ends with you on the exit; falling through it on the way down doesn't count. A refused key changes nothing and costs nothing, and stops the rest of the string; the reply says which key and why.\n\nMoves count only while they are on the board: undo takes moves back and restart clears them, both free. The board may hold at most three times the level's shortest solution; filling it unsolved ends the session. Tool calls are limited too (status shows how many are left). Every move, undo and restart returns the new grid, so there is no need to call look between them.\n\nYour goal: solve the level, reaching the exit. You have at most 30 tool calls in total (look and status count too). Play until it is solved or the session is over, then reply with one line saying how it went."
+  },
+  "runs": [
+    {
+      "agent_turns": 3,
+      "analysis": {
+        "calls": 2,
+        "ending": "solved",
+        "mistakes": 0,
+        "move_calls": 1,
+        "moves": 10,
+        "over_shortest": 1.0,
+        "refused": 0,
+        "restarts": 0,
+        "shortest": 10,
+        "undos": 0,
+        "verified": true
+      },
+      "dir": "classic-t1-s1-k1",
+      "error": null,
+      "fresh": false,
+      "input_tokens": 12881,
+      "output_tokens": 3005,
+      "plan_used": 0.14,
+      "reported_cost_usd": 0.0028527899999999996,
+      "seed": 1,
+      "tier": 1,
+      "trial": 1,
+      "wall_seconds": 20.508487701416016,
+      "world": "classic"
+    }
+  ],
+  "schema": "puzzle-bench results v1 (crates/puzzle-bench)",
+  "suite": "v1",
+  "summary": {
+    "reported_cost_usd": 0.0028527899999999996,
+    "rows": [
+      {
+        "endings": [
+          [
+            "solved",
+            1
+          ],
+          [
+            "out_of_moves",
+            0
+          ],
+          [
+            "out_of_calls",
+            0
+          ],
+          [
+            "stopped",
+            0
+          ]
+        ],
+        "fresh": false,
+        "mean_calls": 2.0,
+        "mean_input_tokens": 12881.0,
+        "mean_output_tokens": 3005.0,
+        "mean_restarts": 0.0,
+        "mean_undos": 0.0,
+        "over_shortest": 1.0,
+        "refused_rate": 0.0,
+        "runs": 1,
+        "solve_rate": 1.0,
+        "solved": 1,
+        "tier": 1,
+        "verified": 1,
+        "world": "classic"
+      }
+    ],
+    "runs": 1,
+    "solve_rate": 1.0,
+    "verified": 1
+  },
+  "system_prompt": "You are an agent playing a puzzle through tools. Solve it as well as you can.",
+  "tiers": [
+    1
+  ],
+  "trials": 1,
+  "worlds": [
+    "classic"
+  ]
+}

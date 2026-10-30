@@ -92,5 +92,5 @@ Run it: `bash scripts/native.sh run -p box-bench -q -- --model sonnet --seeds 1,
 ## Known limits
 
 - Results are tied to the game's commit: a gameplay change can stop old traces from replaying.
-- Replays are checked natively. A run recorded in the browser (wasm) isn't yet known to replay identically.
+- Replays are checked natively, and only reproduce on the platform a run was recorded on: v1 was recorded on Windows, and on Linux at the same commit only 28 of its 75 runs replay to their outcome (the game's floats drift). A run recorded in the browser (wasm) isn't yet known to replay identically. `crates/box-bench/tests/v1.rs` checks on any machine that the published runs read back and summarise to these numbers; `scripts/bench-v1-gate.sh` replays them, on Windows.
 - The agent is Claude Code with its own system prompt, not a bare model. The numbers measure that harness too.

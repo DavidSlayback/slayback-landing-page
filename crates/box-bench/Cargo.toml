@@ -6,6 +6,7 @@ publish.workspace = true
 description = "Escape the Box as an agent benchmark: runs headless Claude Code over seeds x trials through box-mcp, replays every result, classifies failures (ML track M6, docs/planning/ml-track.md)."
 
 [dependencies]
+bench-core = { path = "../bench-core" }
 box-env = { path = "../box-env" }
 box-mcp = { path = "../box-mcp" }
 game-core = { path = "../game-core" }

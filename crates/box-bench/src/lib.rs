@@ -5,10 +5,12 @@
 //! its trace reproduces the recorded outcome ([`analyse`] replays it and measures the play as it goes). [`summarise`]
 //! turns runs into the published numbers: escape rate, pass^k per seed, and the failure taxonomy.
 //!
-//! `main.rs` launches the sessions; everything here is pure, so it is tested without an agent.
+//! The sweep itself (launching sessions, the billing and tool guards, the results file) is `bench_core`'s; [`Escape`]
+//! is this game behind it. Everything here is pure, so it is tested without an agent.
 
+use bench_core::{Game, Run};
 use box_env::{ACTIONS, Action, Env, EnvConfig, Outcome};
-use box_mcp::Record;
+use box_mcp::{Record, TOOL_NAMES};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -180,30 +182,66 @@ pub fn baseline(name: &str, seed: u32, trial: u32, rim: Option<f32>, max_steps: 
     Some(Record { trace: env.trace(), outcome: env.outcome(), calls: Vec::new(), max_calls: None })
 }
 
-/// One run as the results file reports it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RunResult {
+/// Which run: the seed and the trial.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Key {
     pub seed: u32,
     pub trial: u32,
-    /// Where its evidence is, relative to the results file.
-    pub dir: String,
-    pub analysis: Option<Analysis>,
-    /// Why the run has no analysis (the agent never connected, the record is missing, ...).
-    pub error: Option<String>,
-    pub wall_seconds: f32,
-    /// Claude Code's own figure: a list-price estimate, not what a subscription is charged.
-    pub reported_cost_usd: f64,
-    pub agent_turns: u32,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    /// The plan's five-hour usage after the run, 0..1, as the session's last rate-limit event reported it.
-    #[serde(default)]
-    pub plan_used: Option<f64>,
 }
 
-impl RunResult {
-    fn counted(&self) -> Option<&Analysis> {
-        self.analysis.as_ref().filter(|a| a.verified)
+/// One run as the results file reports it.
+pub type RunResult = bench_core::RunResult<Key, Analysis>;
+
+fn verified(r: &RunResult) -> Option<&Analysis> {
+    r.analysis.as_ref().filter(|a| a.verified)
+}
+
+/// *Escape the Box* behind the bench: the first box's rim and the play-time limit every run gets.
+pub struct Escape {
+    pub rim: Option<f32>,
+    pub max_steps: u32,
+}
+
+impl Game for Escape {
+    type Key = Key;
+    type Record = Record;
+    type Analysis = Analysis;
+    const BENCH: &'static str = "box-bench";
+    const SERVER: &'static str = "box";
+    const BINARY: &'static str = "box-mcp";
+
+    fn tools(&self) -> Vec<String> {
+        TOOL_NAMES.iter().map(|t| t.to_string()).collect()
+    }
+
+    fn native(&self, model: &str) -> bool {
+        native(model)
+    }
+
+    fn play(&self, model: &str, run: &Run<Key>) -> Option<Record> {
+        baseline(model, run.key.seed, run.key.trial, self.rim, self.max_steps)
+    }
+
+    fn analyse(&self, record: &Record) -> Analysis {
+        analyse(record)
+    }
+
+    fn line(&self, a: &Analysis) -> String {
+        format!(
+            "{:?}{}: {} kills, {} escaped, best pile {:.0}% of the rim, {} calls, {:.0} s of play, verified {}",
+            a.ending,
+            if a.flags.is_empty() { String::new() } else { format!(" {:?}", a.flags) },
+            a.replayed.kills,
+            a.replayed.escapes,
+            a.best_pile * 100.0,
+            a.calls,
+            a.game_seconds,
+            a.verified
+        )
+    }
+
+    fn summarise(&self, runs: &[RunResult]) -> Value {
+        serde_json::to_value(summarise(runs)).expect("a summary serialises")
     }
 }
 
@@ -229,18 +267,18 @@ pub struct Summary {
 }
 
 pub fn summarise(runs: &[RunResult]) -> Summary {
-    let counted: Vec<&Analysis> = runs.iter().filter_map(RunResult::counted).collect();
+    let counted: Vec<&Analysis> = runs.iter().filter_map(verified).collect();
     let n = counted.len().max(1) as f32;
     let mean = |f: &dyn Fn(&Analysis) -> f32| counted.iter().map(|a| f(a)).sum::<f32>() / n;
 
-    let mut seeds: Vec<u32> = runs.iter().map(|r| r.seed).collect();
+    let mut seeds: Vec<u32> = runs.iter().map(|r| r.key.seed).collect();
     seeds.sort_unstable();
     seeds.dedup();
     let (mut all, mut any, mut complete) = (0, 0, 0);
     for seed in &seeds {
-        let trials: Vec<&RunResult> = runs.iter().filter(|r| r.seed == *seed).collect();
+        let trials: Vec<&RunResult> = runs.iter().filter(|r| r.key.seed == *seed).collect();
         let escaped: Vec<bool> =
-            trials.iter().filter_map(|r| r.counted()).map(|a| a.ending == Ending::Escaped).collect();
+            trials.iter().filter_map(|r| verified(r)).map(|a| a.ending == Ending::Escaped).collect();
         if escaped.len() == trials.len() {
             complete += 1;
             all += escaped.iter().all(|e| *e) as usize;
@@ -270,63 +308,6 @@ pub fn summarise(runs: &[RunResult]) -> Summary {
         endings,
         flags,
         reported_cost_usd: runs.iter().map(|r| r.reported_cost_usd).sum(),
-    }
-}
-
-/// What an agent session's stream-json transcript holds for the harness: its first init event (model, tools, billing
-/// source, servers), its final result event, and its last rate-limit info.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Transcript {
-    pub init: Option<Value>,
-    pub result: Option<Value>,
-    pub rate: Option<Value>,
-}
-
-/// What a transcript says about the harness, checked before the run's record is read.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Checked {
-    /// Why the sweep must stop at once: the session billed an API key rather than the subscription, or the agent had
-    /// a tool besides the game's.
-    pub stop: Option<String>,
-    /// The plan's rate limit refused the session, which ends the sweep after this run.
-    pub limited: bool,
-    /// The game server connected. When it didn't, the run is the harness's failure, not the agent's.
-    pub connected: bool,
-}
-
-impl Transcript {
-    pub fn read(text: &str) -> Transcript {
-        let mut t = Transcript::default();
-        for e in text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
-            match (e["type"].as_str(), e["subtype"].as_str()) {
-                // The first init is the session's own (later ones, after compaction or a resume, list no servers).
-                (Some("system"), Some("init")) if t.init.is_none() => t.init = Some(e),
-                (Some("result"), _) => t.result = Some(e),
-                (Some("rate_limit_event"), _) => t.rate = Some(e["rate_limit_info"].clone()),
-                _ => {}
-            }
-        }
-        t
-    }
-
-    /// The harness's checks on a session whose game server is named `server` (its tools are `mcp__<server>__*`).
-    pub fn check(&self, server: &str) -> Checked {
-        let init = self.init.as_ref();
-        let billed = init.and_then(|i| i["apiKeySource"].as_str()).filter(|s| *s != "none");
-        let prefix = format!("mcp__{server}__");
-        let tools = init.and_then(|i| i["tools"].as_array()).into_iter().flatten().filter_map(Value::as_str);
-        let stray = tools.into_iter().find(|t| !t.starts_with(&prefix));
-        let stop = match (billed, stray) {
-            (Some(source), _) => Some(format!("the session used an API key ({source}), not the subscription")),
-            (None, Some(tool)) => Some(format!("the agent had a tool besides the game's ({tool})")),
-            (None, None) => None,
-        };
-        let limited = self.rate.as_ref().is_some_and(|r| r["status"] == "rejected")
-            || self.result.as_ref().is_some_and(|r| r["api_error_status"] == 429);
-        let connected = init
-            .and_then(|i| i["mcp_servers"].as_array())
-            .is_some_and(|all| all.iter().any(|s| s["name"] == server && s["status"] == "connected"));
-        Checked { stop, limited, connected }
     }
 }
 
@@ -402,8 +383,7 @@ mod tests {
     #[test]
     fn the_summary_counts_verified_runs_and_pass_k_needs_every_trial() {
         let run = |seed, trial, ending, verified| RunResult {
-            seed,
-            trial,
+            key: Key { seed, trial },
             dir: String::new(),
             analysis: Some(Analysis {
                 verified,
@@ -447,61 +427,5 @@ mod tests {
         assert!((s.pass_k - 0.5).abs() < 1e-6, "seed 1 of the two complete seeds; seed 3 isn't complete");
         assert!((s.pass_any - 2.0 / 3.0).abs() < 1e-6);
         assert!((s.reported_cost_usd - 1.25).abs() < 1e-9);
-    }
-
-    fn transcript() -> Transcript {
-        // The first capped run's transcript, as Claude Code 2.1.303 wrote it.
-        let path =
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../../bench/results/2026-10-19-2134-haiku/s1-t1/transcript.jsonl");
-        Transcript::read(&std::fs::read_to_string(path).expect(path))
-    }
-
-    #[test]
-    fn a_real_transcript_passes_every_check() {
-        let t = transcript();
-        assert!(t.result.as_ref().expect("a result event")["num_turns"].as_u64().unwrap() > 0);
-        let rate = t.rate.as_ref().expect("a rate-limit event");
-        assert!(rate["unifiedWindows"]["five_hour"]["utilization"].as_f64().is_some());
-        assert_eq!(t.check("box"), Checked { stop: None, limited: false, connected: true });
-    }
-
-    #[test]
-    fn an_api_key_session_stops_the_sweep() {
-        let mut t = transcript();
-        t.init.as_mut().unwrap()["apiKeySource"] = json!("ANTHROPIC_API_KEY");
-        assert!(t.check("box").stop.unwrap().contains("API key (ANTHROPIC_API_KEY)"));
-    }
-
-    #[test]
-    fn a_tool_besides_the_games_stops_the_sweep() {
-        let mut t = transcript();
-        t.init.as_mut().unwrap()["tools"].as_array_mut().unwrap().push(json!("Bash"));
-        assert!(t.check("box").stop.unwrap().contains("(Bash)"));
-        assert!(transcript().check("puzzle").stop.is_some(), "another server's name makes every box tool a stray");
-    }
-
-    #[test]
-    fn a_server_that_failed_to_start_is_not_connected() {
-        let mut t = transcript();
-        t.init.as_mut().unwrap()["mcp_servers"] = json!([{ "name": "box", "status": "failed" }]);
-        assert_eq!(t.check("box"), Checked { stop: None, limited: false, connected: false });
-        assert!(!Transcript::default().check("box").connected, "no init event, nothing connected");
-    }
-
-    #[test]
-    fn a_rejected_rate_limit_or_a_429_ends_the_sweep() {
-        let mut t = transcript();
-        t.rate.as_mut().unwrap()["status"] = json!("rejected");
-        assert!(t.check("box").limited);
-        let mut t = transcript();
-        t.result.as_mut().unwrap()["api_error_status"] = json!(429);
-        assert!(t.check("box").limited);
-    }
-
-    #[test]
-    fn only_the_first_init_counts() {
-        let first = r#"{"type":"system","subtype":"init","apiKeySource":"none","tools":[],"mcp_servers":[{"name":"box","status":"connected"}]}"#;
-        let later = r#"{"type":"system","subtype":"init","apiKeySource":"none","tools":[],"mcp_servers":[]}"#;
-        assert!(Transcript::read(&format!("{first}\nnot json\n{later}")).check("box").connected);
     }
 }

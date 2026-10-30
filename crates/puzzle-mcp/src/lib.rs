@@ -141,8 +141,14 @@ impl Server {
     /// the pick makes no level.
     pub fn new(pick: Pick, max_calls: u32, json: bool) -> Option<Server> {
         let (level, shortest) = pick.level()?;
+        Some(Server::on(pick, level, shortest, max_calls, json))
+    }
+
+    /// As [`Server::new`], with `pick`'s level and its shortest solution's length already made (generating a big
+    /// level takes seconds).
+    pub fn on(pick: Pick, level: Level, shortest: usize, max_calls: u32, json: bool) -> Server {
         let session = session::Session::new(level, shortest);
-        Some(Server(Session::new(Puzzle { pick, session, json, calls: vec![] }).with_max_calls(max_calls)))
+        Server(Session::new(Puzzle { pick, session, json, calls: vec![] }).with_max_calls(max_calls))
     }
 
     pub fn record(&self) -> Record {
@@ -182,6 +188,12 @@ pub fn replay(record: &Record) -> Result<Outcome, String> {
     let world = World::from_name(&record.world).ok_or(format!("no world {:?}", record.world))?;
     let pick = Pick { world, tier: record.tier, seed: record.seed };
     let (level, shortest) = pick.level().ok_or("the pick makes no level")?;
+    replay_on(record, level, shortest)
+}
+
+/// As [`replay`], on `level` (shortest solution `shortest` moves) as the caller already has it, from a suite file say:
+/// it must be the level the record names, by fingerprint.
+pub fn replay_on(record: &Record, level: Level, shortest: usize) -> Result<Outcome, String> {
     let fingerprint = format!("{:#018x}", level.fingerprint());
     if fingerprint != record.fingerprint {
         return Err(format!("the level is {fingerprint}, not {}", record.fingerprint));
