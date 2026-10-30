@@ -141,8 +141,14 @@ impl Server {
     /// the pick makes no level.
     pub fn new(pick: Pick, max_calls: u32, json: bool) -> Option<Server> {
         let (level, shortest) = pick.level()?;
+        Some(Server::on(pick, level, shortest, max_calls, json))
+    }
+
+    /// As [`Server::new`], with `pick`'s level and its shortest solution's length already made (generating a big
+    /// level takes seconds).
+    pub fn on(pick: Pick, level: Level, shortest: usize, max_calls: u32, json: bool) -> Server {
         let session = session::Session::new(level, shortest);
-        Some(Server(Session::new(Puzzle { pick, session, json, calls: vec![] }).with_max_calls(max_calls)))
+        Server(Session::new(Puzzle { pick, session, json, calls: vec![] }).with_max_calls(max_calls))
     }
 
     pub fn record(&self) -> Record {
