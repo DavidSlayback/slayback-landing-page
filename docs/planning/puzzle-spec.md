@@ -198,7 +198,7 @@ Each step ships on its own and unblocks the next. The spec issue is #101; each s
 1. (OB1, #102) **Rules:** `puzzle-core` rules, text form, tests.
 2. (OB2, #103) **Solver**, with measured search times. *Blocked by 1.*
 3. (OB3, #104) **Generator, tiers, suite v1**, with the tier-4 time gate. *Blocked by 2.*
-4. (OB4, #105) **`puzzle-mcp`** and a smoke session. *Blocked by 3.*
+4. (OB4, #105) **`puzzle-mcp`** and a smoke session. *Blocked by 3.* Done 2026-10-29: `crates/puzzle-mcp` on `crates/mcp-stdio` (shared with box-mcp), budgets in `puzzle_core::session`; sessions play the bench's untidied levels (David: "The bench's"). Smoke: Haiku solved Classic tier 1 seed 1 in 4 calls and 10 moves (the shortest), `bench/puzzle/smoke/2026-10-29-ob4-haiku/`.
 5. (OB5, #106) **Generalise `box-bench`**, check that Escape the Box reproduces, and plug in the puzzle with the native players. *Blocked by 4.*
 6. (OB6, #107) **Bench v1 sweep** and `bench/puzzle/README.md`. *Blocked by 5; the PPO row joins after 7.*
 7. (OB7, #108) **`puzzle-env`, PPO training, the policy's Rust forward pass.** *Blocked by 3.*

@@ -2,23 +2,20 @@
 //! headless game ([`box_env::Env`]) through the tools in `tools.json`, turn by turn. The game stands still between
 //! calls; each action tool advances it a bounded time and reports what happened.
 //!
-//! The protocol is MCP over stdio (newline-delimited JSON-RPC 2.0), just the parts a tools-only server needs:
-//! `initialize`, `ping`, `tools/list` and `tools/call`. [`Server::handle`] is the whole of it; `main.rs` feeds it
-//! lines. Every step the agent takes is in the env's trace, so a session's [`Record`] replays to the same outcome
+//! The protocol is MCP over stdio, `mcp_stdio`'s, shared with *Out of the Box*'s server; this crate is the game behind
+//! it ([`Escape`]). [`Server::handle`] answers one message; `main.rs` serves stdio. Every step the agent takes is in the env's trace, so a session's [`Record`] replays to the same outcome
 //! (`box_env::replay`), which is how a benchmark result is checked.
 
 use box_env::{Action, Env, EnvConfig, Events, FPS, Outcome, Trace, obs_json};
 use game_core::agent::{COMPASS, DASH, GRAB, KICK, PUNCH};
 use game_core::climb::MAX_STEP;
 use game_core::run::{AT_WALL, REFILL, TIMEOUT_PENALTY};
+use mcp_stdio::{Game, Reply, Session};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// The tool definitions, shared with the page's WebMCP tools (M8).
 pub const TOOLS: &str = include_str!("../tools.json");
-
-/// Protocol versions this server speaks, newest first. It answers a client in the client's own version when listed.
-const VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 /// What the server tells the agent once, at the start: the game's rules and conventions, its numbers taken from the
 /// game.
@@ -62,86 +59,93 @@ pub struct Record {
     pub max_calls: Option<u32>,
 }
 
-/// The server: one run of the game and the calls made on it.
-pub struct Server {
-    env: Env,
-    calls: Vec<Call>,
-    max_calls: Option<u32>,
-}
+/// The server: the game behind `mcp_stdio`'s session, which counts the calls against the cap.
+pub struct Server(Session<Escape>);
 
 impl Server {
     pub fn new(config: EnvConfig) -> Server {
-        Server { env: Env::new(config), calls: Vec::new(), max_calls: None }
+        Server(Session::new(Escape { env: Env::new(config), calls: Vec::new(), noted: 0 }))
     }
 
     /// At most `max` tool calls (of any tool): past it, every call is refused and the run counts as over. A
     /// benchmark's turn budget, since an agent's harness may have none.
-    pub fn with_max_calls(mut self, max: u32) -> Server {
-        self.max_calls = Some(max);
-        self
+    pub fn with_max_calls(self, max: u32) -> Server {
+        Server(self.0.with_max_calls(max))
     }
 
     /// The session so far.
     pub fn record(&self) -> Record {
-        Record {
-            trace: self.env.trace(),
-            outcome: self.env.outcome(),
-            calls: self.calls.clone(),
-            max_calls: self.max_calls,
-        }
-    }
-
-    fn calls_left(&self) -> Option<u32> {
-        self.max_calls.map(|m| m.saturating_sub(self.calls.len() as u32))
+        record(&self.0)
     }
 
     /// Answers one JSON-RPC message; notifications (no `id`) get no answer.
     pub fn handle(&mut self, msg: &Value) -> Option<Value> {
-        let id = msg.get("id").cloned();
-        let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
-        let params = msg.get("params").cloned().unwrap_or(Value::Null);
-        let result = match method {
-            "initialize" => Ok(initialize(&params)),
-            "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({ "tools": tools() })),
-            "tools/call" => Ok(self.call(&params)),
-            _ if id.is_none() => return None, // notifications/initialized and the like
-            _ => Err((-32601, format!("method not found: {method}"))),
-        };
-        let id = id?;
-        Some(match result {
-            Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-            Err((code, message)) => {
-                json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
-            }
-        })
+        self.0.handle(msg)
     }
 
-    fn call(&mut self, params: &Value) -> Value {
-        let tool = params.get("name").and_then(Value::as_str).unwrap_or("").to_owned();
-        let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-        let before = self.env.trace().actions.len() as u32;
-        let outcome = if self.calls_left() == Some(0) {
-            Err(json!({ "error": "out of tool calls: the run is over", "status": self.status() }))
-        } else {
-            self.run(&tool, &args)
-        };
-        let steps = self.env.trace().actions.len() as u32 - before;
-        let error = outcome.is_err();
-        self.calls.push(Call { tool, arguments: args, steps, error });
-        let text = match outcome {
-            Ok(v) | Err(v) => v.to_string(),
-        };
-        json!({ "content": [{ "type": "text", "text": text }], "isError": error })
+    /// Serves stdio until it closes, writing the record to `trace` after every message.
+    pub fn serve(&mut self, trace: Option<&std::path::Path>) {
+        mcp_stdio::serve(&mut self.0, trace, |s| serde_json::to_value(record(s)).expect("a record serialises"));
+    }
+}
+
+fn record(session: &Session<Escape>) -> Record {
+    let game = &session.game;
+    Record {
+        trace: game.env.trace(),
+        outcome: game.env.outcome(),
+        calls: game.calls.clone(),
+        max_calls: session.max_calls(),
+    }
+}
+
+/// One run of the game and the calls made on it.
+pub struct Escape {
+    env: Env,
+    calls: Vec<Call>,
+    /// The env's trace length when the last call was noted: the steps a call advanced are those past it.
+    noted: u32,
+}
+
+impl Game for Escape {
+    fn name(&self) -> &'static str {
+        "escape-the-box"
     }
 
-    fn run(&mut self, tool: &str, args: &Value) -> Result<Value, Value> {
+    fn instructions(&self) -> String {
+        instructions()
+    }
+
+    fn tools(&self) -> Value {
+        tools()
+    }
+
+    fn status(&self, calls_left: Option<u32>) -> Value {
+        self.status(calls_left)
+    }
+
+    fn call(&mut self, tool: &str, args: &Value, calls_left: Option<u32>) -> Reply {
+        match self.run(tool, args, calls_left) {
+            Ok(v) => Ok(vec![v.to_string()]),
+            Err(v) => Err(vec![v.to_string()]),
+        }
+    }
+
+    fn note(&mut self, tool: &str, args: &Value, reply: &Reply) {
+        let (len, error) = (self.env.trace().actions.len() as u32, reply.is_err());
+        self.calls.push(Call { tool: tool.to_owned(), arguments: args.clone(), steps: len - self.noted, error });
+        self.noted = len;
+    }
+}
+
+impl Escape {
+    fn run(&mut self, tool: &str, args: &Value, calls_left: Option<u32>) -> Result<Value, Value> {
         match tool {
-            "look" => Ok(json!({ "status": self.status(), "observation": obs_json(self.env.last()) })),
-            "status" => Ok(self.status()),
+            "look" => Ok(json!({ "status": self.status(calls_left), "observation": obs_json(self.env.last()) })),
+            "status" => Ok(self.status(calls_left)),
             _ if !TOOL_NAMES.contains(&tool) => Err(json!({ "error": format!("no tool named {tool:?}") })),
             _ if self.env.done() => {
-                Err(json!({ "error": "the run is over: no more actions", "status": self.status() }))
+                Err(json!({ "error": "the run is over: no more actions", "status": self.status(calls_left) }))
             }
             "move" => {
                 let dir = direction(args)?;
@@ -203,7 +207,7 @@ impl Server {
         })
     }
 
-    fn status(&self) -> Value {
+    fn status(&self, calls_left: Option<u32>) -> Value {
         let o = self.env.outcome();
         let obs = self.env.last();
         json!({
@@ -215,8 +219,8 @@ impl Server {
             "boxes_escaped": o.escapes,
             "score": o.score,
             "game_seconds": round(self.secs(o.steps)),
-            "run_over": self.env.done() || self.calls_left() == Some(0),
-            "calls_left": self.calls_left(),
+            "run_over": self.env.done() || calls_left == Some(0),
+            "calls_left": calls_left,
         })
     }
 
@@ -230,17 +234,6 @@ pub const TOOL_NAMES: [&str; 8] = ["look", "status", "move", "punch", "kick", "d
 
 fn tools() -> Value {
     serde_json::from_str(TOOLS).expect("tools.json is valid JSON")
-}
-
-fn initialize(params: &Value) -> Value {
-    let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or(VERSIONS[0]);
-    let version = VERSIONS.iter().find(|v| **v == asked).copied().unwrap_or(VERSIONS[0]);
-    json!({
-        "protocolVersion": version,
-        "capabilities": { "tools": {} },
-        "serverInfo": { "name": "escape-the-box", "version": env!("CARGO_PKG_VERSION") },
-        "instructions": instructions(),
-    })
 }
 
 /// The direction argument as an action-table direction (1..=8).
@@ -305,11 +298,5 @@ tool calls; each action advances it. Call look often.";
         let (east, _) = Action::new(1, 0).decode();
         assert_eq!(COMPASS[2], "north");
         assert!(north[1] > 0.99 && east[0] > 0.99);
-    }
-
-    #[test]
-    fn it_answers_in_the_clients_protocol_version_when_it_knows_it() {
-        assert_eq!(initialize(&json!({ "protocolVersion": "2025-06-18" }))["protocolVersion"], "2025-06-18");
-        assert_eq!(initialize(&json!({ "protocolVersion": "1999-01-01" }))["protocolVersion"], VERSIONS[0]);
     }
 }

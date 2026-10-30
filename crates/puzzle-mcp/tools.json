@@ -1,0 +1,36 @@
+[
+  {
+    "name": "look",
+    "description": "See the level now: the grid, which way you face, what you carry, moves on the board against the budget, and tool calls left. Changes nothing.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "move",
+    "description": "Play a string of keys (L, R, U, D) in order. It stops early at the first refused key, when the level is solved, or when the board reaches its move budget. Returns how many keys played, any refusal (which key and why), and the new grid.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "keys": { "type": "string", "pattern": "^[LRUD]+$", "minLength": 1 } },
+      "required": ["keys"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "undo",
+    "description": "Take back the last n moves (default 1). Free: moves count only while they are on the board. Returns the new grid.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "n": { "type": "integer", "minimum": 1 } },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "restart",
+    "description": "Clear every move and go back to the start. Free. Returns the grid.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "status",
+    "description": "Just the counters: moves on the board and the budget, tool calls left, and whether the session is over. Changes nothing.",
+    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+  }
+]
