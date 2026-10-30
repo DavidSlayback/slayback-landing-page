@@ -1,5 +1,5 @@
-//! The page's built-in levels (`levels/page.json`): each one is what it says, the bench's suites are its first
-//! levels, and its levels are what generating them gives.
+//! The page's built-in levels (`levels/page.json`): each one is what it says, the bench's suites tidy into its first
+//! levels, and its levels are what generating and tidying them gives.
 
 use puzzle_core::levels::{self, Entry};
 use puzzle_core::*;
@@ -32,18 +32,32 @@ fn every_built_in_level_is_solved_by_its_solution_in_its_moves() {
     }
 }
 
-/// While the page and the bench share a generator, every suite level is the built-in level for its seed.
+/// While the page and the bench share a generator, tidying a suite level gives the built-in level for its seed. Tiers
+/// 1 and 2 take seconds; 3 and 4 take over an hour in release, in the ignored test below.
 #[test]
-fn the_bench_suites_are_the_first_built_in_levels() {
+fn tidying_a_suite_level_gives_the_built_in_level_tiers_1_and_2() {
+    tidies_to_built_in(&[1, 2]);
+}
+
+/// `bash scripts/native.sh test -p puzzle-core --release -- --ignored`
+#[test]
+#[ignore]
+fn tidying_a_suite_level_gives_the_built_in_level_tiers_3_and_4() {
+    tidies_to_built_in(&[3, 4]);
+}
+
+fn tidies_to_built_in(tiers: &[u8]) {
     let page = levels::page();
-    for l in suite("suite-v1.json").into_iter().chain(suite("suite-v2.json")) {
-        let built_in = page.iter().find(|p| (p.world, p.tier, p.seed) == (l.world, l.tier, l.seed));
-        assert_eq!(built_in, Some(&l), "{:?} tier {} seed {}", l.world, l.tier, l.seed);
+    for l in suite("suite-v1.json").into_iter().chain(suite("suite-v2.json")).filter(|l| tiers.contains(&l.tier)) {
+        let what = format!("{:?} tier {} seed {}", l.world, l.tier, l.seed);
+        let built_in = page.iter().find(|p| (p.world, p.tier, p.seed) == (l.world, l.tier, l.seed)).expect(&what);
+        let tidied = tidy(&l.level, l.solution, l.world, &TIERS[l.tier as usize - 1]);
+        assert_eq!(tidied, (built_in.level.clone(), built_in.solution.clone()), "{what}");
     }
 }
 
-/// A built-in level is exactly what generating it gives, so the page shows the same level for a seed with or
-/// without the built-in set. Tier 1 takes a second; the rest take minutes, in the ignored test below.
+/// A built-in level is exactly what generating and tidying it gives, so the page shows the same level for a seed with
+/// or without the built-in set. Tier 1 takes a second; the rest take over an hour in release, in the ignored test below.
 #[test]
 fn built_in_levels_regenerate_tier_1() {
     regenerates(&[1]);
@@ -58,9 +72,18 @@ fn built_in_levels_regenerate_tiers_2_to_4() {
 
 fn regenerates(tiers: &[u8]) {
     for l in levels::page().into_iter().filter(|l| tiers.contains(&l.tier)) {
-        let g = generate(l.seed, l.world, &TIERS[l.tier as usize - 1]).unwrap();
-        assert_eq!((g.level, g.solution), (l.level, l.solution), "{:?} tier {} seed {}", l.world, l.tier, l.seed);
+        let tier = &TIERS[l.tier as usize - 1];
+        let g = generate(l.seed, l.world, tier).unwrap();
+        let tidied = tidy(&g.level, g.solution, l.world, tier);
+        assert_eq!(tidied, (l.level, l.solution), "{:?} tier {} seed {}", l.world, l.tier, l.seed);
     }
+}
+
+#[test]
+fn past_the_built_in_levels_pick_seals_the_generated_level() {
+    let picked = levels::pick(World::Classic, 1, 26).unwrap();
+    let g = generate(picked.seed, World::Classic, &TIERS[0]).unwrap();
+    assert_eq!((picked.level, picked.solution), (seal(&g.level), g.solution));
 }
 
 #[test]

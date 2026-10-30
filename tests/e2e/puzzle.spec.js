@@ -1,13 +1,13 @@
 // Out of the Box at /puzzle (ticket OB8), in every build, production included (P24), with a nav item and a call to
-// action on the homepage. Solutions and fingerprints come from bench/puzzle/suite-v1.json, written by the native
-// generator: the page's wasm must build exactly the same levels.
+// action on the homepage. Solutions and fingerprints come from the page's built-in levels
+// (crates/puzzle-core/levels/page.json), written by the native generator: the page's wasm must build exactly them.
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { collectErrors, litFraction } from './helpers.js';
 
-const SUITE = JSON.parse(readFileSync(fileURLToPath(new URL('../../bench/puzzle/suite-v1.json', import.meta.url)), 'utf8'));
-const level = (tier, seed) => SUITE.levels.find(l => l.tier === tier && l.seed === seed);
+const PAGE = JSON.parse(readFileSync(fileURLToPath(new URL('../../crates/puzzle-core/levels/page.json', import.meta.url)), 'utf8'));
+const level = (tier, seed) => PAGE.levels.find(l => l.world === 'classic' && l.tier === tier && l.seed === seed);
 const PRESS = { L: 'ArrowLeft', R: 'ArrowRight', U: 'ArrowUp', D: 'ArrowDown' };
 
 async function open(page, tier, seed) {
@@ -111,11 +111,10 @@ test.describe('puzzle', () => {
     }
   });
 
-  // The other worlds (M2-M5): levels from bench/puzzle/suite-v2.json, written by the native generator.
-  const V2 = JSON.parse(readFileSync(fileURLToPath(new URL('../../bench/puzzle/suite-v2.json', import.meta.url)), 'utf8'));
+  // The other worlds (M2-M5), from the same built-in levels.
   for (const [world, name] of [['crumble', 'Crumble'], ['ice', 'Ice'], ['springs', 'Springs'], ['mixed', 'Mixed']]) {
     test.describe(world, () => {
-      const levels = V2.levels.filter(l => l.world === world);
+      const levels = PAGE.levels.filter(l => l.world === world);
       const go = async (page, tier, seed) => {
         await page.goto(`/puzzle/?world=${world}&tier=${tier}&seed=${seed}`);
         await expect(page.locator('main')).toHaveAttribute('data-state', 'playing');

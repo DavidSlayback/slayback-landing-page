@@ -265,7 +265,7 @@ fn rank(fits: bool, solution: &[Key]) -> (bool, usize) {
 
 /// Whether a candidate is what its world and tier want, and its shortest solution (see [`rank`]). `None` for a
 /// candidate that is unsolvable, too costly to verify, or longer than the tier allows.
-fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
+pub(crate) fn score(level: &Level, world: World, tier: &Tier) -> Option<(bool, Vec<Key>)> {
     let found = solve_within(level, CAP).solution?;
     if found.len() > tier.moves.1 {
         return None;
