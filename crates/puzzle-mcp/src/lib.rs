@@ -188,6 +188,12 @@ pub fn replay(record: &Record) -> Result<Outcome, String> {
     let world = World::from_name(&record.world).ok_or(format!("no world {:?}", record.world))?;
     let pick = Pick { world, tier: record.tier, seed: record.seed };
     let (level, shortest) = pick.level().ok_or("the pick makes no level")?;
+    replay_on(record, level, shortest)
+}
+
+/// As [`replay`], on `level` (shortest solution `shortest` moves) as the caller already has it, from a suite file say:
+/// it must be the level the record names, by fingerprint.
+pub fn replay_on(record: &Record, level: Level, shortest: usize) -> Result<Outcome, String> {
     let fingerprint = format!("{:#018x}", level.fingerprint());
     if fingerprint != record.fingerprint {
         return Err(format!("the level is {fingerprint}, not {}", record.fingerprint));

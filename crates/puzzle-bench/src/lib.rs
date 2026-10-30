@@ -9,8 +9,10 @@
 
 use bench_core::{Game, Run, RunResult};
 use puzzle_core::session::Session;
-use puzzle_core::{Facing, Key as Press, Play, World};
-use puzzle_mcp::{Pick, Record, Server, TOOL_NAMES, replay};
+use std::collections::HashMap;
+
+use puzzle_core::{Facing, Key as Press, Level, Play, World};
+use puzzle_mcp::{Pick, Record, Server, TOOL_NAMES, replay_on};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -63,11 +65,11 @@ pub struct Analysis {
     pub mistakes: usize,
 }
 
-/// Replays `record` call by call against `puzzle-core` and measures the play.
-pub fn analyse(record: &Record) -> Analysis {
-    let level = Key { world: record.world.clone(), tier: record.tier, seed: record.seed, fresh: false, trial: 0 };
-    let verified = replay(record) == Ok(record.outcome);
-    let mut session = level.pick().level().map(|(l, shortest)| Session::new(l, shortest));
+/// Replays `record` call by call against `puzzle-core` on `level` (shortest solution `shortest` moves), the level it
+/// names, and measures the play.
+pub fn analyse(record: &Record, level: &Level, shortest: usize) -> Analysis {
+    let verified = replay_on(record, level.clone(), shortest) == Ok(record.outcome);
+    let mut session = verified.then(|| Session::new(level.clone(), shortest));
     let (mut move_calls, mut refused, mut undos, mut restarts) = (0, 0, 0, 0);
     for c in record.calls.iter().filter(|c| !c.error) {
         let Some(s) = session.as_mut() else { break };
@@ -121,12 +123,11 @@ pub fn analyse(record: &Record) -> Analysis {
 /// climbing when it can, else a random legal key).
 pub const PLAYERS: [&str; 3] = ["solver", "random", "greedy"];
 
-/// Plays native player `name` on `key`'s level through the server itself, so its record is a session's like any
-/// other (with no call cap): the solver in one move call, the others a key per call. `random` and `greedy` draw from
-/// the seed and the trial, so their runs repeat and their trials differ.
-pub fn play(name: &str, key: &Key) -> Option<Record> {
-    let pick = key.pick();
-    let (level, shortest) = pick.level()?;
+/// Plays native player `name` on `key`'s level (shortest solution `shortest` moves) through the server itself, so its
+/// record is a session's like any other (with no call cap): the solver in one move call, the others a key per call.
+/// `random` and `greedy` draw from the seed and the trial, so their runs repeat and their trials differ.
+pub fn play(name: &str, key: &Key, level: &Level, shortest: usize) -> Option<Record> {
+    let (pick, level) = (key.pick(), level.clone());
     let mut server = Server::on(pick, level.clone(), shortest, u32::MAX, false);
     let mut call = |id: usize, tool: &str, args: Value| {
         let msg = json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call", "params": { "name": tool, "arguments": args } });
@@ -190,8 +191,18 @@ fn greedy(play: &Play, next: &mut impl FnMut() -> u32) -> Press {
 /// One run as the results file reports it.
 pub type PuzzleResult = RunResult<Key, Analysis>;
 
-/// *Out of the Box* behind the bench.
-pub struct Puzzle;
+/// *Out of the Box* behind the bench, with the sweep's levels and their shortest solutions' lengths, by world, tier and
+/// seed: a suite file's, and fresh seeds' generated once. Generating a big level takes seconds.
+pub struct Puzzle {
+    pub levels: HashMap<(String, u8, u64), (Level, usize)>,
+}
+
+impl Puzzle {
+    fn level(&self, world: &str, tier: u8, seed: u64) -> (Level, usize) {
+        let pick = Key { world: world.into(), tier, seed, fresh: false, trial: 0 }.pick();
+        self.levels.get(&(world.into(), tier, seed)).cloned().or_else(|| pick.level()).expect("the run's level")
+    }
+}
 
 impl Game for Puzzle {
     type Key = Key;
@@ -210,11 +221,13 @@ impl Game for Puzzle {
     }
 
     fn play(&self, model: &str, run: &Run<Key>) -> Option<Record> {
-        play(model, &run.key)
+        let (level, shortest) = self.level(&run.key.world, run.key.tier, run.key.seed);
+        play(model, &run.key, &level, shortest)
     }
 
     fn analyse(&self, record: &Record) -> Analysis {
-        analyse(record)
+        let (level, shortest) = self.level(&record.world, record.tier, record.seed);
+        analyse(record, &level, shortest)
     }
 
     fn line(&self, a: &Analysis) -> String {
@@ -328,9 +341,20 @@ mod tests {
         Key { world: world.into(), tier, seed, fresh: false, trial: 1 }
     }
 
+    fn played(name: &str, k: &Key) -> Option<Record> {
+        let (level, shortest) = k.pick().level().unwrap();
+        play(name, k, &level, shortest)
+    }
+
+    fn analysed(record: &Record) -> Analysis {
+        let k = key(&record.world, record.tier, record.seed);
+        let (level, shortest) = k.pick().level().unwrap();
+        analyse(record, &level, shortest)
+    }
+
     #[test]
     fn the_solver_solves_in_the_shortest_moves_and_verifies() {
-        let a = analyse(&play("solver", &key("classic", 2, 1)).unwrap());
+        let a = analysed(&played("solver", &key("classic", 2, 1)).unwrap());
         assert!(a.verified && a.ending == Ending::Solved, "{a:?}");
         assert_eq!(a.over_shortest, Some(1.0));
         assert_eq!(a.calls, 1);
@@ -340,25 +364,25 @@ mod tests {
     fn random_and_greedy_play_until_solved_or_out_of_moves_repeatably() {
         for name in ["random", "greedy"] {
             let k = key("ice", 1, 1);
-            let a = analyse(&play(name, &k).unwrap());
+            let a = analysed(&played(name, &k).unwrap());
             assert!(a.verified && matches!(a.ending, Ending::Solved | Ending::OutOfMoves), "{name}: {a:?}");
-            assert_eq!(play(name, &k), play(name, &k), "{name} repeats");
+            assert_eq!(played(name, &k), played(name, &k), "{name} repeats");
         }
-        assert!(play("nobody", &key("classic", 1, 1)).is_none());
+        assert!(played("nobody", &key("classic", 1, 1)).is_none());
     }
 
     #[test]
     fn a_doctored_record_does_not_verify() {
-        let mut record = play("solver", &key("classic", 1, 1)).unwrap();
+        let mut record = played("solver", &key("classic", 1, 1)).unwrap();
         record.outcome.moves += 1;
-        assert!(!analyse(&record).verified);
+        assert!(!analysed(&record).verified);
     }
 
     #[test]
     fn the_summary_groups_by_world_tier_and_fresh_and_counts_verified_runs() {
         let run = |world: &str, tier, fresh, player| {
             let key = Key { fresh, ..key(world, tier, 1) };
-            let analysis = Some(analyse(&play(player, &key).unwrap()));
+            let analysis = Some(analysed(&played(player, &key).unwrap()));
             RunResult {
                 key,
                 dir: String::new(),

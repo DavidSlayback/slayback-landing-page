@@ -39,6 +39,7 @@ fn main() {
     let path = format!("{}/../../bench/puzzle/suite-{}.json", env!("CARGO_MANIFEST_DIR"), args.suite);
     let suite = read_suite(&std::fs::read_to_string(&path).unwrap_or_else(|e| fail(&format!("{path}: {e}"))));
     let mut levels: Vec<Key> = vec![];
+    let mut game = Puzzle { levels: std::collections::HashMap::new() };
     let mut worlds: Vec<World> = suite.iter().map(|e| e.world).collect();
     worlds.dedup();
     if let Some(only) = &args.worlds {
@@ -48,19 +49,16 @@ fn main() {
         for &tier in &args.tiers {
             let entries = suite.iter().filter(|e| e.world == world && e.tier == tier);
             for e in entries.take(args.levels.unwrap_or(usize::MAX)) {
-                let key = Key { world: world.name().into(), tier, seed: e.seed, fresh: false, trial: 1 };
-                let made = key.pick().level().map(|(l, _)| l.fingerprint());
-                if made != Some(e.fingerprint) {
-                    fail(&format!(
-                        "{world:?} tier {tier} seed {}: the generator no longer makes the suite's level",
-                        e.seed
-                    ));
-                }
-                levels.push(key);
+                // The suite's level as published. A session's server generates it again from the seed, and its
+                // record names it by fingerprint, which the analysis checks against this one.
+                game.levels.insert((world.name().into(), tier, e.seed), (e.level.clone(), e.moves));
+                levels.push(Key { world: world.name().into(), tier, seed: e.seed, fresh: false, trial: 1 });
             }
             for _ in 0..args.fresh {
                 let seed = fresh_seed(world, tier);
-                levels.push(Key { world: world.name().into(), tier, seed, fresh: true, trial: 1 });
+                let key = Key { world: world.name().into(), tier, seed, fresh: true, trial: 1 };
+                game.levels.insert((key.world.clone(), tier, seed), key.pick().level().expect("a fresh seed's level"));
+                levels.push(key);
             }
         }
     }
@@ -103,7 +101,7 @@ fn main() {
             "prompts": worlds.iter().map(|&w| (w.name().to_owned(), json!(prompt(w, args.max_calls)))).collect::<serde_json::Map<_, _>>(),
         }),
     };
-    let results = sweep(&Puzzle, &s, &runs);
+    let results = sweep(&game, &s, &runs);
     let s = summarise(&results);
     eprintln!("puzzle-bench: {} runs, {} verified; solve rate {:.0}%", s.runs, s.verified, s.solve_rate * 100.0);
 }
