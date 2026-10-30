@@ -9,8 +9,10 @@ use std::fmt;
 mod generate;
 pub mod levels;
 mod solve;
+mod tidy;
 pub use generate::{CAP, Generated, TIERS, Tier, World, generate};
 pub use solve::{Search, solve, solve_within};
+pub use tidy::{seal, tidy};
 
 /// Widest and tallest grid a level may have; 20 × 12 = 240 cells fit a [`Bits`].
 pub const MAX_W: usize = 20;

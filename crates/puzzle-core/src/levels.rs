@@ -1,16 +1,17 @@
 //! Which level a (world, tier, seed) plays: the one place the page, the suite writer and the tests ask.
 //!
-//! Generating a tier-4 level takes seconds natively and far longer on a phone (`examples/generate.rs` times it), so
-//! the page's first 25 levels per tier in every world are built in: `levels/page.json`, written offline by
-//! `examples/suite.rs -- page` with the same generator. A seed in it loads at once and is exactly the level generating
-//! it would give; any other seed is generated. A seed that makes no level hands over to the next one.
+//! Generating a tier-4 level takes seconds natively and far longer on a phone (`examples/generate.rs` times it), and
+//! [`tidy`](crate::tidy)ing it as long again, so the page's first 25 levels per tier in every world are built in:
+//! `levels/page.json`, written offline by `examples/suite.rs -- page`, each the generator's level tidied. A seed in it
+//! loads at once; any other seed is generated and only [`seal`]ed, which costs nothing (David: "Seal only"). A seed
+//! that makes no level hands over to the next one.
 //!
 //! The built-in levels follow the newest generator (David's call), while the bench's suites (`bench/puzzle/`) stay
-//! frozen for comparable scores. While both come from the same generator the suites are the first levels of the
-//! built-in set, which `tests/levels.rs` checks; a generator change that re-rolls levels means a new suite version and
-//! a rebuilt `page.json`.
+//! frozen, untidied, for comparable scores. While both come from the same generator, tidying a suite level gives the
+//! built-in level for its seed, which `tests/levels.rs` checks; a generator change that re-rolls levels means a new
+//! suite version and a rebuilt `page.json`.
 
-use crate::{Key, Level, TIERS, World, generate};
+use crate::{Key, Level, TIERS, World, generate, seal};
 
 /// The built-in levels, one per line in the suites' format.
 const PAGE: &str = include_str!("../levels/page.json");
@@ -41,11 +42,13 @@ pub struct Entry {
     pub solution: Vec<Key>,
 }
 
-/// The level for `seed` in `world` and `tier` (1 to 4): built in if it can be, generated if not, from the next seeds
-/// if that one makes no level. `None` for a tier out of range, or eight seeds in a row that make none.
+/// The level for `seed` in `world` and `tier` (1 to 4): built in (tidied) if it can be, generated and sealed if not,
+/// from the next seeds if that one makes no level. `None` for a tier out of range, or eight seeds in a row that make none.
 pub fn pick(world: World, tier: u8, seed: u64) -> Option<Picked> {
     let t = TIERS.get((tier as usize).checked_sub(1)?)?;
-    pick_with(seed, |s| built_in(world, tier, s).or_else(|| generate(s, world, t).map(|g| (g.level, g.solution))))
+    pick_with(seed, |s| {
+        built_in(world, tier, s).or_else(|| generate(s, world, t).map(|g| (seal(&g.level), g.solution)))
+    })
 }
 
 /// [`pick`]'s fallback, apart from where levels come from.

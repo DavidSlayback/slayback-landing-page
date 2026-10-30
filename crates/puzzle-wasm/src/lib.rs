@@ -96,7 +96,7 @@ pub extern "C" fn game_seed(p: *mut Game) -> u64 {
     game(p).seed
 }
 
-/// The level's fingerprint, as in `bench/puzzle/suite-v1.json`.
+/// The level's fingerprint, as in the built-in levels' `crates/puzzle-core/levels/page.json`.
 #[unsafe(no_mangle)]
 pub extern "C" fn game_fingerprint(p: *mut Game) -> u64 {
     game(p).play.level.fingerprint()
